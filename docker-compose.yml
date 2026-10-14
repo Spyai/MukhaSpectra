@@ -1,0 +1,39 @@
+# Local run: docker compose up --build, then open http://localhost:5173
+# Research prototype — not for clinical use.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      MUKHA_PUBLIC_BASE_URL: http://localhost:5173
+      MUKHA_CORS_ORIGINS: '["http://localhost:5173"]'
+    volumes:
+      - mukha-data:/data
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+  # Production-like database. Start with: docker compose --profile postgres up --build
+  # and set MUKHA_DATABASE_URL=postgresql+psycopg://mukha:mukha@db:5432/mukha on the backend.
+  db:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: mukha
+      POSTGRES_PASSWORD: mukha
+      POSTGRES_DB: mukha
+    volumes:
+      - mukha-pg:/var/lib/postgresql/data
+
+volumes:
+  mukha-data:
+  mukha-pg:
