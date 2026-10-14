@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 from functools import cache
+from typing import Any
 
 from report_fixtures.results import (
     BUILDERS,
@@ -14,6 +15,7 @@ from report_fixtures.results import (
     build_high,
     build_inconclusive,
     build_low,
+    build_stress,
 )
 
 __all__ = [
@@ -24,6 +26,7 @@ __all__ = [
     "build_high",
     "build_inconclusive",
     "build_low",
+    "build_stress",
     "cached_case",
     "default_options",
     "dict_reader",
@@ -42,9 +45,14 @@ def dict_reader(artifacts: dict[str, bytes]) -> Callable[[str], bytes | None]:
 
 
 def default_options(
-    case: ReportCase, *, record_url: str | None = "default", generated_at: datetime | None = None
+    case: ReportCase,
+    *,
+    record_url: str | None = "default",
+    generated_at: datetime | None = None,
+    **extra: Any,
 ):
-    """ReportOptions for a fixture case with the example facilities from facilities.yaml."""
+    """ReportOptions for a fixture case with the example facilities from facilities.yaml
+    (``extra`` sets further ReportOptions fields, e.g. ``display_tz``)."""
     from app.reports import ReportOptions, load_facilities
 
     if record_url == "default":
@@ -55,4 +63,5 @@ def default_options(
         record_url=record_url,
         facilities=load_facilities(),
         report_version=1,
+        **extra,
     )

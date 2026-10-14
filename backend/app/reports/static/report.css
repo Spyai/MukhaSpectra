@@ -55,7 +55,6 @@
     color: #475467;
     vertical-align: bottom;
     padding-bottom: 3mm;
-    font-variant-numeric: tabular-nums;
   }
   @bottom-left {
     font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
@@ -90,9 +89,9 @@ html {
   print-color-adjust: exact;
 }
 
-/* Tabular figures only where numbers must line up: applied globally they give Inter's hyphen a
-   figure width ("Non - healing"). */
-.num, td.num, .mono, .report-meta, .kv .v, table.features td, .score-line .txt {
+/* Tabular figures only where numbers must line up. Inter's "tnum" also gives the hyphen a
+   figure width ("Non - healing", "MS - 2026 - 10"), so it stays off text that holds IDs. */
+.num, td.num, table.features td, .score-line .txt {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
@@ -145,32 +144,31 @@ th.num { white-space: normal; }
 
 /* ---------------------------------------------------------------- header */
 
-.report-header { display: grid; grid-template-columns: 1fr auto; column-gap: 6mm; }
+.report-header { display: grid; grid-template-columns: 1fr auto; column-gap: 5mm; align-items: start; }
 .report-header .logo { height: 8mm; width: auto; display: block; margin-bottom: 1.6mm; }
 .report-header h1 {
-  font-size: 13.6pt;
+  font-size: 12.6pt;
   line-height: 1.15;
   font-weight: 700;
   letter-spacing: -0.012em;
   margin: 0;
 }
 .report-header .subtitle { color: var(--muted); font-size: 8.4pt; margin-top: 0.6mm; }
-.report-meta { text-align: right; font-size: 7.8pt; color: var(--ink-2); max-width: 86mm; }
-.report-meta div { margin-bottom: 0.5mm; }
-.report-meta .meta-level { white-space: nowrap; }
-.report-meta .meta-when { font-size: 10pt; font-weight: 700; color: var(--c); margin-left: 2mm; vertical-align: 0.4mm; }
+.report-meta { text-align: right; font-size: 7.8pt; color: var(--ink-2); max-width: 80mm; }
+.report-meta div { margin-bottom: 0.4mm; }
+.report-meta .meta-when { display: inline-block; font-size: 10pt; font-weight: 700; color: var(--c); margin-left: 2mm; vertical-align: 0.4mm; }
 .report-meta .meta-action { font-size: 8.4pt; font-weight: 600; color: var(--ink); line-height: 1.25; }
 .report-meta .meta-review { font-size: 7.6pt; font-weight: 600; color: var(--brand); line-height: 1.25; }
-.report-meta .meta-id { color: var(--muted); font-size: 7.2pt; }
-.report-meta .meta-id b { color: var(--ink-2); }
+.report-header .meta-id { color: var(--muted); font-size: 7.4pt; margin-top: 0.4mm; }
+.report-header .meta-id b { color: var(--ink-2); }
 
 .context-grid {
   display: grid;
   grid-template-columns: 1.6fr 1.2fr 1fr 1fr;
   column-gap: 3mm;
-  row-gap: 1mm;
-  margin-top: 2.2mm;
-  padding: 1.6mm 3mm;
+  row-gap: 0.6mm;
+  margin-top: 1.6mm;
+  padding: 1.3mm 3mm;
   background: var(--soft);
   border: 0.6pt solid var(--rule);
   border-radius: 2mm;
@@ -185,10 +183,10 @@ th.num { white-space: normal; }
 .kv .v { font-size: 8.3pt; color: var(--ink); line-height: 1.25; }
 
 .versions {
-  margin-top: 1.2mm;
-  font-size: 6.7pt;
+  margin-top: 1mm;
+  font-size: 6.6pt;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.34;
 }
 .versions span.item { white-space: nowrap; margin-right: 2.4mm; }
 .versions b { color: var(--ink-2); font-weight: 600; }
@@ -210,7 +208,7 @@ th.num { white-space: normal; }
 
 .disclaimer {
   margin-top: 2mm;
-  padding: 1.6mm 3.4mm 1.6mm 10.5mm;
+  padding: 1.3mm 3.2mm 1.3mm 10mm;
   position: relative;
   background: var(--brand-soft);
   border: 0.7pt solid var(--brand-line);
@@ -220,7 +218,7 @@ th.num { white-space: normal; }
 .disclaimer .title { font-weight: 700; font-size: 9.4pt; color: #3f2a8c; }
 .disclaimer p { margin: 0; font-size: 8.2pt; line-height: 1.33; color: var(--ink-2); }
 .disclaimer .data-line {
-  margin-top: 1.1mm;
+  margin-top: 0.8mm;
   padding: 0.7mm 2.2mm;
   border-radius: 1.4mm;
   font-size: 7.3pt;
@@ -232,12 +230,12 @@ th.num { white-space: normal; }
 
 /* ---------------------------------------------------------------- sections */
 
-section { margin-top: 4mm; }
+section { margin-top: 3.4mm; }
 h2 {
   font-size: 10.4pt;
   font-weight: 700;
   letter-spacing: -0.005em;
-  margin: 0 0 1.8mm;
+  margin: 0 0 1.4mm;
   padding-bottom: 1mm;
   border-bottom: 0.8pt solid var(--rule);
   break-after: avoid;
@@ -262,16 +260,18 @@ h3 {
 .cols-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; }
 .cols-main-side { display: grid; grid-template-columns: 1fr 74mm; column-gap: 4.5mm; }
 .patient-row { display: grid; grid-template-columns: 1.1fr 0.9fr; column-gap: 4mm; }
+/* Keep the findings heading and its key with the first finding (never stranded at a page foot). */
+.findings > h2, .findings > .note-line { break-after: avoid; page-break-after: avoid; }
 .page-start { break-before: page; page-break-before: always; }
-section.patient { margin-top: 3mm; }
-section.overall-row { margin-top: 3mm; }
+section.patient { margin-top: 2.2mm; }
+section.overall-row { margin-top: 2.2mm; }
 .overall-top { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; }
 .review-note { color: var(--brand); font-weight: 600; }
 .lesion .factors h3 { margin-top: 1.4mm; }
 .why .expl { font-size: 8.1pt; line-height: 1.3; color: var(--ink-2); margin: 0 0 1mm; }
-section.why { margin-top: 2.6mm; }
+section.why { margin-top: 2mm; }
 section.why h3 { margin-top: 0; }
-.why table td { font-size: 7.8pt; padding-top: 0.5mm; padding-bottom: 0.5mm; line-height: 1.25; }
+.why table td { font-size: 7.6pt; padding-top: 0.3mm; padding-bottom: 0.3mm; line-height: 1.2; }
 
 .card {
   border: 0.6pt solid var(--rule);
@@ -357,12 +357,14 @@ section.why h3 { margin-top: 0; }
 .map-legend .it { white-space: nowrap; }
 .map-legend .sw { width: 4.2mm; height: 2.6mm; vertical-align: -0.4mm; margin-right: 0.6mm; }
 .map-legend .risk-icon { width: 2.7mm; height: 2.7mm; vertical-align: -0.4mm; margin-right: 0.6mm; }
-.map-legend .mk {
-  display: inline-block; width: 3.3mm; height: 3.3mm; line-height: 3mm; border-radius: 50%; border: 0.9pt solid var(--ink);
-  text-align: center; font-size: 6.4pt; font-weight: 700; margin: 0 0.8mm 0 0.5mm; vertical-align: -0.3mm;
-}
-.findings-list { margin-top: 1.6mm; padding-top: 1.4mm; border-top: 0.5pt solid var(--rule); font-size: 8pt; }
+
+.findings-list { margin-top: 1.4mm; padding-top: 1.2mm; border-top: 0.5pt solid var(--rule); font-size: 8pt; }
+.findings-list .fl-label { display: block; font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-bottom: 0.4mm; }
 .findings-list .f { display: inline-block; margin: 0 3mm 0.6mm 0; white-space: nowrap; }
+.findings-list.many { font-size: 7.4pt; }
+.findings-list.many .f { width: 49%; margin: 0 0 0.4mm; vertical-align: top; }
+.findings-list.many .pill { font-size: 6.3pt; padding: 0.2mm 1.4mm 0.2mm 1mm; }
+.findings-list.many .pill svg { width: 2.5mm; height: 2.5mm; }
 .findings-list .no {
   display: inline-block; width: 4.2mm; height: 4.2mm; line-height: 4.2mm; border-radius: 50%;
   border: 1pt solid var(--c); color: var(--c); text-align: center; font-weight: 700; font-size: 7pt;
@@ -395,10 +397,10 @@ tr.override .tag {
 td.pts { font-weight: 600; }
 td.pts.neg { color: var(--low); }
 td.pts.floor { color: var(--high); font-weight: 700; text-transform: uppercase; font-size: 6.6pt; letter-spacing: 0.05em; }
-.override-note { font-size: 6.9pt; color: var(--muted); margin-top: 0.5mm; }
+.override-note { font-size: 6.9pt; color: var(--muted); margin-top: 0.5mm; break-before: avoid; page-break-before: avoid; }
 table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
 
-.score-line { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; margin-bottom: 1.2mm; }
+.score-line { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; margin-bottom: 0.8mm; }
 .score-line .gauge { display: block; }
 .score-line .txt { font-size: 7.9pt; line-height: 1.32; color: var(--ink-2); }
 .note-line { font-size: 7.6pt; line-height: 1.32; color: var(--muted); margin-top: 0.8mm; }
@@ -411,6 +413,10 @@ table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
   border-top: 2.4pt solid var(--c);
   border-radius: 2mm;
   padding: 1.8mm 3mm 2mm;
+}
+/* A finding may continue on the next page, but only between its parts: header + images +
+   measurements stay together, as do the spectral block and the factor table. */
+.lesion .lesion-top, .lesion .spectral, .lesion .model-line {
   break-inside: avoid;
   page-break-inside: avoid;
 }
@@ -471,12 +477,12 @@ table.measure .chip-warn { white-space: normal; }
   white-space: nowrap;
 }
 
-.spectral { display: grid; grid-template-columns: 94mm 1fr; column-gap: 4mm; margin-top: 1.6mm; }
+.spectral { display: grid; grid-template-columns: 90mm 1fr; column-gap: 4mm; margin-top: 1.4mm; }
 .spectral img.plot { width: 100%; height: auto; display: block; }
 .spectral .meta { font-size: 6.9pt; line-height: 1.3; color: var(--muted); margin-top: 0.4mm; }
-.clf { margin-top: 1.4mm; padding: 1.2mm 2mm; background: var(--soft); border-radius: 1.4mm; font-size: 7.5pt; line-height: 1.3; }
+.clf { margin-top: 1mm; padding: 1mm 2mm; background: var(--soft); border-radius: 1.4mm; font-size: 7.3pt; line-height: 1.28; }
 .clf .status { color: var(--moderate); font-weight: 600; }
-table.features td { font-size: 7.4pt; padding-top: 0.4mm; padding-bottom: 0.4mm; line-height: 1.2; }
+table.features td { font-size: 7.3pt; padding-top: 0.25mm; padding-bottom: 0.25mm; line-height: 1.18; }
 table.features tr.cited td { font-weight: 700; color: var(--ink); }
 
 .model-line {
@@ -486,7 +492,12 @@ table.features tr.cited td { font-weight: 700; color: var(--ink); }
 .model-line b { font-weight: 600; }
 
 .lesion .factors { margin-top: 0.6mm; }
-.lesion .factors td { font-size: 7.5pt; padding-top: 0.4mm; padding-bottom: 0.4mm; line-height: 1.25; }
+.lesion .factors td { font-size: 7.3pt; padding-top: 0.25mm; padding-bottom: 0.25mm; line-height: 1.2; }
+.lesion .factors th, .why table th { padding-top: 0.5mm; padding-bottom: 0.5mm; }
+/* Factor tables may continue on the next page between rows (the header row repeats). */
+.factors h3 { break-after: avoid; page-break-after: avoid; }
+table.models td:nth-child(1) { width: 40%; }
+table.models td:nth-child(3) { width: 14%; }
 
 /* ---------------------------------------------------------------- QC */
 
@@ -517,7 +528,7 @@ tr.muted td { color: var(--muted); }
   vertical-align: -0.7mm; margin-right: 1.4mm; text-align: center; line-height: 3.2mm; font-size: 8pt; font-weight: 700;
 }
 .notes-lines { margin-bottom: 1.4mm; }
-.notes-lines .nl { border-bottom: 0.6pt solid var(--rule-strong); height: 5.8mm; }
+.notes-lines .nl { border-bottom: 0.6pt solid var(--rule-strong); height: 5.4mm; }
 .notes-filled { min-height: 10mm; padding: 1.2mm 0; border-bottom: 0.6pt solid var(--rule-strong); font-size: 8.4pt; line-height: 1.32; }
 .checks.biopsy { margin: 0 0 1.6mm; }
 .checks .lbl-inline { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-right: 2mm; }
@@ -527,7 +538,7 @@ tr.muted td { color: var(--muted); }
 .sig-note { font-size: 7.2pt; font-weight: 500; color: var(--muted); }
 
 .referral { display: grid; grid-template-columns: 1fr 38mm; column-gap: 5mm; }
-.facility { padding: 1.1mm 2.4mm; border: 0.6pt solid var(--rule); border-radius: 1.6mm; margin-bottom: 1.3mm; font-size: 7.9pt; line-height: 1.32; break-inside: avoid; }
+.facility { padding: 0.9mm 2.4mm; border: 0.6pt solid var(--rule); border-radius: 1.6mm; margin-bottom: 1.1mm; font-size: 7.8pt; line-height: 1.3; break-inside: avoid; }
 .facility .name { font-weight: 700; font-size: 8.6pt; }
 .facility .example {
   display: inline-block; font-size: 6.8pt; font-weight: 700; color: var(--moderate); background: var(--moderate-tint);
@@ -544,7 +555,7 @@ tr.muted td { color: var(--muted); }
   font-size: 8pt; line-height: 1.35; background: var(--soft);
 }
 .slip .k { display: inline-block; min-width: 13mm; font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
-.qr { text-align: center; }
+.qr { text-align: center; break-inside: avoid; page-break-inside: avoid; }
 .qr img { width: 32mm; height: 32mm; display: block; margin: 0 auto; }
 .qr .url { font-size: 6.6pt; color: var(--ink-2); word-break: break-all; margin-top: 1mm; }
 .qr .hint { font-size: 7pt; color: var(--muted); margin-top: 0.8mm; }
@@ -553,4 +564,4 @@ tr.muted td { color: var(--muted); }
 .urgency.reviewed-line { color: #3f2a8c; font-size: 8.8pt; }
 .urgency.reviewed-line .sub { display: block; font-size: 7.4pt; font-weight: 500; color: var(--muted); }
 
-.end-note { margin-top: 3mm; font-size: 6.9pt; color: var(--muted); border-top: 0.6pt solid var(--rule); padding-top: 1.6mm; }
+.end-note { margin-top: 2.4mm; font-size: 6.9pt; color: var(--muted); border-top: 0.6pt solid var(--rule); padding-top: 1.6mm; }

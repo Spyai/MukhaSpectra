@@ -62,8 +62,7 @@
 <style>{{ css }}</style>
 <style>
 @page {
-  @top-left { content: {{ banner | css_str }}; }
-  @top-center { content: {{ ("SYNTHETIC DATA" if synthetic else provenance_tag) | css_str }}; }
+  @top-left { content: {{ (banner ~ (" · SYNTHETIC DATA" if synthetic else (" · " ~ provenance_tag if provenance_tag else ""))) | css_str }}; }
   @top-right { content: {{ running_header | css_str }}; }
   @bottom-left { content: {{ footer_text | css_str }}; }
 }
@@ -81,12 +80,12 @@
     <img class="logo" src="{{ logo_uri }}" alt="MukhaSpectra (placeholder logo)">
     <h1>Oral screening — clinician referral report</h1>
     <div class="subtitle">Screening and triage aid · {{ header.review_status }}</div>
+    <div class="meta-id">Report <b>{{ header.report_id }}</b> · v{{ header.report_version }} · generated {{ header.generated_at }}</div>
   </div>
   <div class="report-meta risk-{{ triage.badge.css }}">
     <div class="meta-level"><span class="risk-badge sm risk-{{ triage.badge.css }}">{{ triage.badge.icon_inverse }}{{ triage.badge.level }}</span><span class="meta-when">{{ triage.timeline }}</span></div>
     <div class="meta-action">{{ triage.summary }}</div>
     {%- if triage.reviewer_line %}<div class="meta-review">{% if triage.reviewed_badge %}{{ pill(triage.reviewed_badge) }} {% endif %}{{ triage.reviewer_line }}</div>{% endif %}
-    <div class="meta-id">Report <b>{{ header.report_id }}</b> · v{{ header.report_version }} · generated {{ header.generated_at }}</div>
   </div>
 </header>
 
@@ -158,7 +157,7 @@
         <div class="clin-note">{{ triage.clinician_note }}</div>
         {%- endif %}
         {%- if lesions %}
-        <div class="findings-list">
+        <div class="findings-list{{ ' many' if n_lesions > 2 else '' }}"><span class="fl-label">Findings (numbered as on the map):</span>
           {%- for l in lesions %}
           <span class="f risk-{{ l.badge.css }}"><span class="no">{{ l.number }}</span>{{ l.site }} {{ pill(l.badge) }}</span>
           {%- endfor %}
@@ -169,8 +168,8 @@
         {%- endif %}
         <div class="coverage">
           <b>{{ coverage.summary }}</b>
-          {%- if coverage.not_examined %} Not examined by the device (no information from this screen): {{ coverage.not_examined | join(', ') }}.{% endif %}
-          {%- if coverage.not_assessed %} <span class="bad-text">Not assessed (QC failed): {{ coverage.not_assessed | join(', ') }} — examine clinically.</span>{% endif %}
+          {%- if coverage.not_examined %} Not examined (no device information): {{ coverage.not_examined | join(', ') }}.{% endif %}
+          {%- if coverage.not_assessed and not triage.clinician_note %} <span class="bad-text">Not assessed (QC failed): {{ coverage.not_assessed | join(', ') }} — examine clinically.</span>{% endif %}
         </div>
       </div>
     </div>
@@ -183,7 +182,6 @@
         {%- endfor %}
         <span class="it">{{ swatch('#eaf1fe', '#2563eb', '2.4 1.6') }}Reference only</span>
         <span class="it">{{ swatch('#ffffff', '#c4cbd5') }}Not examined</span>
-        <span class="it"><span class="mk">1</span>Finding number</span>
       </div>
     </div>
   </div>
@@ -206,7 +204,7 @@
 </section>
 
 {#- 6 ─ Findings by lesion ─────────────────────────────────────────────────── #}
-<section class="findings{{ ' page-start' if lesions else '' }}">
+<section class="findings">
   <h2><span class="sec-no">4</span> Suspicious findings</h2>
   {%- if not lesions %}
   <div class="card soft">
@@ -214,11 +212,12 @@
     {%- else %}No suspicious finding was flagged at the sites that could be analysed. Sites that failed quality control ({{ qc.sites_failed | join(', ') if qc.sites_failed else 'see section 5' }}) were not assessed, so this does not rule out disease: follow the recommended action above.{% endif %}
   </div>
   {%- else %}
-  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }} by risk level{% if compact_lesions %}; full evidence for the top {{ max_detailed }}, the rest in the table below (all findings are in the secure record){% endif %}. <b>Relative AF</b> = green fluorescence ÷ the patient's healthy reference (1.00 = same, lower = loss). <b>Contrast</b> above 1 = darker than surroundings. <b>Border irreg.</b> 0 = smooth round edge, 1 = very irregular. Photos are cropped to the frame around the flagged region; brackets mark the region.</div>
+  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }} by risk level{% if compact_lesions %}; full evidence for the top {{ max_detailed }}, the rest in the table below (all findings are in the secure record){% endif %}. <b>Relative AF</b> = green fluorescence ÷ the patient's healthy reference (1.00 = same, lower = loss). <b>Contrast</b> above 1 = darker than surroundings. <b>Border irreg.</b> 0 = smooth round edge, 1 = very irregular. Photos are cropped to the frame around the flagged region; brackets (outline on the heatmap) mark the region.</div>
   {%- endif %}
 
   {%- for l in lesions %}
   <article class="lesion risk-{{ l.badge.css }}">
+    <div class="lesion-top">
     <div class="lesion-head">
       <div class="no">{{ l.number }}</div>
       <div>
@@ -264,8 +263,12 @@
       {%- endif %}
       <div class="obs"><b>Visual:</b> {{ l.visual }} · <b>Diascopy:</b> {{ l.diascopy }}{% if not l.wl.available %} · <b>{{ l.wl.short_text }}</b>{% endif %}</div>
     </div>
+    </div>
 
     {%- for s in l.spectral %}
+    {%- if s.shown_in %}
+    <div class="note-line">Spectral probe reading {{ s.reading_id }} ({{ s.site }}): {{ s.classifier_label or 'no label' }} · {{ s.classifier_status }} — plot and features under finding {{ s.shown_in }}.</div>
+    {%- else %}
     <div class="spectral">
       <div>
         <img class="plot" src="{{ s.plot_uri }}" alt="Spectral plot, lesion versus reference">
@@ -291,6 +294,7 @@
         {%- for n in s.notes %}<div class="note-line">{{ n }}</div>{% endfor %}
       </div>
     </div>
+    {%- endif %}
     {%- endfor %}
     {%- if l.wl.available %}{{ wl_line(l.wl) }}{% endif %}
 
@@ -305,7 +309,7 @@
   <div class="keep">
   <h3>Other findings</h3>
   <table class="compact">
-    <thead><tr><th class="num" style="width:7mm">#</th><th>Site</th><th>Level</th><th class="num">Score</th><th>Raised by</th><th>Summary</th></tr></thead>
+    <thead><tr><th class="num" style="width:6mm">#</th><th style="width:36mm">Site</th><th style="width:25mm">Level</th><th class="num" style="width:12mm">Score</th><th style="width:30mm">Raised by</th><th>Summary</th></tr></thead>
     <tbody>
     {%- for c in compact_lesions %}
       <tr><td class="num">{{ c.number }}</td><td>{{ c.site }}</td><td>{{ pill(c.badge) }}</td><td class="num">{{ c.score }}</td><td class="small">{{ c.origins }}</td><td class="small">{{ c.summary }}</td></tr>
@@ -448,9 +452,8 @@
       <div class="facility">
         {%- if loop.first %}<div class="first">First-choice facility</div>{% endif %}
         <div class="name">{{ f.name }}{% if f.example %} <span class="example">Example facility — configure facilities.yaml</span>{% endif %}</div>
-        <div>{{ f.address }}</div>
-        <div>{% if f.phone %}Phone {{ f.phone }}{% endif %}{% if f.phone and f.hours %} · {% endif %}{% if f.hours %}{{ f.hours }}{% endif %}{% if f.capabilities %}{% if f.phone or f.hours %} · {% endif %}<span class="muted">{{ f.capabilities | join(', ') }}</span>{% endif %}</div>
-        {%- if f.notes %}<div class="muted small">{{ f.notes }}</div>{% endif %}
+        <div>{{ f.address }}{% if f.phone %} · Phone {{ f.phone }}{% endif %}{% if f.hours %} · {{ f.hours }}{% endif %}</div>
+        {%- if f.capabilities or f.notes %}{% set caps = f.capabilities | join(', ') %}<div class="muted small">{% if caps %}{{ caps[:1] | upper }}{{ caps[1:] }}.{% endif %}{% if f.notes %} {{ f.notes }}{% endif %}</div>{% endif %}
       </div>
       {%- endfor %}
       {%- endif %}
@@ -467,7 +470,7 @@
       {%- endif %}
     </div>
   </div>
-  <div class="end-note">{{ banner }}. {{ disclaimer_title }}. Generated by MukhaSpectra from result <span class="mono">{{ header.result_id }}</span> (v{{ header.result_version }}); re-analysis creates a new result version and never overwrites this one. Rule config {{ r.versions.rule_config.name }} {{ r.versions.rule_config.version }}, sha256 <span class="mono">{{ r.versions.rule_config.sha256 }}</span>.</div>
+  <div class="end-note">Generated by MukhaSpectra from result <span class="mono">{{ header.result_id }}</span> (v{{ header.result_version }}); re-analysis creates a new result version and never overwrites this one. Rule config {{ r.versions.rule_config.name }} {{ r.versions.rule_config.version }}, sha256 <span class="mono">{{ r.versions.rule_config.sha256 }}</span>.</div>
 </section>
 </body>
 </html>

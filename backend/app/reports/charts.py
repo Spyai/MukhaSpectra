@@ -93,8 +93,8 @@ def spectral_plot_svg(
         "ytick.color": MUTED,
     }
     with _MPL_LOCK, matplotlib.rc_context(rc):
-        fig = Figure(figsize=(4.3, 2.1), dpi=100)
-        ax = fig.add_axes((0.13, 0.29, 0.845, 0.665))
+        fig = Figure(figsize=(4.3, 1.9), dpi=100)
+        ax = fig.add_axes((0.13, 0.31, 0.845, 0.645))
         ax.axvspan(540, 580, color="#f4e4e4", zorder=0, lw=0)
         ax.text(
             560,
@@ -174,7 +174,7 @@ def spectral_plot_svg(
             )
 
         # Decorative visible-spectrum strip directly under the x axis.
-        strip = fig.add_axes((0.13, 0.264, 0.845, 0.025))
+        strip = fig.add_axes((0.13, 0.282, 0.845, 0.028))
         lo_nm, hi_nm = ax.get_xlim()
         steps = 120
         colors = [_wavelength_rgb(lo_nm + (hi_nm - lo_nm) * i / (steps - 1)) for i in range(steps)]

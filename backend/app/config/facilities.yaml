@@ -23,7 +23,7 @@ facilities:
     address: "Placeholder address, Example City, Karnataka"
     phone: "+91-XXXXX-XXXXX"
     hours: "Mon–Sat, 09:00–16:00"
-    notes: "Specialist examination and biopsy services."
+    notes: "Ask for the oral medicine department."
     levels: [MODERATE, HIGH, INCONCLUSIVE]
     capabilities: ["specialist examination", "biopsy"]
     example: true

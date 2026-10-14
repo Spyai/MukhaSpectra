@@ -181,6 +181,7 @@ class SpectralView:
     classifier_reasons: list[str]
     classifier_model: str | None
     notes: list[str] = field(default_factory=list)
+    shown_in: int | None = None  # finding number whose block already shows this reading
 
 
 @dataclass
@@ -580,12 +581,9 @@ def _lesion_view(
     # One crop for every panel in the white-light frame, centred on the flagged region(s).
     focus = union_box(boxes)
     af_boxes, af_focus = (boxes, focus) if af_in_wl_frame else (None, None)
+    # The heatmap carries the pipeline's own region outlines and "r1" labels: no brackets.
     heatmap = embed_artifact(
-        reader,
-        arts.heatmap_overlay if arts else None,
-        boxes=boxes,
-        aspect=PANEL_ASPECT,
-        focus=focus,
+        reader, arts.heatmap_overlay if arts else None, aspect=PANEL_ASPECT, focus=focus
     )
     panels = [
         ImagePanel("White light", "as captured", embed_artifact(
@@ -782,6 +780,34 @@ def _lc(text: str) -> str:
     return text[:1].lower() + text[1:]
 
 
+_SITE_PAIRS: tuple[tuple[OralSite, OralSite, str], ...] = (
+    (OralSite.UPPER_LIP_MUCOSA, OralSite.LOWER_LIP_MUCOSA, "upper and lower lip mucosa"),
+    (OralSite.UPPER_GINGIVA, OralSite.LOWER_GINGIVA, "upper and lower gingiva"),
+    (OralSite.HARD_PALATE, OralSite.SOFT_PALATE, "hard and soft palate"),
+    (OralSite.BUCCAL_MUCOSA_RIGHT, OralSite.BUCCAL_MUCOSA_LEFT, "both buccal mucosae"),
+    (OralSite.LATERAL_TONGUE_RIGHT, OralSite.LATERAL_TONGUE_LEFT, "both lateral tongue borders"),
+    (OralSite.RETROMOLAR_RIGHT, OralSite.RETROMOLAR_LEFT, "both retromolar areas"),
+)
+
+
+def site_list_text(sites: list[OralSite]) -> list[str]:
+    """Site names in catalogue order, with complete pairs merged ("hard and soft palate")."""
+    wanted = set(sites)
+    merged: dict[OralSite, str] = {}
+    skip: set[OralSite] = set()
+    for a, b, text in _SITE_PAIRS:
+        if a in wanted and b in wanted:
+            merged[min(a, b, key=list(OralSite).index)] = text
+            skip |= {a, b}
+    out: list[str] = []
+    for site in OralSite:
+        if site in merged:
+            out.append(merged[site])
+        elif site in wanted and site not in skip:
+            out.append(_lc(lb.site_name(site)))
+    return out
+
+
 def _coverage(result: ScreeningResult) -> Coverage:
     present = {OralSite(s.site): s for s in result.sites}
     failed = {OralSite(s) for s in result.qc_summary.sites_failed}
@@ -794,7 +820,7 @@ def _coverage(result: ScreeningResult) -> Coverage:
         imaged=len(present),
         total=N_SITES,
         reference_only=sum(1 for s in present.values() if s.role == SiteRole.REFERENCE_ONLY),
-        not_examined=[_lc(lb.site_name(s)) for s in OralSite if s not in present],
+        not_examined=site_list_text([s for s in OralSite if s not in present]),
         not_assessed=[lb.site_name(s) for s in OralSite if s in failed],
     )
 
@@ -936,6 +962,13 @@ def build_context(
                      _heatmap_scale(_site_threshold(sites, les)))
         for i, les in enumerate(lesions[:MAX_DETAILED_LESIONS], start=1)
     ]  # fmt: skip
+    first_shown: dict[str, int] = {}
+    for view in detailed:  # a reading linked to two findings is plotted once
+        for sv in view.spectral:
+            if sv.reading_id in first_shown:
+                sv.shown_in = first_shown[sv.reading_id]
+            else:
+                first_shown[sv.reading_id] = view.number
     compact = [
         CompactLesionRow(i, lb.site_name(les.site), badge(les.risk_level), lb.num(les.score, 1),
                          _origins_text(les), les.summary)

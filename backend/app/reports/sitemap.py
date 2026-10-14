@@ -39,7 +39,8 @@ ICON = 10.0  # level icon size (units)
 MIN_FONT = min(LABEL_FONT, NARROW_LABEL_FONT, ORIENT_SUB_FONT, MARKER_FONT, LEGEND_FONT)
 
 # The shared catalogue's short labels use "U"/"L" for upper/lower, which clash with "L" = left
-# ("L cheek"). Spell those out here; the catalogue fix is requested from the pipeline owners.
+# ("L cheek"): spell those out, so on the map "R"/"L" only ever mean the patient's right/left.
+# The catalogue fix is requested from the pipeline owners.
 LABEL_OVERRIDES: dict[OralSite, str] = {
     OralSite.UPPER_LIP_MUCOSA: "Upper lip",
     OralSite.LOWER_LIP_MUCOSA: "Lower lip",
@@ -47,9 +48,12 @@ LABEL_OVERRIDES: dict[OralSite, str] = {
     OralSite.LOWER_GINGIVA: "Lower gum",
     OralSite.HARD_PALATE: "Hard palate",
     OralSite.SOFT_PALATE: "Soft palate",
+    # "R tongue side" is longer than the shape at a legible size.
+    OralSite.LATERAL_TONGUE_RIGHT: "R lat. tongue",
+    OralSite.LATERAL_TONGUE_LEFT: "L lat. tongue",
 }
 
-_TOP = 44.0  # orientation strip (two rows) above the map
+_TOP = 39.0  # orientation strip (two rows) above the map
 _MAP_H = 332.0  # mouth outline extends slightly beyond the site viewbox
 _LEGEND_H = 74.0
 _CENTRE_X = SITE_MAP_VIEWBOX[2] / 2
@@ -92,7 +96,7 @@ def _arrow(x: float, y: float, direction: int) -> str:
 
 
 def _orientation(width: float) -> str:
-    y1, y2 = 15.0, 34.0
+    y1, y2 = 14.0, 31.0
     return (
         f'<g class="orientation" font-size="{ORIENT_FONT:g}">'
         + _arrow(12, y1 - 4.5, -1)

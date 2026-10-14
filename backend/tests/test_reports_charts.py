@@ -86,3 +86,32 @@ def test_score_gauge_marks_thresholds_and_score():
     assert "Moderate ≥ 3.0" in text and "High ≥ 6.0" in text
     no_score = _svg_text(score_gauge_svg(None, 3.0, 6.0, RiskLevel.INCONCLUSIVE))
     assert "Score" not in no_score
+
+
+def _font_sizes(svg: str) -> list[float]:
+    import re
+
+    sizes = [float(x) for x in re.findall(r'font-size[:=]\s*"?(\d+(?:\.\d+)?)', svg)]
+    assert sizes
+    return sizes
+
+
+def test_chart_text_is_legible_when_printed():
+    # Spectral plot: 4.3 in (109 mm) drawn into a 90 mm column; text must stay >= ~6 pt.
+    lesion, reference = _readings()
+    spectral = _font_sizes(spectral_plot_svg(lesion, reference))
+    assert min(spectral) * 90 / 109 >= 5.9
+    # Gauge: 290 px drawn at 290 CSS px (0.75 pt per px).
+    gauge = _font_sizes(score_gauge_svg(12.8, 3.0, 6.0, RiskLevel.HIGH, width=290))
+    assert min(gauge) >= 9
+
+
+def test_gauge_threshold_labels_do_not_overlap():
+    import re
+
+    svg = score_gauge_svg(12.8, 3.0, 6.0, RiskLevel.HIGH, width=290)
+    labels = re.findall(r'<text x="([\d.]+)"[^>]*>((?:Moderate|High) ≥ [\d.]+)</text>', svg)
+    assert len(labels) == 2
+    (x1, t1), (x2, t2) = [(float(x), t) for x, t in labels]
+    half = (len(t1) + len(t2)) * 9 * 0.28
+    assert x2 - x1 >= half

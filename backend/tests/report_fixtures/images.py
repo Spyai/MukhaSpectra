@@ -129,13 +129,16 @@ def autofluorescence(
 
 def heatmap_overlay(wl: np.ndarray, af: np.ndarray, threshold: float = 0.75) -> np.ndarray:
     """AF-loss overlay drawn with the pipeline's own renderer (same colour ramp, opacity and
-    "not analysed" desaturation as real results). Only the well-lit tissue centre counts as
-    analysed, so the dark vignetted rim is not painted as loss."""
+    "not analysed" desaturation as real results). Illumination is flat-field corrected and only
+    the well-lit tissue counts as analysed, so the dark vignetted rim is not painted as loss."""
     from mukha_pipeline.af.overlay import render_heatmap_overlay
 
-    g = cv2.GaussianBlur(af[..., 1], (0, 0), 2.0)
-    lit = (_vignette() > 0.62).astype(np.uint8)
-    analysed = cv2.erode(lit, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))) > 0
+    vignette = _vignette()
+    # Flat-field correction (the pipeline normalises illumination the same way), then keep only
+    # the well-lit tissue: the dark rim is "not analysed" (desaturated), never "loss".
+    g = cv2.GaussianBlur(af[..., 1], (0, 0), 2.0) / vignette
+    lit = (vignette > 0.5).astype(np.uint8)
+    analysed = cv2.erode(lit, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))) > 0
     ref = float(np.median(g[analysed]))
     rel = (g / max(ref, 1e-6)).astype(np.float32)
     rel[~analysed] = np.nan

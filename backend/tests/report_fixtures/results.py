@@ -8,6 +8,9 @@ Cases
 * ``low``: LOW, all sites analysed, no findings, khaini user (counselling only).
 * ``inconclusive``: INCONCLUSIVE, uncalibrated device, left buccal mucosa failed QC (weak AF
   signal, glare), no findings, no rule score.
+* ``stress``: the HIGH case pushed to the layout limits: five findings, white-light classifier
+  available, a clinician review that changes the level to MODERATE, long camp / health-worker /
+  patient names and an ABHA-style external ID (identity carried on the case).
 
 ``synthetic=False`` exists only so tests can check the watermark is absent for non-synthetic
 results; such variants are labelled "phantom" provenance and are never written to disk.
@@ -30,6 +33,7 @@ from mukha_pipeline.schema.models import (
     CaptureKind,
     CaptureMetadata,
     CaptureRecord,
+    ClinicianReview,
     ConfounderFlag,
     ConfounderType,
     ConsentInfo,
@@ -81,6 +85,8 @@ from mukha_pipeline.schema.models import (
     VisualAppearance,
     VisualFlag,
     WLAnalysis,
+    WLLabel,
+    WLPrediction,
     WorkingResolution,
 )
 from mukha_pipeline.sites import OralSite, reference_site_for, site_label
@@ -100,6 +106,8 @@ class ReportCase:
     name: str
     result: ScreeningResult
     artifacts: dict[str, bytes] = field(default_factory=dict)
+    identity_name: str | None = None  # PII the API would join at render time (stress case)
+    identity_external_id: str | None = None
 
     def reader(self, key: str) -> bytes | None:
         return self.artifacts.get(key)
@@ -839,7 +847,102 @@ def build_inconclusive(synthetic: bool = True) -> ReportCase:
     return ReportCase("inconclusive", result, artifacts)
 
 
-BUILDERS = {"high": build_high, "low": build_low, "inconclusive": build_inconclusive}
+def build_stress(synthetic: bool = True) -> ReportCase:
+    """HIGH case with five findings, WL classifier output, a modifying review, long strings."""
+    base = build_high(synthetic=synthetic)
+    r = base.result
+    S = OralSite
+    # Three more MODERATE findings at the already-imaged sites (images exist for them).
+    extra = [
+        les.model_copy(
+            update={
+                "lesion_id": f"les-x{i}",
+                "risk_level": RiskLevel.MODERATE,
+                "score": round(les.score - 4.0 - i * 0.6, 1)
+                if les.score - 4.0 - i * 0.6 >= 3.0
+                else 3.0 + i / 10,
+                "summary": f"Additional area of fluorescence loss ({i + 1}); re-examine.",
+            }
+        )
+        for i, les in enumerate([r.lesions[0], r.lesions[1], r.lesions[0]])
+    ]
+    wl_model = ModelInfo(
+        component=ModelComponent.WL_LESION_CLASSIFIER,
+        name="mobilenetv3_wl",
+        version="0.0.1",
+        status=ModelStatus.AVAILABLE,
+        notes="Research weights; not clinically validated.",
+    )
+    sites = []
+    for site in r.sites:
+        if site.site == S.BUCCAL_MUCOSA_LEFT:
+            wl = WLAnalysis(
+                status="ok",
+                model=wl_model,
+                predictions=[
+                    WLPrediction(label=WLLabel.WHITE_PATCH, probability=0.71),
+                    WLPrediction(label=WLLabel.NORMAL, probability=0.20),
+                    WLPrediction(label=WLLabel.RED_PATCH, probability=0.09),
+                ],
+                top_label=WLLabel.WHITE_PATCH,
+            )
+            site = site.model_copy(update={"wl": wl})
+        sites.append(site)
+    models = [
+        wl_model if m.component == ModelComponent.WL_LESION_CLASSIFIER else m
+        for m in r.versions.models
+    ]
+    context = r.context.model_copy(
+        update={
+            "health_worker_name": "Smt. Venkatalakshmi Ramachandraiah Gowda",
+            "screening_site_name": "Primary Health Centre Doddaballapur Taluk outreach camp, "
+            "Ward 14, Anganwadi building",
+        }
+    )
+    review = ClinicianReview(
+        reviewer_name="Dr. A. Rao",
+        reviewer_id="KSDC-12345",
+        agreed=False,
+        modified_risk_level=RiskLevel.MODERATE,
+        notes="Homogeneous leukoplakia-like plaque; biopsy planned. " * 4,
+        signed_at=datetime(2026, 10, 20, 10, 0, tzinfo=UTC),
+    )
+    limitations = [
+        lim
+        if lim.code != "model.wl_unavailable"
+        else Limitation(
+            code="model.wl_research_weights",
+            message="White-light classifier uses research weights that are not clinically "
+            "validated; its output is shown for the clinician and was not used in triage.",
+        )
+        for lim in r.limitations
+    ]
+    result = r.model_copy(
+        update={
+            "limitations": limitations,
+            "lesions": [*r.lesions, *extra],
+            "sites": sites,
+            "context": context,
+            "review": review,
+            "supersedes_result_id": "res-7f3k92qd-v0",
+            "versions": r.versions.model_copy(update={"models": models}),
+        }
+    )
+    return ReportCase(
+        "stress",
+        result,
+        base.artifacts,
+        identity_name="Shivakumaraswamy Narasimhamurthy Venkataramanappa",
+        identity_external_id="ABHA 91-2345-6789-0123",
+    )
+
+
+BUILDERS = {
+    "high": build_high,
+    "low": build_low,
+    "inconclusive": build_inconclusive,
+    "stress": build_stress,
+}
 
 
 def build_case(name: str, synthetic: bool = True) -> ReportCase:

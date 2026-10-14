@@ -85,6 +85,31 @@ def test_bad_facilities_are_rejected(tmp_path: Path, content: str):
         load_facilities(path)
 
 
+def test_facility_levels_and_capabilities(tmp_path: Path):
+    path = tmp_path / "f.yaml"
+    path.write_text(
+        "facilities:\n"
+        "  - {name: A, address: B, levels: [high, MODERATE], capabilities: [biopsy]}\n"
+        "  - {name: C, address: D, levels: HIGH, capabilities: ENT}\n",
+        encoding="utf-8",
+    )
+    a, c = load_facilities(path)
+    assert a.levels == ["HIGH", "MODERATE"] and a.capabilities == ["biopsy"]
+    assert c.levels == ["HIGH"] and c.capabilities == ["ENT"]
+    for bad in ("levels: [URGENT]", "levels: [1, 2]", "capabilities: {x: 1}"):
+        path.write_text(f"facilities:\n  - {{name: A, address: B, {bad}}}\n", encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_facilities(path)
+
+
+def test_default_facilities_route_by_level():
+    by_name = {f.name: f for f in load_facilities()}
+    centre = next(f for name, f in by_name.items() if "Cancer Centre" in name)
+    district = next(f for name, f in by_name.items() if "District Hospital" in name)
+    assert centre.levels == ["HIGH"]
+    assert district.levels == []  # every level
+
+
 def test_missing_explicit_facilities_file_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         load_facilities(tmp_path / "missing.yaml")
@@ -114,8 +139,13 @@ def test_dates_and_timelines():
     assert lb.fmt_datetime(datetime(2026, 1, 2, 3, 4, tzinfo=other)).endswith("(UTC+02:00)")
     assert lb.fmt_datetime(None) == "—"
     assert lb.fmt_date(datetime(2026, 1, 2)) == "02 Jan 2026"
-    assert lb.timeline_text(0).startswith("Today")
+    assert lb.timeline_text(0) == "Same day (at the screening visit)"
     assert lb.timeline_text(14) == "Within 2 weeks (14 days)"
+    start = datetime(2026, 10, 14, 9, 35)
+    assert lb.timeline_text(14, start=start) == "Within 2 weeks — by 28 Oct 2026"
+    assert lb.timeline_text(365, start=start) == "In 12 months — by 14 Oct 2027"
+    assert lb.timeline_text(3, start=start) == "Within 3 days — by 17 Oct 2026"
+    assert lb.timeline_text(0, start=start) == "Same day (at the screening visit)"
     assert lb.timeline_text(365) == "In 12 months"
     assert lb.timeline_text(3) == "Within 3 days"
     assert lb.timeline_text(1) == "Within 1 day"
@@ -123,9 +153,9 @@ def test_dates_and_timelines():
 
 
 def test_position_text():
-    assert lb.position_text(NormPoint(x=0.5, y=0.5)) == "centre of image"
-    assert lb.position_text(NormPoint(x=0.1, y=0.1)) == "upper left of image"
-    assert lb.position_text(NormPoint(x=0.9, y=0.9)) == "lower right of image"
+    assert lb.position_text(NormPoint(x=0.5, y=0.5)) == "In photo: centre"
+    assert lb.position_text(NormPoint(x=0.1, y=0.1)) == "In photo: upper left"
+    assert lb.position_text(NormPoint(x=0.9, y=0.9)) == "In photo: lower right"
     assert lb.position_text(None) == "—"
 
 
@@ -169,7 +199,7 @@ def test_risk_factor_summary_variants():
     assert summary.startswith("Former khaini 10 y")
     for part in [
         "chutta (reverse smoking)",
-        "areca nut (supari) 5 y, 3/day",
+        "areca nut (supari) 5 y (3/day)",
         "alcohol occasionally",
         "lump in the neck",
         "difficulty opening the mouth",
@@ -179,8 +209,29 @@ def test_risk_factor_summary_variants():
         "ill-fitting denture",
     ]:
         assert part in summary, part
+    assert "; " in summary and " · " in summary  # groups by "; ", items by " · "
     groups = lb.risk_factor_groups(rf)
     assert set(groups) == {"Habits", "Symptoms", "History", "Irritants"}
+    only_per_day = RiskFactors.model_validate(
+        {"smokeless_tobacco": {"uses": True, "types": ["gutka"], "per_day": 4}}
+    )
+    assert lb.risk_factor_summary(only_per_day) == "Gutka (4/day)"
+
+
+@pytest.mark.parametrize(
+    ("raw", "masked"),
+    [
+        ("91-2345-6789-0123", "XX-XXXX-XXXX-0123"),
+        ("ABHA 91-2345-6789-0123", "XXXX XX-XXXX-XXXX-0123"),
+        ("HSK-0042", "XXX-0042"),
+        ("123456789012", "XXXXXXXX9012"),
+        ("A12", "XX2"),
+        ("", ""),
+        (None, None),
+    ],
+)
+def test_mask_id_keeps_last_four(raw, masked):
+    assert lb.mask_id(raw) == masked
 
 
 def test_wording_tables_cover_every_enum_value():
@@ -368,6 +419,9 @@ def test_context_edge_cases_degrade_gracefully():
     assert "Session note from the device." in messages
     assert ctx["header"]["health_worker"] == "hw-17"
     assert ctx["patient"]["consent"] == "Not recorded"
+    assert ctx["models_line"] == (
+        "all unvalidated · White-light classifier: not available — not used in triage (see §5)"
+    )
     assert ctx["model_rows"][0].component == "White-light classifier"
     assert ctx["model_rows"][0].status == "Not available — not used in triage"
 
@@ -424,3 +478,131 @@ def test_preview_cli_fixture_and_result_file(tmp_path: Path):
     html = html_out.read_text(encoding="utf-8")
     assert "R-LOW" in html and "https://example.org/r/1" in html
     assert html.count("data:image/jpeg;base64,") == 0  # LOW has no findings, so no panels
+
+
+# --------------------------------------------------------------------------------------------
+# Image crops, time zones, coverage wording, preview defaults
+# --------------------------------------------------------------------------------------------
+
+
+def test_crop_window_fills_the_frame_and_follows_the_region():
+    from app.reports.images import crop_window, union_box
+    from mukha_pipeline.schema.models import NormBox
+
+    # 4:3 image into a 58:30 frame: full width, height cropped, centred on the region.
+    x0, y0, x1, y1 = crop_window((480, 360), (58, 30), NormBox(x=0.4, y=0.05, w=0.2, h=0.1))
+    assert (x0, x1) == (0, 480)
+    assert (x1 - x0) / (y1 - y0) == pytest.approx(58 / 30, rel=0.01)
+    assert y0 == 0  # clamped to the top edge
+    _, y0c, _, y1c = crop_window((480, 360), (58, 30), None)
+    assert y0c == pytest.approx(360 - y1c, abs=1)  # centred without a focus
+    # Portrait images are cropped in height too; a wide image is cropped in width.
+    wx0, _, wx1, _ = crop_window((1000, 200), (58, 30), NormBox(x=0.9, y=0.4, w=0.1, h=0.2))
+    assert wx1 == 1000 and (wx1 - wx0) == pytest.approx(200 * 58 / 30, abs=1)
+    box = union_box([NormBox(x=0.1, y=0.2, w=0.1, h=0.1), NormBox(x=0.5, y=0.6, w=0.2, h=0.3)])
+    assert (box.x, box.y) == (0.1, 0.2)
+    assert box.w == pytest.approx(0.6) and box.h == pytest.approx(0.7)
+    assert union_box([]) is None
+
+
+def test_embed_artifact_crops_and_moves_brackets():
+    import base64
+    import io
+
+    from PIL import Image
+
+    from app.reports.images import embed_artifact
+    from mukha_pipeline.schema.models import NormBox
+
+    buf = io.BytesIO()
+    Image.new("RGB", (480, 360), (200, 120, 120)).save(buf, format="PNG")
+    box = NormBox(x=0.45, y=0.45, w=0.1, h=0.1)
+    img = embed_artifact(lambda key: buf.getvalue(), "x.png", boxes=[box], aspect=(58, 30))
+    assert img.available
+    raw = base64.b64decode(img.data_uri.split(",", 1)[1])
+    with Image.open(io.BytesIO(raw)) as out:
+        assert out.width / out.height == pytest.approx(58 / 30, rel=0.02)
+        # Brackets are drawn around the (re-mapped) region: dark pixels near its corner.
+        cx, cy = round(0.43 * out.width), round(out.height * (0.43 * 360 - 56) / 248)
+        patch = out.crop((cx - 4, cy - 4, cx + 4, cy + 4)).convert("L")
+        assert patch.getextrema()[0] < 80
+
+
+def test_display_timezone_fallbacks():
+    from app.reports.context import IST_FALLBACK, display_timezone
+
+    ist = display_timezone("Asia/Kolkata")
+    assert datetime(2026, 10, 14, 4, 5, tzinfo=UTC).astimezone(ist).strftime("%H:%M") == "09:35"
+    assert display_timezone(None) is UTC
+    assert display_timezone("Not/AZone") is UTC
+    assert IST_FALLBACK.utcoffset(None) == timedelta(hours=5, minutes=30)
+
+
+def test_naive_datetimes_are_treated_as_utc():
+    case = cached_case("high")
+    naive = case.result.context.model_copy(update={"captured_at": datetime(2026, 10, 14, 4, 5)})
+    result = case.result.model_copy(update={"context": naive})
+    ctx = build_context(result, case.reader, identity=None, options=default_options(case))
+    assert ctx["header"]["captured_at"] == "14 Oct 2026, 09:35 IST"
+
+
+def test_site_list_text_merges_pairs():
+    from app.reports.context import site_list_text
+    from mukha_pipeline.sites import OralSite as S
+
+    assert site_list_text([S.HARD_PALATE, S.SOFT_PALATE, S.RETROMOLAR_LEFT]) == [
+        "hard and soft palate",
+        "left retromolar area",
+    ]
+    assert site_list_text([S.BUCCAL_MUCOSA_LEFT, S.BUCCAL_MUCOSA_RIGHT]) == ["both buccal mucosae"]
+    assert site_list_text([]) == []
+
+
+def test_reference_site_shows_reference_not_low_pill():
+    case = cached_case("high")
+    ctx = build_context(case.result, case.reader, identity=None, options=default_options(case))
+    rows = {r.site: r for r in ctx["qc"]["sites"]}
+    assert not rows["Right buccal mucosa"].show_level
+    assert rows["Left buccal mucosa"].show_level
+    assert all(r.qc in ("Passed", "Failed") for r in rows.values())  # no QC scores
+
+
+def test_preview_cli_inconclusive_has_no_qr(tmp_path: Path):
+    from app.reports.preview import main
+
+    out = tmp_path / "inc.html"
+    assert main(["--fixture", "inconclusive", "--out", str(out)]) == 0
+    html = out.read_text(encoding="utf-8")
+    assert "QR code not included" in html
+    out = tmp_path / "stress.html"
+    assert main(["--fixture", "stress", "--out", str(out)]) == 0
+    assert "XXXX XX-XXXX-XXXX-0123" in out.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("agreed", "modified", "expected"),
+    [
+        (
+            True,
+            None,
+            "Clinician-reviewed: agrees with the device level (HIGH) — Dr. B, 20 Oct 2026",
+        ),
+        (False, "HIGH", "Clinician-reviewed: agrees with the device level (HIGH) — Dr. B, 20 Oct"),
+        (False, None, "Clinician-reviewed: see the reviewer's notes (device level HIGH) — Dr. B"),
+    ],
+)
+def test_review_lines_without_a_level_change(agreed, modified, expected):
+    from mukha_pipeline.schema.models import ClinicianReview
+
+    case = cached_case("high")
+    review = ClinicianReview(
+        reviewer_name="Dr. B",
+        agreed=agreed,
+        modified_risk_level=modified,
+        signed_at=datetime(2026, 10, 20, 4, 0, tzinfo=UTC),
+    )
+    result = case.result.model_copy(update={"review": review})
+    ctx = build_context(result, case.reader, identity=None, options=default_options(case))
+    assert ctx["triage"]["reviewed_badge"] is None
+    assert ctx["triage"]["reviewer_line"].startswith(expected)
+    assert ctx["header"]["review_status"] == "Clinician-reviewed"

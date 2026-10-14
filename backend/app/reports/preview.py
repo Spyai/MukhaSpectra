@@ -38,7 +38,10 @@ def _fixture(name: str) -> tuple[ScreeningResult, ArtifactReader, PatientIdentit
     except ImportError as exc:  # pragma: no cover - only in installs without tests
         raise SystemExit(f"report fixtures not found under {TESTS_DIR}: {exc}") from exc
     case = build_case(name)
-    identity = PatientIdentity(name="Demo Patient (synthetic)", external_id="DEMO-0001")
+    identity = PatientIdentity(
+        name=getattr(case, "identity_name", None) or "Demo Patient (synthetic)",
+        external_id=getattr(case, "identity_external_id", None) or "DEMO-0001",
+    )
     return case.result, case.reader, identity
 
 
