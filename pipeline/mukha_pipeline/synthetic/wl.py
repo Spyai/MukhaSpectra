@@ -136,7 +136,9 @@ def _new_layers(ctx: _Ctx, base: RGB, deep: RGB, pale: RGB) -> _Layers:
 def _add_shadow(ctx: _Ctx, lay: _Layers, cx: float, cy: float, rx: float, ry: float) -> None:
     """Dark oral cavity (vestibule, oropharynx) as a soft ellipse with a wobbly edge."""
     wobble = 0.05 * ctx.noise(170, 2) + 0.012 * ctx.noise(45, 2)
-    ell = soft_ellipse(ctx.X, ctx.Y, cx, cy, rx, ry, 0.07, wobble)
+    # A fairly crisp silhouette; the gradual darkening towards the cavity comes from ambient
+    # occlusion, so tissue stays clearly tissue right up to its edge.
+    ell = soft_ellipse(ctx.X, ctx.Y, cx, cy, rx, ry, 0.025, wobble)
     lay.shadow = np.maximum(lay.shadow, ell)
 
 
@@ -164,13 +166,13 @@ def _line_field(
     dist_px = (across - centre) * size
     w = max(width_px * ctx.s, 1.0)
     prof = np.exp(-0.5 * (dist_px / w) ** 2).astype(np.float32)
-    fade = smoothstep(start - 0.05, start + 0.05, along) * (1.0 - smoothstep(end - 0.05, end + 0.05, along))
+    fade = smoothstep(start - 0.05, start + 0.05, along) * (
+        1.0 - smoothstep(end - 0.05, end + 0.05, along)
+    )
     return prof * fade
 
 
-def _papillae(
-    ctx: _Ctx, region: np.ndarray, density: float
-) -> tuple[np.ndarray, np.ndarray]:
+def _papillae(ctx: _Ctx, region: np.ndarray, density: float) -> tuple[np.ndarray, np.ndarray]:
     """Filiform (dense, tiny, whitish tips) and fungiform (sparse, red dots) papillae."""
     area = ctx.h * ctx.w
     n_fil = int(density * area / (55.0 * ctx.s**2) * float(region.mean()))
@@ -256,8 +258,9 @@ def _vessel_map(ctx: _Ctx, n_trees: int, weight: np.ndarray) -> np.ndarray:
             value = int(255 * min(1.0, 0.3 + 0.22 * width))
             thick = max(1, int(round(width * ctx.s)))
             arr = np.round(np.asarray(pts) * 16).astype(np.int32)
-            cv2.polylines(canvas, [arr], False, value, thickness=thick, lineType=cv2.LINE_AA,
-                          shift=4)
+            cv2.polylines(
+                canvas, [arr], False, value, thickness=thick, lineType=cv2.LINE_AA, shift=4
+            )
     vessels = blur(canvas.astype(np.float32) / 255.0, 0.6 * ctx.s)
     fade = smoothstep(-0.7, 0.6, ctx.noise(90, 3))  # vessels dive in and out of view
     return np.clip(vessels, 0.0, 1.0) * (0.3 + 0.7 * fade) * np.clip(weight, 0.0, 1.0)
@@ -366,10 +369,17 @@ def _paint_lateral_tongue(ctx: _Ctx) -> _Layers:
     """Tongue pulled aside: dorsal silhouette at the top, lateral border, ventral surface below."""
     lay = _new_layers(ctx, (0.82, 0.45, 0.46), (0.74, 0.28, 0.31), (0.86, 0.58, 0.57))
     phase = float(ctx.rng.uniform(0, 2 * np.pi))
-    top = 0.10 + 0.05 * np.sin(np.pi * ctx.X + phase * 0.2) + 0.01 * ctx.noise(120, 2)
-    lay.shadow = np.maximum(lay.shadow, 1.0 - smoothstep(-0.02, 0.02, ctx.Y - top))
+    # Undulating dorsal silhouette plus the posterior (oropharyngeal) shadow give the frame
+    # structure in both directions; a frame of only horizontal edges is ambiguous to align.
+    top = (
+        0.11
+        + 0.035 * np.sin(2 * np.pi * 1.3 * ctx.X + phase)
+        + 0.02 * np.sin(np.pi * ctx.X)
+        + 0.01 * ctx.noise(120, 2)
+    )
+    lay.shadow = np.maximum(lay.shadow, 1.0 - smoothstep(-0.006, 0.006, ctx.Y - top))
     _add_shadow(ctx, lay, 0.5, 1.14, 0.80, 0.19)
-    _add_shadow(ctx, lay, 1.10, 0.50, 0.12, 0.40)
+    _add_shadow(ctx, lay, 1.08, 0.46, 0.16, 0.42)
     rel = ctx.Y - top
     dorsum = 1.0 - smoothstep(0.17, 0.26, rel)
     ventral = smoothstep(0.50, 0.60, rel)
@@ -391,7 +401,7 @@ def _paint_lateral_tongue(ctx: _Ctx) -> _Layers:
     vein_map = _draw_bands(ctx, veins, 15.0) * ventral
     lay.overlays.append(((0.56, 0.32, 0.48), 0.38 * vein_map))
     lay.vessel_weight = 0.3 + 0.7 * (1.0 - dorsum)
-    lay.vessel_trees = 7
+    lay.vessel_trees = 12
     lay.relief += 1.2 * ctx.noise(100, 2)
     return lay
 
@@ -400,7 +410,7 @@ def _paint_tongue_dorsum(ctx: _Ctx) -> _Layers:
     lay = _new_layers(ctx, (0.80, 0.46, 0.46), (0.74, 0.30, 0.33), (0.86, 0.60, 0.58))
     half_width = 0.47 - 0.13 * np.clip((ctx.Y - 0.5) / 0.5, 0.0, 1.0) ** 2
     d = np.abs(ctx.X - 0.5) / half_width + 0.015 * ctx.noise(150, 2)
-    tongue = 1.0 - smoothstep(0.95, 1.02, d)
+    tongue = 1.0 - smoothstep(0.985, 1.005, d)
     lay.shadow = np.maximum(lay.shadow, 1.0 - tongue)
     _add_shadow(ctx, lay, 0.5, -0.12, 0.36, 0.20)
     region = tongue.copy()
@@ -409,8 +419,9 @@ def _paint_tongue_dorsum(ctx: _Ctx) -> _Layers:
     coat = region * (0.25 + 0.75 * coat_field)
     lay.overlays.append(((0.89, 0.82, 0.74), 0.45 * coat * fil + 0.16 * coat))
     lay.overlays.append(((0.83, 0.30, 0.33), 0.5 * fun * smoothstep(0.35, 0.8, ctx.Y)))
-    sulcus = _line_field(ctx, horizontal=False, pos=0.5, width_px=5.0, amp=0.008, start=0.05,
-                         end=0.85)
+    sulcus = _line_field(
+        ctx, horizontal=False, pos=0.5, width_px=5.0, amp=0.008, start=0.05, end=0.85
+    )
     lay.overlays.append(((0.70, 0.34, 0.37), 0.35 * sulcus))
     lay.relief += 1.6 * fil + 1.0 * fun - 3.0 * sulcus + 1.5 * ctx.noise(100, 2)
     lay.vessel_weight = np.full(ctx.shape, 0.25, np.float32)
@@ -517,8 +528,9 @@ def _paint_ventral_fom(ctx: _Ctx) -> _Layers:
         _smooth_curve(ctx, (0.62, -0.02), (0.56, 0.50), -0.06),
     ]
     lay.overlays.append(((0.56, 0.32, 0.48), 0.4 * _draw_bands(ctx, veins, 16.0)))
-    frenum = _line_field(ctx, horizontal=False, pos=0.5, width_px=7.0, amp=0.004, start=0.32,
-                         end=0.86)
+    frenum = _line_field(
+        ctx, horizontal=False, pos=0.5, width_px=7.0, amp=0.004, start=0.32, end=0.86
+    )
     crease = _line_field(ctx, horizontal=True, pos=0.55, width_px=8.0, amp=0.025, freq=1.0)
     caruncles = _bumps(ctx, [(0.46, 0.8), (0.54, 0.8)], 9.0)
     lay.overlays.append(((0.88, 0.62, 0.64), 0.35 * frenum + 0.3 * caruncles))
@@ -654,8 +666,18 @@ def _speculars(ctx: _Ctx, region: np.ndarray, hot: np.ndarray, gloss: float) -> 
             centre = (int(round((x + ox) * 16)), int(round((y + oy) * 16)))
             axes = (max(1, int(round(a * 16))), max(1, int(round(b * 16))))
             value = int(255 * (rng.uniform(0.35, 0.6) if patch else rng.uniform(0.75, 1.0)))
-            cv2.ellipse(canvas, centre, axes, float(np.rad2deg(ang)) + rng.normal(0, 15), 0, 360,
-                        value, -1, cv2.LINE_AA, 4)
+            cv2.ellipse(
+                canvas,
+                centre,
+                axes,
+                float(np.rad2deg(ang)) + rng.normal(0, 15),
+                0,
+                360,
+                value,
+                -1,
+                cv2.LINE_AA,
+                4,
+            )
     core = blur(canvas.astype(np.float32) / 255.0, 0.7 * ctx.s)
     halo = blur(core, 3.5 * ctx.s)
     return np.clip(core + 0.6 * halo, 0.0, 1.0) * region

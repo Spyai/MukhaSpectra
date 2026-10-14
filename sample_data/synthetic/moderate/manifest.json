@@ -1,0 +1,133 @@
+{
+  "patient": {
+    "name": "SYNTHETIC PATIENT MODERATE",
+    "external_id": "SYN-MOD-001",
+    "age_years": 46,
+    "sex": "male"
+  },
+  "consent": {
+    "consent_recorded": true,
+    "method": "checkbox",
+    "language": "en",
+    "research_use_opt_in": false
+  },
+  "risk_factors": {
+    "smokeless_tobacco": {
+      "uses": true,
+      "former": false,
+      "types": [
+        "khaini"
+      ],
+      "years": 12.0,
+      "per_day": 6.0
+    },
+    "smoking": {
+      "uses": false,
+      "former": false,
+      "types": [],
+      "years": null,
+      "per_day": null
+    },
+    "areca_nut": {
+      "uses": false,
+      "former": false,
+      "years": null,
+      "per_day": null
+    },
+    "alcohol": {
+      "uses": false,
+      "frequency": "never"
+    },
+    "prior_oral_lesion": false,
+    "prior_oral_cancer": false,
+    "symptoms": {
+      "non_healing_ulcer_over_2_weeks": false,
+      "white_patch": false,
+      "red_patch": false,
+      "lump": false,
+      "pain": false,
+      "difficulty_opening_mouth": false,
+      "bleeding": false,
+      "burning_sensation": false,
+      "neck_lump": false
+    },
+    "irritants": {
+      "sharp_tooth": true,
+      "ill_fitting_denture": false
+    }
+  },
+  "context": {
+    "screening_site_name": "SYNTHETIC DEMO CAMP",
+    "health_worker_id": "SYN-HW-01"
+  },
+  "data_provenance": "synthetic",
+  "sites": [
+    {
+      "site": "buccal_mucosa_left",
+      "role": "examined",
+      "wl": "SYNTHETIC_buccal_mucosa_left_wl",
+      "af": "SYNTHETIC_buccal_mucosa_left_af",
+      "dark": "SYNTHETIC_buccal_mucosa_left_dark",
+      "visual_flag": {
+        "lesion_seen": true,
+        "appearance": [
+          "white_patch"
+        ],
+        "description": "SYNTHETIC case: homogeneous white patch on the left buccal mucosa next to a sharp molar cusp; does not wipe off."
+      },
+      "diascopy": "not_done",
+      "px_per_mm": null,
+      "device_id": "SYN-SCOUT-01",
+      "firmware_version": "synthetic"
+    },
+    {
+      "site": "buccal_mucosa_right",
+      "role": "reference_only",
+      "wl": "SYNTHETIC_buccal_mucosa_right_wl",
+      "af": "SYNTHETIC_buccal_mucosa_right_af",
+      "dark": "SYNTHETIC_buccal_mucosa_right_dark",
+      "visual_flag": {
+        "lesion_seen": false,
+        "appearance": [],
+        "description": null
+      },
+      "diascopy": "not_done",
+      "px_per_mm": null,
+      "device_id": "SYN-SCOUT-01",
+      "firmware_version": "synthetic"
+    },
+    {
+      "site": "lateral_tongue_left",
+      "role": "examined",
+      "wl": "SYNTHETIC_lateral_tongue_left_wl",
+      "af": "SYNTHETIC_lateral_tongue_left_af",
+      "dark": "SYNTHETIC_lateral_tongue_left_dark",
+      "visual_flag": {
+        "lesion_seen": false,
+        "appearance": [],
+        "description": null
+      },
+      "diascopy": "not_done",
+      "px_per_mm": null,
+      "device_id": "SYN-SCOUT-01",
+      "firmware_version": "synthetic"
+    },
+    {
+      "site": "lateral_tongue_right",
+      "role": "examined",
+      "wl": "SYNTHETIC_lateral_tongue_right_wl",
+      "af": "SYNTHETIC_lateral_tongue_right_af",
+      "dark": "SYNTHETIC_lateral_tongue_right_dark",
+      "visual_flag": {
+        "lesion_seen": false,
+        "appearance": [],
+        "description": null
+      },
+      "diascopy": "not_done",
+      "px_per_mm": null,
+      "device_id": "SYN-SCOUT-01",
+      "firmware_version": "synthetic"
+    }
+  ],
+  "spectral_file": "spectrum"
+}

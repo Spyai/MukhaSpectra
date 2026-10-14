@@ -225,7 +225,9 @@ def generate_af_from_wl(
     edge_dist = cv2.distanceTransform(np.pad(tissue.astype(np.uint8), 1), cv2.DIST_L2, 5)
     interior = np.clip(edge_dist[1:-1, 1:-1] / (12.0 * s), 0.0, 1.0)
     texture = 1.0 + (texture - 1.0) * interior
-    texture = np.where(fvl_zone, np.minimum(texture, 1.0), texture)
+    # Inside the lesion the WL texture (plaque plates, fissures, speckles) is damped, not
+    # copied: the FVL depth alone sets how dark the region is.
+    texture = np.where(fvl_zone, 1.0 + 0.3 * (texture - 1.0), texture)
 
     X, Y = norm_grids((h, w))
     cx, cy = 0.5 + geo_rng.uniform(-0.08, 0.08), 0.45 + geo_rng.uniform(-0.08, 0.08)
@@ -240,7 +242,8 @@ def generate_af_from_wl(
     tissue_rgb = np.stack([red + 0.01, green, _BLUE_PER_GREEN * green + 0.005], axis=-1)
     teeth_lum = lum / max(float(np.percentile(lum[teeth], 90)), 1e-3) if teeth.any() else lum
     teeth_rgb = _TEETH_AF * (np.clip(teeth_lum, 0.4, 1.05) * torch)[..., None]
-    # Dilate before blurring so tissue keeps full signal up to its own edge.
+    # Dilate before blurring so tissue keeps full signal up to (and a little past) its edge:
+    # a segmenter may count the last dim pixels before the cavity as mucosa.
     tw = blur(dilate(tissue, 1.5 * s).astype(np.float32), 1.0 * s)
     thw = blur(dilate(teeth, 1.5 * s).astype(np.float32), 1.0 * s)
     total = np.maximum(tw + thw, 1.0)
@@ -257,8 +260,6 @@ def generate_af_from_wl(
         highlights = blur(np.clip(af - 0.45, 0.0, None), 5 * s)
         af = af + bloom * (0.08 * glow + 0.25 * highlights)
     af = np.clip(af, 0.0, 1.0).astype(np.float32)
-    if watermark:
-        af = watermark_synthetic(af)  # before the warp, so the stamp moves with the scene
 
     transform = random_misalignment(warp_rng, (h, w)) if misalign else np.eye(3)
     if misalign:
@@ -273,6 +274,9 @@ def generate_af_from_wl(
     shot = np.sqrt(0.00025 * np.clip(af, 0.0, None)) * noise_rng.standard_normal(af.shape)
     read = 0.003 * noise_rng.standard_normal(af.shape)
     out = np.clip(af + pedestal + shot + read, 0.0, 1.0).astype(np.float32)
+    if watermark:
+        # Camera-fixed text, identical to the WL stamp's text pixels; see watermark.py.
+        out = watermark_synthetic(out, band=False)
     if return_transform:
         return out, transform
     return out
@@ -283,12 +287,14 @@ def generate_dark_frame(
     rng: np.random.Generator,
     level: float = DEFAULT_DARK_LEVEL,
     *,
-    watermark: bool = True,
+    watermark: bool = False,
 ) -> np.ndarray:
     """Dark frame (all LEDs off, AF exposure): pedestal, faint amp glow, hot pixels, noise.
 
-    ``shape`` is (H, W) or (H, W, 3). The faint SYNTHETIC text sits just above the pedestal so
-    that dark subtraction is not disturbed.
+    ``shape`` is (H, W) or (H, W, 3). Not stamped by default: dark subtraction would carry any
+    label into the AF image (and break the camera-fixed label that registration ignores), so
+    dark frames are labelled SYNTHETIC by file name and metadata instead. ``watermark=True``
+    adds faint text just above the pedestal for standalone use.
     """
     h, w = int(shape[0]), int(shape[1])
     X, Y = norm_grids((h, w))

@@ -7,6 +7,11 @@ The stamp is a near-opaque dark label flush with the bottom-left corner. Design 
   glare threshold (value < 0.96) so it never counts as specular highlight.
 * Small (about 2% of the frame) and in a corner, so it never covers the lesion: the scene
   generator keeps lesions out of :func:`stamp_mask`.
+* Camera-fixed: the text sits at the same pixels in the WL and the AF capture, like a label
+  burned in by the capture app. Registration recognises pixel-identical overlays and ignores
+  them; a label that moved with the tissue would instead give feature matching a degenerate
+  cluster of keypoints. AF captures get the text without the dark band (``band=False``), so
+  after registration no dark label can land on mucosa and read as fluorescence loss.
 """
 
 from __future__ import annotations
@@ -109,12 +114,13 @@ def stamp_mask(shape: tuple[int, ...]) -> np.ndarray:
     return _band_alpha(shape) > 0.0
 
 
-def watermark_synthetic(img: np.ndarray, *, dim: bool = False) -> np.ndarray:
+def watermark_synthetic(img: np.ndarray, *, dim: bool = False, band: bool = True) -> np.ndarray:
     """Return a copy of ``img`` with a visible "SYNTHETIC" stamp in the bottom-left corner.
 
     Accepts float images in [0, 1] or uint8, RGB (H, W, 3) or grey (H, W); returns the same
     dtype and shape. ``dim=True`` draws only faint text a little above the image's own median
     level, for dark frames, where a bright label would distort dark subtraction.
+    ``band=False`` draws the text without its dark backing band (used for AF captures).
     """
     if img.ndim not in (2, 3):
         raise ValueError(f"expected an (H, W) or (H, W, C) image, got shape {img.shape}")
@@ -131,8 +137,9 @@ def watermark_synthetic(img: np.ndarray, *, dim: bool = False) -> np.ndarray:
         level = float(np.median(f)) + _DIM_TEXT_DELTA
         f = f * (1.0 - text) + text * level
     else:
-        band = (_band_alpha(f.shape) * _BAND_OPACITY)[..., None]
-        f = f * (1.0 - band) + band * band_col
+        if band:
+            cover = (_band_alpha(f.shape) * _BAND_OPACITY)[..., None]
+            f = f * (1.0 - cover) + cover * band_col
         f = f * (1.0 - text) + text * text_col
     f = np.clip(f, 0.0, 1.0)
     if grey:

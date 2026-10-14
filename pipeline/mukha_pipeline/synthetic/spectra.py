@@ -123,7 +123,9 @@ def channel_response(channel: str, wl: np.ndarray = _WL) -> np.ndarray:
     """Spectral response of one AS7341 channel (peak-normalised)."""
     if channel == "CLEAR":
         # Unfiltered silicon photodiode: broad, rising into the red, cut by the IR filter.
-        return np.clip((wl - 350.0) / 450.0, 0.0, 1.0) * (1.0 - 1.0 / (1.0 + np.exp(-(wl - 880) / 25)))
+        return np.clip((wl - 350.0) / 450.0, 0.0, 1.0) * (
+            1.0 - 1.0 / (1.0 + np.exp(-(wl - 880) / 25))
+        )
     centre, fwhm = _FILTERS[channel]
     return _gauss(wl, centre, fwhm)
 
@@ -367,7 +369,9 @@ def spectral_inputs_to_csv(
     writer.writeheader()
     if isinstance(calibration, SpectralCalibration):
         white_sets = {
-            "white": [SpectralFrame(calibration.white, calibration.gain, calibration.integration_ms)],
+            "white": [
+                SpectralFrame(calibration.white, calibration.gain, calibration.integration_ms)
+            ],
             "white_dark": [
                 SpectralFrame(calibration.dark, calibration.gain, calibration.integration_ms)
             ],
