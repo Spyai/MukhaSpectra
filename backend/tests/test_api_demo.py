@@ -7,10 +7,10 @@ import json
 
 import numpy as np
 import pytest
+from api_fakes import make_fake_demo_patient
 from PIL import Image
 from sqlalchemy import select
 
-from api_fakes import make_fake_demo_patient
 from app.models import CalibrationRecord, Capture, PatientIdentity, Screening
 from app.services.demo import encode_png_rgb, spectral_inputs_to_files
 
@@ -56,8 +56,11 @@ def test_demo_high(client, services, db, fake_pipeline):
 
     # version 1 analysed exactly the pixels that were stored
     (inp,) = fake_pipeline.analyses
-    stored = services.storage.get(next(c for c in captures if c.kind == "white_light"
-                                       and c.site == inp.sites[0].site.value).storage_key)
+    stored = services.storage.get(
+        next(
+            c for c in captures if c.kind == "white_light" and c.site == inp.sites[0].site.value
+        ).storage_key
+    )
     decoded = np.asarray(Image.open(io.BytesIO(stored)).convert("RGB"), np.float32) / 255.0
     assert np.array_equal(decoded, inp.sites[0].wl.image)
 
@@ -80,7 +83,10 @@ def test_demo_reanalysis_reproduces_the_inputs(client, fake_pipeline):
     for r in first.spectral:
         twin = by_id[r.reading_id]
         assert (twin.site, twin.role, twin.reference_reading_id) == (
-            r.site, r.role, r.reference_reading_id)
+            r.site,
+            r.role,
+            r.reference_reading_id,
+        )
         assert [f.channels for f in twin.lit] == [f.channels for f in r.lit]
         assert [f.gain for f in twin.lit] == [f.gain for f in r.lit]
         assert twin.meta.source_adapter == "synthetic"
@@ -90,7 +96,10 @@ def test_demo_reanalysis_reproduces_the_inputs(client, fake_pipeline):
     assert np.allclose(cal_a.color_matrix, cal_b.color_matrix)
     assert cal_b.af_scale == cal_a.af_scale and cal_b.calibration_id == cal_a.calibration_id
     assert cal_b.expires_at == cal_a.expires_at and cal_b.synthetic
-    sp_a, sp_b = first.spectral_calibrations["confirm-syn"], second.spectral_calibrations["confirm-syn"]
+    sp_a, sp_b = (
+        first.spectral_calibrations["confirm-syn"],
+        second.spectral_calibrations["confirm-syn"],
+    )
     assert (sp_b.dark, sp_b.white, sp_b.gain) == (sp_a.dark, sp_a.white, sp_a.gain)
     assert sp_b.created_at == sp_a.created_at
 
@@ -105,7 +114,9 @@ def test_demo_report_uses_the_synthetic_identity(client, fake_renderer):
 def test_unknown_demo_kind_is_422(client, db):
     res = client.post("/api/v1/demo/screenings/extreme")
     assert res.status_code == 422
-    assert res.json() == {"detail": "Unknown demo patient 'extreme'. Use one of: low, moderate, high."}
+    assert res.json() == {
+        "detail": "Unknown demo patient 'extreme'. Use one of: low, moderate, high."
+    }
     assert db.scalars(select(Screening)).all() == []
 
 
@@ -144,8 +155,9 @@ def test_encode_png_rgb_variants():
 
 def test_spectral_inputs_to_files_groups_by_device():
     readings = make_fake_demo_patient("high").spectral
-    readings[1].meta = readings[1].meta.model_copy(update={"device_id": "other-probe",
-                                                           "synthetic": False})
+    readings[1].meta = readings[1].meta.model_copy(
+        update={"device_id": "other-probe", "synthetic": False}
+    )
     files = dict(spectral_inputs_to_files(readings))
     assert set(files) == {"confirm-syn", "other-probe"}
     doc = json.loads(files["other-probe"])

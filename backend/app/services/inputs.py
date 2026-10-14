@@ -273,7 +273,9 @@ class CaptureStore:
                         site=OralSite(entry["site"]),
                         wl=self._image_capture(captures[refs["wl"]]),
                         af=self._image_capture(captures[refs["af"]]),
-                        dark=self._image_capture(captures[refs["dark"]]) if refs.get("dark") else None,
+                        dark=self._image_capture(captures[refs["dark"]])
+                        if refs.get("dark")
+                        else None,
                         role=SiteRole(entry.get("role", SiteRole.EXAMINED)),
                         visual_flag=VisualFlag.model_validate(entry.get("visual_flag") or {}),
                         diascopy=Diascopy(entry.get("diascopy", Diascopy.NOT_DONE)),

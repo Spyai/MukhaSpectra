@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 from fastapi import Request
@@ -48,8 +47,8 @@ def create_db_engine(url: str) -> Engine:
         kwargs: dict[str, Any] = {"connect_args": {"check_same_thread": False}}
         if database in (None, "", ":memory:"):
             kwargs["poolclass"] = StaticPool
-        else:
-            Path(database).expanduser().parent.mkdir(parents=True, exist_ok=True)
+        # The database folder is created by app.migrations.prepare_database at startup, so
+        # building an engine (e.g. importing app.main) has no filesystem side effects.
         engine = create_engine(url, **kwargs)
         event.listen(engine, "connect", _sqlite_on_connect)
         return engine

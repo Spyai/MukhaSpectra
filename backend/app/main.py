@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -23,6 +25,7 @@ from app.db import create_db_engine, create_session_factory
 from app.errors import install_error_handlers
 from app.migrations import prepare_database, upgrade_to_head
 from app.routers import API_PREFIX, api_router
+from app.schemas import UploadManifest
 from app.services import build_services
 from app.services.pipeline_bridge import PipelineBridge
 from app.services.reports import ReportRenderer
@@ -74,10 +77,37 @@ class SecurityHeadersMiddleware:
                 headers.setdefault("X-Content-Type-Options", "nosniff")
                 headers.setdefault("Referrer-Policy", "no-referrer")
                 headers.setdefault("X-Frame-Options", "DENY")
-                headers.setdefault("X-MukhaSpectra-Notice", "Research prototype - not for clinical use")
+                headers.setdefault(
+                    "X-MukhaSpectra-Notice", "Research prototype - not for clinical use"
+                )
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+def _install_openapi(app: FastAPI) -> None:
+    """Add the UploadManifest schema (the upload form is parsed by hand, so FastAPI cannot
+    discover it) to the generated OpenAPI document."""
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=app.openapi_tags,
+        )
+        manifest = UploadManifest.model_json_schema(ref_template="#/components/schemas/{model}")
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        for name, definition in manifest.pop("$defs", {}).items():
+            components.setdefault(name, definition)
+        components["UploadManifest"] = manifest
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi  # type: ignore[method-assign]
 
 
 def create_app(
@@ -133,6 +163,7 @@ def create_app(
     )
     install_error_handlers(app)
     app.include_router(api_router, prefix=API_PREFIX)
+    _install_openapi(app)
     return app
 
 

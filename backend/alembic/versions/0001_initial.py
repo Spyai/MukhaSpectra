@@ -172,9 +172,7 @@ def upgrade() -> None:
         sa.Column("storage_key", sa.String(length=512), nullable=True),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_calibration_records")),
     )
-    op.create_index(
-        op.f("ix_calibration_records_device_id"), "calibration_records", ["device_id"]
-    )
+    op.create_index(op.f("ix_calibration_records_device_id"), "calibration_records", ["device_id"])
 
     op.create_table(
         "audit_events",

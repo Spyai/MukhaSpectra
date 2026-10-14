@@ -100,9 +100,7 @@ class AppReportsRenderer:
 
         return render_clinician_report_html(result, artifacts, identity=identity, options=options)
 
-    def render_site_map_svg(
-        self, result: ScreeningResult, *, width: int, show_legend: bool
-    ) -> str:
+    def render_site_map_svg(self, result: ScreeningResult, *, width: int, show_legend: bool) -> str:
         from app.reports import render_site_map_svg
 
         return render_site_map_svg(result, width=width, show_legend=show_legend)
@@ -271,7 +269,9 @@ class ReportService:
             report.id,
             {**detail, "kind": CLINICIAN_REPORT, "sha256": report.sha256},
         )
-        record_event(session, AuditAction.REPORT_VIEWED, "report", report.id, {**detail, "format": "pdf"})
+        record_event(
+            session, AuditAction.REPORT_VIEWED, "report", report.id, {**detail, "format": "pdf"}
+        )
         session.commit()
         return pdf
 

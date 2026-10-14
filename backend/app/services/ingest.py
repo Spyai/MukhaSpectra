@@ -215,7 +215,9 @@ class IngestService:
         firmware = context.firmware_versions or sorted(
             {e.firmware_version for e in manifest.sites if e.firmware_version}
         )
-        context = context.model_copy(update={"device_ids": device_ids, "firmware_versions": firmware})
+        context = context.model_copy(
+            update={"device_ids": device_ids, "firmware_versions": firmware}
+        )
         screening_id = new_id()
         inp = ScreeningInput(
             screening_id=screening_id,

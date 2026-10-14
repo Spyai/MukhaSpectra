@@ -251,9 +251,7 @@ class AnalysisService:
             "result_version": version,
             "supersedes_result_id": supersedes,
         }
-        updates: dict[str, Any] = {
-            k: v for k, v in expected.items() if getattr(result, k) != v
-        }
+        updates: dict[str, Any] = {k: v for k, v in expected.items() if getattr(result, k) != v}
         if updates:
             logger.warning("Pipeline result did not carry the expected %s", sorted(updates))
         updates["created_at"] = utcnow()

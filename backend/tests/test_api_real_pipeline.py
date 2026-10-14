@@ -12,9 +12,9 @@ import re
 
 import numpy as np
 import pytest
+from api_fakes import default_files, default_manifest, make_fake_demo_patient, spectral_csv_bytes
 from PIL import Image
 
-from api_fakes import default_files, default_manifest, make_fake_demo_patient, spectral_csv_bytes
 from app.services.demo import spectral_inputs_to_files
 from mukha_pipeline.positioning import find_positioning_violations
 from mukha_pipeline.schema.models import RiskLevel, ScreeningResult, SourceAdapter
@@ -84,8 +84,14 @@ def _clean_text(html: str) -> str:
 
 def test_real_parser_reads_the_test_spectral_fixture():
     parse = require("mukha_pipeline.io.spectral", "parse_spectral_file")
-    parsed = parse(spectral_csv_bytes(), "spectral.csv", source_adapter=SourceAdapter.UPLOAD,
-                   device_id=None, synthetic=False, now=None)
+    parsed = parse(
+        spectral_csv_bytes(),
+        "spectral.csv",
+        source_adapter=SourceAdapter.UPLOAD,
+        device_id=None,
+        synthetic=False,
+        now=None,
+    )
     by_id = {r.reading_id: r for r in parsed.readings}
     assert set(by_id) == {"s1", "s2"}
     assert by_id["s1"].reference_reading_id == "s2"
@@ -97,14 +103,23 @@ def test_demo_spectral_serialisation_round_trips_through_the_real_parser():
     parse = require("mukha_pipeline.io.spectral", "parse_spectral_file")
     original = make_fake_demo_patient("high").spectral
     ((device, blob),) = spectral_inputs_to_files(original)
-    parsed = parse(blob, "spectral.json", source_adapter=SourceAdapter.SYNTHETIC,
-                   device_id=None, synthetic=True, now=None)
+    parsed = parse(
+        blob,
+        "spectral.json",
+        source_adapter=SourceAdapter.SYNTHETIC,
+        device_id=None,
+        synthetic=True,
+        now=None,
+    )
     assert parsed.calibration is None
     by_id = {r.reading_id: r for r in parsed.readings}
     for r in original:
         twin = by_id[r.reading_id]
         assert (twin.site, twin.role, twin.reference_reading_id) == (
-            r.site, r.role, r.reference_reading_id)
+            r.site,
+            r.role,
+            r.reference_reading_id,
+        )
         assert [f.channels for f in twin.lit] == [f.channels for f in r.lit]
         assert [f.channels for f in twin.dark] == [f.channels for f in r.dark]
         assert [f.gain for f in twin.lit] == [f.gain for f in r.lit]
@@ -119,8 +134,9 @@ def test_demo_spectral_serialisation_round_trips_through_the_real_parser():
 
 
 def test_real_upload_reanalyze_and_artifacts(real_client):
-    res = real_client.post("/api/v1/screenings",
-                           data={"manifest": json.dumps(default_manifest())}, files=real_files())
+    res = real_client.post(
+        "/api/v1/screenings", data={"manifest": json.dumps(default_manifest())}, files=real_files()
+    )
     assert res.status_code == 201, res.text
     body = res.json()
     result = ScreeningResult.model_validate(body["result"])
@@ -151,8 +167,9 @@ def test_real_upload_reanalyze_and_artifacts(real_client):
 def test_real_undecodable_image_is_422(real_client):
     files = real_files()
     files["wl_bl"] = ("wl.jpg", b"\xff\xd8\xff garbage that is not a jpeg", "image/jpeg")
-    res = real_client.post("/api/v1/screenings",
-                           data={"manifest": json.dumps(default_manifest())}, files=files)
+    res = real_client.post(
+        "/api/v1/screenings", data={"manifest": json.dumps(default_manifest())}, files=files
+    )
     assert res.status_code == 422, res.text
     assert res.json()["detail"].startswith("Could not read the images for Left buccal mucosa")
     assert real_client.get("/api/v1/screenings").json() == []
@@ -161,8 +178,9 @@ def test_real_undecodable_image_is_422(real_client):
 def test_real_bad_spectral_file_is_422(real_client):
     files = real_files()
     files["spectrum"] = ("spectrum.csv", b"reading_id,kind\nonly,lit\n", "text/csv")
-    res = real_client.post("/api/v1/screenings",
-                           data={"manifest": json.dumps(default_manifest())}, files=files)
+    res = real_client.post(
+        "/api/v1/screenings", data={"manifest": json.dumps(default_manifest())}, files=files
+    )
     assert res.status_code == 422, res.text
     assert res.json()["detail"].startswith("Could not read the spectral file")
 
@@ -206,8 +224,9 @@ def test_real_report_pdf_html_and_site_map(make_client):
     client = make_client(fakes=False)
     client.app.state.services.reports.renderer = AppReportsRenderer()
     assert reports.render_clinician_report_pdf
-    res = client.post("/api/v1/screenings", data={"manifest": json.dumps(default_manifest())},
-                      files=real_files())
+    res = client.post(
+        "/api/v1/screenings", data={"manifest": json.dumps(default_manifest())}, files=real_files()
+    )
     assert res.status_code == 201, res.text
     sid = res.json()["screening_id"]
 

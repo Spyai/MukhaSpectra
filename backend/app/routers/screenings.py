@@ -60,6 +60,30 @@ ERRORS_UPLOAD = {
     500: {"model": ErrorResponse, "description": "Analysis failed; captures were stored"},
 }
 
+UPLOAD_REQUEST_BODY = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            "multipart/form-data": {
+                "schema": {
+                    "type": "object",
+                    "required": ["manifest"],
+                    "properties": {
+                        "manifest": {
+                            "type": "string",
+                            "contentMediaType": "application/json",
+                            "contentSchema": {"$ref": "#/components/schemas/UploadManifest"},
+                            "description": "UploadManifest as JSON. Each wl / af / dark / "
+                            "spectral_file value names another multipart file field.",
+                        }
+                    },
+                    "additionalProperties": {"type": "string", "format": "binary"},
+                }
+            }
+        },
+    }
+}
+
 VersionQuery = Annotated[
     int | None, Query(ge=1, description="Result version (default: the latest).")
 ]
@@ -79,6 +103,7 @@ def _check_request_size(request: Request, limit: int) -> None:
     response_model=ScreeningCreated,
     responses=ERRORS_UPLOAD,
     summary="Upload a screening (multipart: manifest + files) and analyse it",
+    openapi_extra=UPLOAD_REQUEST_BODY,
 )
 async def create_screening(
     request: Request, services: ServicesDep, session: SessionDep
@@ -256,11 +281,12 @@ def get_report_pdf(
     screening = get_screening(session, screening_id)
     row = get_result_row(session, screening.id, version)
     pdf = services.reports.clinician_pdf(session, screening, row)
+    filename = report_file_name(screening.id, row.version)
     return Response(
         content=pdf,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'inline; filename="{report_file_name(screening.id, row.version)}"',
+            "Content-Disposition": f'inline; filename="{filename}"',
             "Cache-Control": NO_STORE,
         },
     )

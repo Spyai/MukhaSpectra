@@ -91,8 +91,9 @@ def test_app_startup_migrates_its_own_database(client, api_settings):
 
 
 def test_auto_migrate_can_be_disabled(make_client, api_settings):
-    client = make_client(database_url=f"sqlite:///{api_settings.storage_dir.parent / 'no.db'}",
-                         auto_migrate=False)
+    client = make_client(
+        database_url=f"sqlite:///{api_settings.storage_dir.parent / 'no.db'}", auto_migrate=False
+    )
     with client.app.state.engine.connect() as conn:
         assert inspect(conn).get_table_names() == []
 
@@ -101,8 +102,16 @@ def test_sqlite_foreign_keys_are_enforced(tmp_path):
     engine = create_db_engine(f"sqlite:///{tmp_path / 'fk.db'}")
     upgrade_to_head(engine)
     with create_session_factory(engine)() as session:
-        session.add(Capture(screening_id="missing", kind="white_light", storage_key="k",
-                            sha256="0" * 64, size_bytes=1, meta={}))
+        session.add(
+            Capture(
+                screening_id="missing",
+                kind="white_light",
+                storage_key="k",
+                sha256="0" * 64,
+                size_bytes=1,
+                meta={},
+            )
+        )
         with pytest.raises(IntegrityError):
             session.commit()
     engine.dispose()

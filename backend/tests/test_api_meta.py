@@ -101,8 +101,12 @@ def test_sites_catalogue_and_geometry(client):
     assert left["label"] == info.label
     assert left["paired_site"] == "buccal_mucosa_right"
     assert left["pairing"] == "contralateral"
-    assert left["shape"] == {"cx": info.shape.cx, "cy": info.shape.cy, "rx": info.shape.rx,
-                             "ry": info.shape.ry}
+    assert left["shape"] == {
+        "cx": info.shape.cx,
+        "cy": info.shape.cy,
+        "rx": info.shape.rx,
+        "ry": info.shape.ry,
+    }
 
 
 def test_openapi_metadata_and_positioning(client):
@@ -133,6 +137,21 @@ def test_openapi_metadata_and_positioning(client):
     assert not find_positioning_violations(res.text)
 
 
+def test_openapi_documents_the_multipart_upload(client):
+    spec = client.get("/openapi.json").json()
+    body = spec["paths"]["/api/v1/screenings"]["post"]["requestBody"]
+    form = body["content"]["multipart/form-data"]["schema"]
+    assert form["required"] == ["manifest"]
+    assert form["properties"]["manifest"]["contentSchema"] == {
+        "$ref": "#/components/schemas/UploadManifest"
+    }
+    components = spec["components"]["schemas"]
+    manifest = components["UploadManifest"]
+    assert {"patient", "consent", "sites", "spectral_file"} <= set(manifest["properties"])
+    assert "ManifestSite" in components and "ManifestPatient" in components
+    assert client.get("/openapi.json").json() == spec  # cached
+
+
 def test_security_headers_on_every_response(client):
     res = client.get("/api/v1/health")
     assert res.headers["x-content-type-options"] == "nosniff"
@@ -161,3 +180,20 @@ def test_module_level_app_instance():
 
 def test_unknown_route_is_404(client):
     assert client.get("/api/v1/nope").status_code == 404
+
+
+def test_creating_the_app_has_no_filesystem_side_effects(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+    from app.settings import Settings
+
+    settings = Settings(
+        database_url=f"sqlite:///{tmp_path / 'nested' / 'db.sqlite'}",
+        storage_dir=tmp_path / "objects",
+    )
+    app = create_app(settings)
+    assert not (tmp_path / "nested").exists() and not (tmp_path / "objects").exists()
+    with TestClient(app) as client:  # startup prepares the folder and migrates
+        assert client.get("/api/v1/health").status_code == 200
+        assert (tmp_path / "nested" / "db.sqlite").exists()

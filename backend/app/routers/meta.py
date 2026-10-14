@@ -13,8 +13,8 @@ from app.schemas import (
     ConfigInfo,
     HealthResponse,
     SiteCatalogueEntry,
-    SitesResponse,
     SiteShape,
+    SitesResponse,
     VersionResponse,
 )
 from mukha_pipeline import SCHEMA_VERSION

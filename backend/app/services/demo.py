@@ -128,9 +128,7 @@ class DemoService:
         self.capture_store = capture_store
         self.analysis = analysis
 
-    def create(
-        self, session: Session, kind: str
-    ) -> tuple[str, AnalysisResult, ScreeningResult]:
+    def create(self, session: Session, kind: str) -> tuple[str, AnalysisResult, ScreeningResult]:
         if kind not in DEMO_KINDS:
             raise InvalidInputError(
                 f"Unknown demo patient '{kind}'. Use one of: {', '.join(DEMO_KINDS)}."

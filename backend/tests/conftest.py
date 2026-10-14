@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from api_fakes import FakePipeline, FakeRenderer
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from api_fakes import FakePipeline, FakeRenderer
 from app.main import create_app
 from app.services import Services
 from app.settings import Settings

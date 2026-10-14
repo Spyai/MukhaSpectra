@@ -7,9 +7,9 @@ import json
 
 import numpy as np
 import pytest
+from api_fakes import default_files, default_manifest, png_bytes, upload
 from sqlalchemy import func, select
 
-from api_fakes import default_files, default_manifest, png_bytes, upload
 from app.errors import ANALYSIS_FAILED_MESSAGE
 from app.models import (
     AnalysisResult,
@@ -25,8 +25,16 @@ from app.services.ingest import CONSENT_REQUIRED
 from mukha_pipeline.positioning import find_positioning_violations
 from mukha_pipeline.schema.models import ScreeningResult
 
-ALL_TABLES = (Patient, PatientIdentity, Screening, Capture, AnalysisResult, Report,
-              CalibrationRecord, AuditEvent)
+ALL_TABLES = (
+    Patient,
+    PatientIdentity,
+    Screening,
+    Capture,
+    AnalysisResult,
+    Report,
+    CalibrationRecord,
+    AuditEvent,
+)
 
 
 def _row_counts(db) -> dict[str, int]:
@@ -35,8 +43,11 @@ def _row_counts(db) -> dict[str, int]:
 
 def _stored_files(services) -> list[str]:
     root = services.storage.root
-    return [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()] \
-        if root.exists() else []
+    return (
+        [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()]
+        if root.exists()
+        else []
+    )
 
 
 def assert_nothing_stored(services, db) -> None:
@@ -137,8 +148,10 @@ def test_synthetic_provenance_is_carried_through(client, db, fake_pipeline):
 
 
 def test_manifest_may_be_sent_as_a_file_part(client):
-    files = {**default_files(),
-             "manifest": ("manifest.json", json.dumps(default_manifest()).encode(), "application/json")}
+    files = {
+        **default_files(),
+        "manifest": ("manifest.json", json.dumps(default_manifest()).encode(), "application/json"),
+    }
     res = client.post("/api/v1/screenings", files=files)
     assert res.status_code == 201, res.text
 
@@ -157,8 +170,9 @@ def test_manifest_may_be_sent_as_a_file_part(client):
         None,
     ],
 )
-def test_consent_missing_is_rejected_and_nothing_is_stored(client, services, db, consent,
-                                                           fake_pipeline):
+def test_consent_missing_is_rejected_and_nothing_is_stored(
+    client, services, db, consent, fake_pipeline
+):
     manifest = default_manifest()
     if consent is None:
         manifest.pop("consent")
@@ -197,26 +211,43 @@ def _manifest_with(mutator) -> dict:
         ("", "must include a 'manifest' form field"),
         ("{not json", "not valid JSON"),
         ("[1, 2]", "must be a JSON object"),
-        (json.dumps(_manifest_with(lambda m: m["sites"][0].update(site="moon"))),
-         "manifest.sites.0.site"),
-        (json.dumps(_manifest_with(lambda m: m["sites"][1].update(site="buccal_mucosa_left"))),
-         "listed more than once"),
+        (
+            json.dumps(_manifest_with(lambda m: m["sites"][0].update(site="moon"))),
+            "manifest.sites.0.site",
+        ),
+        (
+            json.dumps(_manifest_with(lambda m: m["sites"][1].update(site="buccal_mucosa_left"))),
+            "listed more than once",
+        ),
         (json.dumps(_manifest_with(lambda m: m.update(sites=[]))), "manifest.sites"),
         (json.dumps(_manifest_with(lambda m: m.update(unexpected=True))), "manifest.unexpected"),
-        (json.dumps(_manifest_with(lambda m: m["patient"].update(age_years=300))),
-         "manifest.patient.age_years"),
-        (json.dumps(_manifest_with(lambda m: m["sites"][0].update(px_per_mm=-1))),
-         "manifest.sites.0.px_per_mm"),
-        (json.dumps(_manifest_with(lambda m: m["sites"][0].update(wl="../etc"))),
-         "manifest.sites.0.wl"),
-        (json.dumps(_manifest_with(lambda m: m["sites"][0].update(wl="manifest"))),
-         "'manifest' cannot be used"),
-        (json.dumps(_manifest_with(
-            lambda m: [s.update(role="reference_only") for s in m["sites"]])), "role 'examined'"),
+        (
+            json.dumps(_manifest_with(lambda m: m["patient"].update(age_years=300))),
+            "manifest.patient.age_years",
+        ),
+        (
+            json.dumps(_manifest_with(lambda m: m["sites"][0].update(px_per_mm=-1))),
+            "manifest.sites.0.px_per_mm",
+        ),
+        (
+            json.dumps(_manifest_with(lambda m: m["sites"][0].update(wl="../etc"))),
+            "manifest.sites.0.wl",
+        ),
+        (
+            json.dumps(_manifest_with(lambda m: m["sites"][0].update(wl="manifest"))),
+            "'manifest' cannot be used",
+        ),
+        (
+            json.dumps(
+                _manifest_with(lambda m: [s.update(role="reference_only") for s in m["sites"]])
+            ),
+            "role 'examined'",
+        ),
     ],
 )
-def test_invalid_manifest_is_422_with_a_clear_message(client, services, db, manifest_text,
-                                                      expected):
+def test_invalid_manifest_is_422_with_a_clear_message(
+    client, services, db, manifest_text, expected
+):
     data = {} if manifest_text is None else {"manifest": manifest_text}
     res = client.post("/api/v1/screenings", data=data, files=default_files())
     assert res.status_code == 422, res.text
@@ -256,9 +287,11 @@ def test_missing_spectral_file_is_422(client, services, db):
 
 def test_file_field_sent_as_text_is_422(client, services, db):
     files = {k: v for k, v in default_files().items() if k != "wl_bl"}
-    res = client.post("/api/v1/screenings",
-                      data={"manifest": json.dumps(default_manifest()), "wl_bl": "not a file"},
-                      files=files)
+    res = client.post(
+        "/api/v1/screenings",
+        data={"manifest": json.dumps(default_manifest()), "wl_bl": "not a file"},
+        files=files,
+    )
     assert res.status_code == 422
     assert "must be a file" in res.json()["detail"]
     assert_nothing_stored(services, db)
@@ -332,8 +365,7 @@ def test_pipeline_not_installed_is_503(make_client, fake_pipeline, db):
 # --------------------------------------------------------------------------------------------
 
 
-def test_analysis_failure_keeps_captures_and_can_be_reanalysed(client, services, db,
-                                                               fake_pipeline):
+def test_analysis_failure_keeps_captures_and_can_be_reanalysed(client, services, db, fake_pipeline):
     fake_pipeline.fail = True
     res = upload(client)
     assert res.status_code == 500
@@ -366,8 +398,7 @@ def test_analysis_failure_keeps_captures_and_can_be_reanalysed(client, services,
         assert a.wl.meta == b.wl.meta
 
 
-def test_invalid_artifact_key_from_the_pipeline_fails_the_analysis(client, services,
-                                                                   fake_pipeline):
+def test_invalid_artifact_key_from_the_pipeline_fails_the_analysis(client, services, fake_pipeline):
     fake_pipeline.extra_artifacts = {"../../escape.png": b"x"}
     res = upload(client)
     assert res.status_code == 500

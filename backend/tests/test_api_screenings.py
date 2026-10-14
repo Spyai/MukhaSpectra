@@ -6,9 +6,9 @@ import json
 
 import numpy as np
 import pytest
+from api_fakes import PII_MARKERS, default_manifest, upload
 from sqlalchemy import select
 
-from api_fakes import PII_MARKERS, default_manifest, upload
 from app.models import AnalysisResult, AuditEvent, Capture, PatientIdentity, Screening
 from mukha_pipeline.positioning import find_positioning_violations
 
@@ -35,8 +35,10 @@ def test_list_is_empty_initially(client):
 def test_list_newest_first_with_paging(client):
     low = default_manifest()
     low["sites"][0]["visual_flag"] = {"lesion_seen": False}
-    ids = [upload(client, m).json()["screening_id"] for m in (default_manifest(), low,
-                                                             default_manifest())]
+    ids = [
+        upload(client, m).json()["screening_id"]
+        for m in (default_manifest(), low, default_manifest())
+    ]
     res = client.get("/api/v1/screenings")
     items = res.json()
     assert res.headers["x-total-count"] == "3"
@@ -121,8 +123,9 @@ def test_result_versions(client, screening_id):
 # --------------------------------------------------------------------------------------------
 
 
-def test_reanalyze_creates_a_new_version_and_never_overwrites(client, services, db,
-                                                              screening_id, fake_pipeline):
+def test_reanalyze_creates_a_new_version_and_never_overwrites(
+    client, services, db, screening_id, fake_pipeline
+):
     v1_before = client.get(f"/api/v1/screenings/{screening_id}/results/1").json()
     res = client.post(f"/api/v1/screenings/{screening_id}/reanalyze")
     assert res.status_code == 201, res.text
@@ -164,8 +167,12 @@ def test_reanalyze_creates_a_new_version_and_never_overwrites(client, services, 
     assert second.now == first.now  # calibration validity is judged at capture time
     assert fake_pipeline.spectral_calls[1]["now"] == fake_pipeline.spectral_calls[0]["now"]
 
-    actions = [e.action for e in db.scalars(
-        select(AuditEvent).where(AuditEvent.entity_id == screening_id).order_by(AuditEvent.at))]
+    actions = [
+        e.action
+        for e in db.scalars(
+            select(AuditEvent).where(AuditEvent.entity_id == screening_id).order_by(AuditEvent.at)
+        )
+    ]
     assert "reanalysis_completed" in actions
 
     third = client.post(f"/api/v1/screenings/{screening_id}/reanalyze").json()
@@ -214,8 +221,12 @@ def test_artifacts_by_version(client, services, screening_id):
     latest = client.get(f"/api/v1/screenings/{screening_id}/artifacts/{key}")
     assert v1.content == b"\x89PNG-v1"
     assert latest.status_code == 200 and latest.content != b"\x89PNG-v1"
-    assert client.get(f"/api/v1/screenings/{screening_id}/artifacts/{key}",
-                      params={"version": 7}).status_code == 404
+    assert (
+        client.get(
+            f"/api/v1/screenings/{screening_id}/artifacts/{key}", params={"version": 7}
+        ).status_code
+        == 404
+    )
 
 
 def test_missing_artifact_is_404(client, screening_id):
@@ -257,8 +268,10 @@ def test_path_traversal_is_blocked(client, services, db, screening_id, tmp_path,
     (tmp_path / "secret.txt").write_text(secret)
     services.storage.root.joinpath("secret.txt").write_text(secret)
     capture = db.scalars(select(Capture).where(Capture.screening_id == screening_id)).first()
-    key = raw_key.format(capture=capture.storage_key.rsplit("/", 1)[-1],
-                         root=str(services.storage.root).strip("/").replace("/", "%2F"))
+    key = raw_key.format(
+        capture=capture.storage_key.rsplit("/", 1)[-1],
+        root=str(services.storage.root).strip("/").replace("/", "%2F"),
+    )
     res = client.get(f"/api/v1/screenings/{screening_id}/artifacts/{key}")
     assert res.status_code in (400, 404), (key, res.status_code)
     assert secret not in res.text
@@ -285,8 +298,11 @@ def _assert_no_pii(text: str) -> None:
 def test_pii_never_leaves_the_identity_table(client, services, db, screening_id):
     created = client.post(f"/api/v1/screenings/{screening_id}/reanalyze").text
     _assert_no_pii(created)
-    for path in (f"/api/v1/screenings/{screening_id}", "/api/v1/screenings",
-                 f"/api/v1/screenings/{screening_id}/results/1"):
+    for path in (
+        f"/api/v1/screenings/{screening_id}",
+        "/api/v1/screenings",
+        f"/api/v1/screenings/{screening_id}/results/1",
+    ):
         _assert_no_pii(client.get(path).text)
 
     # clinical tables, audit log and stored inputs/artifacts hold no PII
