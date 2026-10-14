@@ -25,10 +25,41 @@ def encode_png(img: np.ndarray) -> bytes                      # float [0,1] or u
 def resize_max_side(img: np.ndarray, max_side: int) -> tuple[np.ndarray, float]  # (img, scale)
 
 # io/spectral.py
+@dataclass
+class ParsedSpectral: readings: list[SpectralInput]; calibration: SpectralCalibration | None
 def parse_spectral_file(data: bytes, filename: str, *, source_adapter=SourceAdapter.UPLOAD,
-                        device_id: str | None = None, synthetic: bool = False
-                        ) -> list[SpectralInput]
-    # CSV or JSON (format in docs/device_protocol.md). Groups rows by reading_id.
+                        device_id: str | None = None, synthetic: bool = False,
+                        now: datetime | None = None) -> ParsedSpectral
+    # CSV or JSON (format below and in docs/device_protocol.md). Groups rows by reading_id.
+    # Raises SpectralParseError with a plain-language message on bad input.
+```
+
+### Spectral file format v1 (shared by upload, synthetic data and firmware)
+
+CSV, header required, column order free:
+
+```
+reading_id,site,role,kind,repeat,F1_415,F2_445,F3_480,F4_515,F5_555,F6_590,F7_630,F8_680,CLEAR,NIR,gain,integration_ms,reference_reading_id,lesion_ref,device_id
+```
+
+* `kind` is `lit`, `dark`, `white` or `white_dark`. `white`/`white_dark` rows measure the white
+  reflectance standard in the same session; they use `reading_id = calibration` and leave
+  `site`/`role` empty, and produce a `SpectralCalibration` valid for 24 h.
+* `role` is `lesion` or `reference`; `site` is an `OralSite` value.
+* `repeat` is the 0-based index of the reading within the N repeats.
+* `gain`, `integration_ms`, `reference_reading_id`, `lesion_ref`, `device_id` are optional.
+* A lesion reading without `reference_reading_id` is paired automatically with the reference
+  reading at its contralateral (or analogous) site, if exactly one exists.
+
+JSON (`"format": "mukhaspectra.spectral.v1"`):
+
+```json
+{"format": "mukhaspectra.spectral.v1", "device_id": "confirm-01", "firmware_version": "0.1.0",
+ "white_reference": {"white": [{"F1_415": 0, "...": 0}], "white_dark": [{"...": 0}]},
+ "readings": [{"reading_id": "s1", "site": "buccal_mucosa_left", "role": "lesion",
+               "reference_reading_id": "s2", "lesion_ref": null, "gain": 64,
+               "integration_ms": 50, "dark": [{"F1_415": 210, "...": 0}],
+               "lit": [{"F1_415": 5120, "...": 0}]}]}
 ```
 
 ## capture/
