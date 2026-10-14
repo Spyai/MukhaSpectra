@@ -11,9 +11,9 @@ ignore = ["N803", "N806", "B008"]  # image maths uses W, D, S, R, G, B names; Fa
 [tool.ruff.lint.isort]
 known-first-party = ["mukha_pipeline", "app"]
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
+# Formatting uses `ruff format` (Black-compatible); Black 26 crashes on one test fixture.
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["pipeline/tests", "backend/tests"]

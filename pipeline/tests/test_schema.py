@@ -15,9 +15,9 @@ from mukha_pipeline.schema.models import (
 
 
 def test_checked_in_schema_matches_models():
-    assert (
-        export.SCHEMA_PATH.read_text(encoding="utf-8") == export.render()
-    ), "Run: python -m mukha_pipeline.schema.export"
+    assert export.SCHEMA_PATH.read_text(encoding="utf-8") == export.render(), (
+        "Run: python -m mukha_pipeline.schema.export"
+    )
 
 
 def test_schema_is_versioned_and_valid_json_schema():

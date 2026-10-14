@@ -31,12 +31,12 @@ coverage:
 
 lint:
 	.venv/bin/ruff check pipeline backend
-	.venv/bin/black --check pipeline backend
+	.venv/bin/ruff format --check pipeline backend
 	cd frontend && npm run lint && npm run typecheck
 
 format:
 	.venv/bin/ruff check --fix pipeline backend
-	.venv/bin/black pipeline backend
+	.venv/bin/ruff format pipeline backend
 	cd frontend && npm run format
 
 schema:
