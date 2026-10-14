@@ -110,15 +110,15 @@
     "demo": {
       "low": {
         "title": "Low-risk demo",
-        "body": "Even green glow on both cheeks. No lesion seen by eye."
+        "body": "Even green glow on both cheeks and both sides of the tongue. Nothing seen by eye."
       },
       "moderate": {
         "title": "Moderate-risk demo",
-        "body": "A faint patch of glow loss on one cheek, partly explained by plaque."
+        "body": "Khaini user with a white patch on the left cheek next to a sharp tooth. Glow only slightly reduced."
       },
       "high": {
         "title": "High-risk demo",
-        "body": "A white patch on the side of the tongue with deep glow loss."
+        "body": "Gutka and bidi user with a red-white patch on the right side of the tongue, deep glow loss and an ulcer for over 2 weeks."
       },
       "run": "Run demo",
       "running": "Running…",
