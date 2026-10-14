@@ -28,6 +28,20 @@ FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     ("no cancer", re.compile(r"\bno\s+(?:sign\s+of\s+)?cancer\b", re.IGNORECASE)),
     ("cancer-free", re.compile(r"\bcancer[\s-]free\b", re.IGNORECASE)),
+    ("no disease", re.compile(r"\bno\s+(?:sign\s+of\s+)?disease\b", re.IGNORECASE)),
+    ("all clear", re.compile(r"\ball[\s-]+clear\b", re.IGNORECASE)),
+    ("benign", re.compile(r"\bbenign\b", re.IGNORECASE)),
+    ("cancerous", re.compile(r"\b(?:pre-?)?cancerous\b", re.IGNORECASE)),
+    ("tumour", re.compile(r"\btumou?rs?\b", re.IGNORECASE)),
+    ("carcinoma", re.compile(r"\bcarcinomas?\b", re.IGNORECASE)),
+    (
+        "reassurance",
+        re.compile(
+            r"\b(?:you\s+are|patient\s+is|mouth\s+is|tissue\s+is|site\s+is)\s+"
+            r"(?:healthy|normal|fine|clear|safe)\b",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 

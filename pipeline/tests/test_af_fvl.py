@@ -139,7 +139,7 @@ def test_insufficient_mucosa(rng, af_cfg: dict) -> None:
         AFReference(type=ReferenceType.NONE),
         AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=None),
         AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=0.0),
-        AFReference(type=ReferenceType.CONTRALATERAL, reference_green=float("nan")),
+        AFReference.model_construct(type=ReferenceType.CONTRALATERAL, reference_green=float("nan")),
     ],
 )
 def test_no_reference(rng, af_cfg: dict, ref: AFReference) -> None:

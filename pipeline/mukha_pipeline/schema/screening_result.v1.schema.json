@@ -1077,8 +1077,9 @@
           "$ref": "#/$defs/ModelStatus"
         },
         "validated": {
+          "const": false,
           "default": false,
-          "description": "True only after a documented clinical validation. Never set by code.",
+          "description": "Always false in schema v1: no MukhaSpectra model has a documented clinical validation. A validated model requires a new schema version.",
           "title": "Validated",
           "type": "boolean"
         },
@@ -2602,6 +2603,7 @@
           "type": "string"
         },
         "requires_clinician_review": {
+          "const": true,
           "default": true,
           "title": "Requires Clinician Review",
           "type": "boolean"

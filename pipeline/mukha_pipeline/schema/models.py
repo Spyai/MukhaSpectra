@@ -67,7 +67,10 @@ UnitFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", use_enum_values=False, populate_by_name=True)
+    # allow_inf_nan=False: NaN/Infinity are not valid JSON and must never reach a stored result.
+    model_config = ConfigDict(
+        extra="forbid", use_enum_values=False, populate_by_name=True, allow_inf_nan=False
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -269,9 +272,12 @@ class ModelInfo(_Model):
     name: str
     version: str
     status: ModelStatus
-    validated: bool = Field(
+    validated: Literal[False] = Field(
         default=False,
-        description="True only after a documented clinical validation. Never set by code.",
+        description=(
+            "Always false in schema v1: no MukhaSpectra model has a documented clinical "
+            "validation. A validated model requires a new schema version."
+        ),
     )
     model_card: str | None = Field(default=None, description="Path or URI of the model card.")
     sha256: str | None = None
@@ -691,7 +697,7 @@ class TriageResult(_Model):
     highest_risk_lesion_id: str | None = None
     rule_config: ConfigRef
     explanation: str = Field(description="Plain-language explanation of the level.")
-    requires_clinician_review: bool = True
+    requires_clinician_review: Literal[True] = True
     review_status: Literal["pending_review", "reviewed"] = "pending_review"
 
 

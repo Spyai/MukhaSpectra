@@ -159,7 +159,8 @@ def test_exposure_factor_missing_values():
     # Zero / negative / NaN values are unknown, never divided by.
     assert exposure_factor(meta(0.0, 100.0), meta(100.0, 100.0)) == 1.0
     assert exposure_factor(meta(-5.0, 100.0), meta(100.0, 100.0)) == 1.0
-    assert exposure_factor(meta(float("nan"), 100.0), meta(100.0, 100.0)) == 1.0
+    nan_meta = CaptureMetadata.model_construct(exposure_time_ms=float("nan"), iso=100.0)
+    assert exposure_factor(nan_meta, meta(100.0, 100.0)) == 1.0
     assert exposure_factor(meta(50.0, 0.0), meta(100.0, 100.0)) == pytest.approx(2.0)
     assert exposure_factor(meta(1e-300, None), meta(1e300, None)) == 1.0  # overflow -> unknown
 
