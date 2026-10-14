@@ -1,0 +1,607 @@
+{
+  "app": {
+    "name": "MukhaSpectra",
+    "consoleName": "Analysis console",
+    "skipToContent": "Skip to main content",
+    "nav": {
+      "label": "Main",
+      "home": "Home",
+      "upload": "New screening",
+      "screenings": "Screenings"
+    },
+    "theme": {
+      "toLight": "Switch to light theme",
+      "toDark": "Switch to dark theme"
+    },
+    "mockMode": "Mock mode",
+    "mockModeHint": "Mock mode: results are canned synthetic fixtures, not an analysis of your photos.",
+    "footer": "MukhaSpectra · SparkyAI Private Limited · research prototype",
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "That page does not exist. Go back to the start.",
+    "backHome": "Back to home"
+  },
+  "banner": {
+    "prototype": "Research prototype — not for clinical use",
+    "label": "Prototype notice"
+  },
+  "disclaimer": {
+    "default": "Screening aid — not a diagnosis. MukhaSpectra flags suspicious findings and assigns a risk level to support triage. Final diagnosis requires examination by a clinician and histopathology.",
+    "label": "Disclaimer"
+  },
+  "synthetic": {
+    "ribbon": "SYNTHETIC DATA",
+    "tag": "SYNTHETIC",
+    "defaultNotice": "SYNTHETIC DATA — generated for demonstration and software testing. Not from a real patient. Must never be used to support any performance claim."
+  },
+  "risk": {
+    "level": {
+      "LOW": "Low",
+      "MODERATE": "Moderate",
+      "HIGH": "High",
+      "INCONCLUSIVE": "Inconclusive"
+    },
+    "levelLong": {
+      "LOW": "Low risk",
+      "MODERATE": "Moderate risk",
+      "HIGH": "High risk",
+      "INCONCLUSIVE": "Inconclusive"
+    },
+    "badgeLabel": "Risk level: {{level}}",
+    "gaugeLabel": "Risk level gauge showing {{level}}",
+    "eyebrow": "Overall risk level"
+  },
+  "common": {
+    "loading": "Loading…",
+    "retry": "Try again",
+    "error": "Something went wrong",
+    "close": "Close",
+    "yes": "Yes",
+    "no": "No",
+    "notAvailable": "Not available",
+    "unknown": "Unknown",
+    "optional": "optional",
+    "required": "required",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "today": "Today",
+    "points": "{{value}} pts",
+    "version": "v{{version}}",
+    "latest": "latest",
+    "years": "{{count}} y",
+    "ms": "{{value}} ms",
+    "seconds": "{{value}} s",
+    "remove": "Remove",
+    "show": "Show",
+    "hide": "Hide"
+  },
+  "errors": {
+    "network": "Could not reach the analysis server. Check that it is running, then try again.",
+    "server": "The server could not complete this request ({{status}}). {{detail}}",
+    "notFound": "We could not find that screening.",
+    "badResponse": "The server sent a reply we could not read."
+  },
+  "home": {
+    "eyebrow": "Point-of-care oral screening · Phase 1 console",
+    "heroTitle1": "Violet light in.",
+    "heroTitle2": "Green glow out.",
+    "heroTitle3": "Where the glow fades, look closer.",
+    "heroBody": "Healthy lining of the mouth glows green under 405 nm violet light. Areas that lose the glow, together with what the health worker sees and the person's habits, are turned into a risk level with every reason shown — so the right people are referred for clinical examination.",
+    "ctaUpload": "Start a screening",
+    "ctaDemo": "Try a synthetic demo",
+    "sceneLabel": "Animation: a violet light sweeps across tissue. Healthy tissue glows green; one patch stays dark.",
+    "sceneLegendGlow": "Healthy mucosa glows green",
+    "sceneLegendLoss": "Glow loss (FVL): look closer",
+    "sceneLegendBeam": "405 nm violet excitation",
+    "howTitle": "How a screening works",
+    "how": {
+      "captureTitle": "Capture",
+      "captureBody": "A white-light photo and a violet-light photo of each site, plus an optional probe reading.",
+      "analyseTitle": "Analyse",
+      "analyseBody": "Quality checks, WL/AF alignment and a glow map find where fluorescence fades.",
+      "triageTitle": "Triage",
+      "triageBody": "Transparent rules turn findings and risk factors into a risk level with reasons and a next step."
+    },
+    "demoTitle": "Synthetic demo patients",
+    "demoBody": "Run the full pipeline on generated, clearly labelled synthetic captures. No real patient data.",
+    "demo": {
+      "low": {
+        "title": "Low-risk demo",
+        "body": "Even green glow on both cheeks. No lesion seen by eye."
+      },
+      "moderate": {
+        "title": "Moderate-risk demo",
+        "body": "A faint patch of glow loss on one cheek, partly explained by plaque."
+      },
+      "high": {
+        "title": "High-risk demo",
+        "body": "A white patch on the side of the tongue with deep glow loss."
+      },
+      "run": "Run demo",
+      "running": "Running…",
+      "runLabel": "Run the {{name}}"
+    },
+    "uploadCard": {
+      "title": "Upload captures",
+      "body": "White-light and violet-light photos of a site, an optional dark frame, the other side for reference and a probe spectrum.",
+      "cta": "Upload captures"
+    },
+    "recentTitle": "Recent screenings",
+    "recentEmpty": "No screenings yet. Run a demo or upload captures to begin.",
+    "recentError": "Could not load recent screenings.",
+    "recentItem": "Screening {{id}}",
+    "sitesCount_one": "{{count}} site",
+    "sitesCount_other": "{{count}} sites",
+    "open": "Open"
+  },
+  "upload": {
+    "title": "New screening",
+    "intro": "Upload the captures for one oral site. Everything stays pseudonymous: we record an ID, age and sex only.",
+    "stepSite": "Site",
+    "stepCaptures": "Captures",
+    "stepSeen": "What you saw",
+    "stepRisk": "Risk factors",
+    "stepConsent": "Consent",
+    "site": {
+      "title": "Which site did you photograph?",
+      "hint": "Tap a site on the map. Use the arrow keys to move between sites and Enter to choose.",
+      "mapLabel": "Oral site map, seen facing the patient",
+      "listLabel": "Or choose from a list",
+      "placeholder": "Choose a site",
+      "selected": "Selected: {{site}}",
+      "referenceSuggested": "Reference site suggested: {{site}} ({{pairing}}). Its photos let the analysis compare the glow with the same person's healthy tissue.",
+      "noPair": "This site has no paired site. The analysis will use an in-image reference.",
+      "useReference": "Add reference photos from {{site}}"
+    },
+    "pairing": {
+      "contralateral": "same site, other side",
+      "analogous": "similar tissue"
+    },
+    "captures": {
+      "title": "Photos and readings",
+      "wl": "White-light photo",
+      "wlHint": "Normal light, in focus, whole site in view",
+      "af": "Violet-light (AF) photo",
+      "afHint": "405 nm light with the yellow filter fitted",
+      "dark": "Dark frame",
+      "darkHint": "All lights off, same position",
+      "refWl": "Reference white-light photo",
+      "refAf": "Reference violet-light photo",
+      "spectrum": "Probe spectrum",
+      "spectrumHint": "CSV or JSON from the Confirm probe",
+      "drop": "Drop a file here or",
+      "browse": "choose file",
+      "replace": "Replace",
+      "noPreview": "Preview not available for this file type",
+      "acceptedImages": "JPG, PNG, HEIC, TIFF or DNG",
+      "acceptedSpectrum": "CSV or JSON",
+      "syntheticDetected": "File names mark these captures as SYNTHETIC. They will be recorded as synthetic data."
+    },
+    "seen": {
+      "title": "What did you see with your own eyes?",
+      "lesionSeen": "Lesion seen by eye at this site",
+      "appearance": "What did it look like?",
+      "note": "Short note",
+      "notePlaceholder": "Where it is, size, how long the patient has noticed it…",
+      "diascopy": "Glass-slide press on the dark area",
+      "diascopyHint": "If the glow comes back under gentle pressure, the darkness was most likely blood or inflammation."
+    },
+    "appearance": {
+      "white_patch": "White patch",
+      "red_patch": "Red patch",
+      "mixed_red_white": "Mixed red and white",
+      "ulcer": "Ulcer",
+      "growth": "Growth",
+      "other": "Other"
+    },
+    "diascopy": {
+      "not_done": "Not done",
+      "fvl_persists": "Stayed dark",
+      "fvl_resolves": "Glow came back"
+    },
+    "risk": {
+      "title": "Patient and risk factors",
+      "age": "Age",
+      "ageUnit": "years",
+      "sex": "Sex",
+      "habits": "Habits",
+      "smokeless": "Smokeless tobacco",
+      "smokelessHint": "gutka, khaini, zarda, mawa",
+      "smoking": "Smoking",
+      "smokingHint": "bidi, cigarette, chutta",
+      "areca": "Areca nut",
+      "arecaHint": "supari, paan without tobacco",
+      "alcohol": "Alcohol daily",
+      "symptoms": "Reported by the patient",
+      "ulcer": "Ulcer not healing for more than 2 weeks",
+      "whitePatch": "White patch",
+      "redPatch": "Red patch",
+      "lump": "Lump in the mouth",
+      "trismus": "Difficulty opening the mouth",
+      "neckLump": "Lump in the neck",
+      "irritants": "Local irritants",
+      "sharpTooth": "Sharp tooth",
+      "denture": "Ill-fitting denture",
+      "provenance": "Data source",
+      "campName": "Camp or clinic",
+      "workerId": "Health worker ID"
+    },
+    "sex": {
+      "female": "Female",
+      "male": "Male",
+      "other": "Other",
+      "undisclosed": "Prefer not to say"
+    },
+    "provenance": {
+      "real": "Real capture",
+      "synthetic": "Synthetic",
+      "phantom": "Phantom",
+      "ex_vivo": "Ex vivo",
+      "volunteer": "Volunteer",
+      "mixed": "Mixed"
+    },
+    "consent": {
+      "title": "Consent",
+      "required": "The person was told what this screening involves and agreed to photos of their mouth being taken and analysed.",
+      "research": "They also agreed that de-identified photos and results may be used to improve this tool (optional).",
+      "note": "Consent is recorded with the screening. Without it, nothing is uploaded."
+    },
+    "submit": "Analyse captures",
+    "submitting": "Uploading…",
+    "errorsSummary_one": "Please fix {{count}} thing before analysing:",
+    "errorsSummary_other": "Please fix {{count}} things before analysing:",
+    "validation": {
+      "site": "Choose the site you photographed.",
+      "wl": "Add the white-light photo for this site.",
+      "af": "Add the violet-light (AF) photo for this site.",
+      "refPair": "Add both reference photos, or remove the one you added.",
+      "consent": "Tick consent. We cannot analyse photos without it.",
+      "age": "Enter an age between 0 and 120, or leave it empty.",
+      "imageType": "This does not look like a photo. Use JPG, PNG, HEIC, TIFF or DNG.",
+      "spectrumType": "Use a CSV or JSON file from the probe."
+    }
+  },
+  "analysis": {
+    "title": "Analysing",
+    "titleDemo": "Running synthetic demo",
+    "titleReanalyse": "Re-analysing",
+    "subtitle": "Each capture is checked, aligned and compared before any risk level is given.",
+    "done": "Analysis complete",
+    "doneBody": "Measured stage timings are shown. Opening the results…",
+    "viewResults": "View results",
+    "failed": "Analysis did not complete",
+    "back": "Back",
+    "totalTime": "Total {{value}}",
+    "stageWaiting": "Waiting",
+    "stageRunning": "Running",
+    "stageDone": "Done",
+    "stageSkipped": "Skipped",
+    "stageFailed": "Failed",
+    "notMeasured": "not timed",
+    "stages": {
+      "quality": "Quality check",
+      "align": "Align WL/AF",
+      "tissue": "Find tissue",
+      "af": "Autofluorescence",
+      "spectral": "Spectral",
+      "triage": "Triage",
+      "report": "Report"
+    },
+    "progressLabel": "Analysis progress",
+    "thumbnailAlt": "White-light photo being analysed"
+  },
+  "results": {
+    "pageTitle": "Screening result",
+    "loading": "Loading result…",
+    "patient": "Patient {{id}}",
+    "patientMeta": "{{age}} · {{sex}}",
+    "ageUnknown": "Age not recorded",
+    "capturedAt": "Captured {{date}}",
+    "analysedAt": "Analysed {{date}}",
+    "camp": "Camp: {{name}}",
+    "pendingReview": "Pending clinician review",
+    "reviewed": "Reviewed by clinician",
+    "action": "Recommended action",
+    "timeline": "Act within",
+    "timelineNow": "Now",
+    "timelineDays_one": "{{count}} day",
+    "timelineDays_other": "{{count}} days",
+    "urgency": {
+      "none": "Routine",
+      "reexamine": "Re-examine",
+      "urgent": "Urgent referral",
+      "retake": "Retake now"
+    },
+    "overridesTitle": "Clinical red flags",
+    "overrideFloor": "Sets a {{level}} floor",
+    "overrideNote": "Clinical red flag — the device cannot lower this.",
+    "explanation": "Why, in plain words",
+    "superseded": "You are viewing version {{version}}. A newer version (v{{latest}}) exists.",
+    "viewLatest": "View latest",
+    "sections": {
+      "why": "Why this level",
+      "map": "Site map",
+      "viewer": "Site viewer",
+      "lesions": "Suspicious findings",
+      "spectral": "Probe spectrum",
+      "qc": "Quality checks and limitations",
+      "versions": "Versions"
+    },
+    "why": {
+      "intro": "Every point added or removed is listed. The rules are a transparent baseline heuristic, not a trained model.",
+      "score": "Score",
+      "total": "Total score",
+      "thresholdModerate": "Moderate from {{value}}",
+      "thresholdHigh": "High from {{value}}",
+      "noFactors": "No suspicious features added points. Habits are used for counselling, not scoring, when no finding exists.",
+      "noScore": "No score: the images could not be analysed reliably.",
+      "sumNote": "Bars add up, left to right, to the total score.",
+      "chartLabel": "Contribution of each factor to the score",
+      "factorAria": "{{label}}: {{points}} points ({{source}})",
+      "lesionScore": "Finding score {{value}}"
+    },
+    "source": {
+      "autofluorescence": "Autofluorescence",
+      "wl_model": "White-light model",
+      "spectral": "Probe spectrum",
+      "clinical_visual": "Seen by health worker",
+      "clinical_history": "History and habits",
+      "symptom": "Symptom",
+      "site": "Site",
+      "qc": "Quality check",
+      "override": "Clinical red flag"
+    },
+    "map": {
+      "label": "Site map coloured by risk level. Patient's right is on the left.",
+      "hint": "Choose a site to inspect it.",
+      "patientRight": "Patient's right",
+      "patientLeft": "Patient's left",
+      "reference": "Reference",
+      "notExamined": "Not captured",
+      "siteAria": "{{site}}: {{status}}",
+      "legend": "Legend"
+    },
+    "viewer": {
+      "wipe": "Compare",
+      "terrain": "3D glow map",
+      "wl": "White light",
+      "af": "Violet light (AF)",
+      "sliderLabel": "Comparison position: white light on the left, violet light on the right",
+      "sliderValue": "{{value}}% white light",
+      "heatmap": "AF-loss heatmap",
+      "opacity": "Heatmap opacity",
+      "regions": "Regions",
+      "noImages": "No images are available for this site.",
+      "referenceSite": "Reference site — used to normalise the glow of {{site}}.",
+      "qcFailedSite": "This site failed quality checks, so it was not analysed.",
+      "imageAlt": "{{kind}} image of {{site}}",
+      "regionTitle": "Region {{id}}",
+      "area": "Area",
+      "areaFraction": "{{value}}% of visible tissue",
+      "meanRelAf": "Mean glow vs reference",
+      "minRelAf": "Lowest glow (5th pct.)",
+      "contrast": "Contrast vs surround",
+      "border": "Border irregularity",
+      "confounders": "Possible confounders",
+      "noConfounders": "None flagged",
+      "reference": "Reference: {{type}}",
+      "threshold": "Glow-loss threshold {{value}}",
+      "loadingTerrain": "Loading 3D view…",
+      "terrainLabel": "3D terrain of glow loss. Height is how much glow is lost compared with the reference.",
+      "terrainHint": "Drag to rotate, pinch or scroll to zoom. Peaks above the plane are below the glow-loss threshold.",
+      "terrainUnavailable": "3D view is not available on this device. The heatmap shows the same data.",
+      "noGrid": "No glow grid was produced for this site.",
+      "lossLegendLow": "Glow kept",
+      "lossLegendHigh": "Glow lost",
+      "registration": "Alignment: {{method}}, confidence {{value}}",
+      "orientation": "Images are shown in the white-light frame."
+    },
+    "refType": {
+      "contralateral": "same site, other side",
+      "analogous_site": "similar tissue elsewhere",
+      "in_image_auto": "healthy tissue in the same photo",
+      "none": "none"
+    },
+    "confounder": {
+      "porphyrin_red": "Red porphyrin glow (plaque or bacteria)",
+      "pigmentation": "Pigmentation",
+      "blood": "Blood or inflammation",
+      "glare": "Glare",
+      "overlap": "{{value}}% overlap"
+    },
+    "lesions": {
+      "none": "No suspicious findings in the analysed sites.",
+      "origins": "Found by",
+      "origin": {
+        "af_fvl": "Glow loss",
+        "visual": "Health worker",
+        "wl_model": "White-light model",
+        "spectral": "Probe"
+      },
+      "showFactors": "Show reasons",
+      "hideFactors": "Hide reasons",
+      "atSite": "at {{site}}"
+    },
+    "spectral": {
+      "intro": "Diffuse reflectance from the contact probe. More blood deepens the 540–580 nm haemoglobin dip.",
+      "chartLabel": "Spectrum chart: lesion versus reference reading from 415 to 680 nanometres",
+      "lesion": "Lesion",
+      "referenceReading": "Reference",
+      "wavelength": "Wavelength (nm)",
+      "reflectance": "Reflectance",
+      "relative_signal": "Relative signal",
+      "hbBand": "Hb dip 540–580 nm",
+      "band": "±1 SD",
+      "feature": "Feature",
+      "lesionValue": "Lesion",
+      "refValue": "Reference",
+      "delta": "Difference",
+      "classifier": "Spectral classifier",
+      "placeholder": "placeholder",
+      "classifierLabel": {
+        "not_suspicious": "Not suspicious",
+        "indeterminate": "Indeterminate",
+        "suspicious": "Suspicious"
+      },
+      "heuristicScore": "Heuristic score {{value}} (not a probability)",
+      "none": "No probe spectrum was recorded for this screening.",
+      "readings_one": "{{count}} reading",
+      "readings_other": "{{count}} readings",
+      "features": {
+        "ratio_555_630": "555 / 630 nm ratio",
+        "ratio_590_680": "590 / 680 nm ratio",
+        "ratio_515_630": "515 / 630 nm ratio",
+        "ratio_415_555": "415 / 555 nm ratio",
+        "hb_absorption_proxy": "Haemoglobin dip depth",
+        "slope_480_555": "Slope 480–555 nm",
+        "slope_590_680": "Slope 590–680 nm"
+      }
+    },
+    "qc": {
+      "captures": "Captures",
+      "passed": "Passed",
+      "failed": "Retake",
+      "warning": "Check",
+      "kind": {
+        "white_light": "White light",
+        "autofluorescence": "Violet light",
+        "dark_frame": "Dark frame",
+        "spectral": "Probe"
+      },
+      "allPassed": "All captures passed quality checks.",
+      "retakes": "Retake prompts",
+      "calibration": "Calibration",
+      "calibrationStatus": {
+        "calibrated": "Calibrated",
+        "uncalibrated": "Not calibrated",
+        "expired": "Calibration expired",
+        "partial": "Partly calibrated"
+      },
+      "models": "Models and rules",
+      "limitations": "Limitations",
+      "noLimitations": "No additional limitations recorded.",
+      "unvalidated": "Not clinically validated",
+      "analysisStatus": {
+        "analysed": "Analysed",
+        "inconclusive_qc_failed": "Not analysed — quality check failed",
+        "not_analysed": "Not analysed"
+      }
+    },
+    "models": {
+      "segmenter": {
+        "available": "Tissue finder: available",
+        "model_unavailable": "Tissue finder: not available",
+        "placeholder": "Tissue finder: placeholder",
+        "baseline_rules": "Tissue finder: classical colour rules (baseline)"
+      },
+      "wl_lesion_classifier": {
+        "available": "White-light classifier: available, unvalidated",
+        "model_unavailable": "White-light classifier: not available — not used in triage",
+        "placeholder": "White-light classifier: placeholder — not used in triage",
+        "baseline_rules": "White-light classifier: baseline rules"
+      },
+      "spectral_classifier": {
+        "available": "Spectral classifier: available, unvalidated",
+        "model_unavailable": "Spectral classifier: not available",
+        "placeholder": "Spectral classifier: placeholder heuristic",
+        "baseline_rules": "Spectral classifier: baseline rules"
+      },
+      "fusion": {
+        "available": "Rules: available, unvalidated",
+        "model_unavailable": "Rules: not available",
+        "placeholder": "Rules: placeholder",
+        "baseline_rules": "Rules: baseline heuristic, unvalidated"
+      }
+    },
+    "versions": {
+      "software": "Software",
+      "pipeline": "Pipeline",
+      "schema": "Schema",
+      "rules": "Triage rules",
+      "qcConfig": "QC config",
+      "analysisConfig": "Analysis config",
+      "resultId": "Result ID",
+      "screeningId": "Screening ID",
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "actions": {
+      "pdf": "Download PDF report",
+      "pdfHint": "Clinician report for this version",
+      "reanalyse": "Re-analyse",
+      "reanalyseHint": "Creates a new version. Earlier versions are never overwritten.",
+      "versionSwitcher": "Result versions",
+      "versionOption": "Version {{version}}"
+    },
+    "patientFactors": "Risk factors",
+    "factor": {
+      "smokeless": "Smokeless tobacco",
+      "smoking": "Smoking",
+      "areca": "Areca nut",
+      "alcohol": "Alcohol",
+      "former": "former",
+      "priorLesion": "Previous oral lesion",
+      "priorCancer": "Previous oral cancer",
+      "none": "None reported"
+    }
+  },
+  "qc": {
+    "image_invalid": "Photo could not be checked — retake the photo.",
+    "image_too_small": "Photo too small — retake at full camera resolution.",
+    "image_grayscale": "Photo has no colour — switch camera to colour, retake.",
+    "blur": "White-light photo blurry — hold the phone steady and retake.",
+    "too_dark": "White-light photo too dark — switch on the light, retake.",
+    "too_bright": "White-light photo too bright — move back slightly and retake.",
+    "clipping_dark": "Parts of photo too dark — light the whole area evenly.",
+    "clipping_bright": "Parts of photo washed out — reduce the light and retake.",
+    "glare": "Too much shine — tilt the phone slightly and retake.",
+    "glare_minor": "Some shine on tissue — tilt the phone slightly next time.",
+    "af_signal_low": "Violet-light photo too dim — switch on violet light, retake.",
+    "af_filter_leak": "Violet-light photo too blue — fit the yellow filter, retake.",
+    "af_overexposed": "Violet-light photo too bright — move back slightly, retake.",
+    "af_blur": "Violet-light photo blurry — hold the phone steady and retake.",
+    "af_not_green": "Violet-light photo not green — check filter and colour setting.",
+    "ambient_light": "Dark photo too bright — block room light and retake.",
+    "ambient_light_minor": "Some room light seen — dim lights or shade the mouth.",
+    "no_dark_frame": "Dark photo missing — take one with all lights off.",
+    "misaligned": "Photos do not line up — keep still between both photos.",
+    "alignment_marginal": "Photos line up poorly — keep steadier between photos.",
+    "insufficient_mucosa": "Too little tissue in view — open wider, move closer.",
+    "spectral_no_readings": "No probe readings — repeat the probe measurement.",
+    "spectral_few_readings": "Too few probe readings — repeat the probe measurement.",
+    "spectral_channels_missing": "Probe data incomplete — reconnect the probe, repeat.",
+    "spectral_checks_skipped": "Probe contact not checked — hold it flat on tissue.",
+    "spectral_saturated": "Probe signal too strong — lower probe gain and repeat.",
+    "spectral_ambient_leak": "Room light reaching probe — press it gently on tissue.",
+    "probe_no_contact": "Probe not touching tissue — place it flat and repeat.",
+    "spectral_signal_low": "Probe signal too weak — check probe light and repeat.",
+    "spectral_poor_repeatability": "Probe readings unsteady — hold the probe still, repeat.",
+    "spectral_settings_mismatch": "Probe settings changed mid-reading — repeat measurement."
+  },
+  "sites": {
+    "upper_lip_mucosa": "Upper lip mucosa",
+    "lower_lip_mucosa": "Lower lip mucosa",
+    "buccal_mucosa_left": "Left buccal mucosa",
+    "buccal_mucosa_right": "Right buccal mucosa",
+    "tongue_dorsum": "Tongue dorsum",
+    "lateral_tongue_left": "Left lateral tongue",
+    "lateral_tongue_right": "Right lateral tongue",
+    "ventral_tongue_floor_of_mouth": "Ventral tongue / floor of mouth",
+    "hard_palate": "Hard palate",
+    "soft_palate": "Soft palate",
+    "upper_gingiva": "Upper gingiva",
+    "lower_gingiva": "Lower gingiva",
+    "retromolar_left": "Left retromolar area",
+    "retromolar_right": "Right retromolar area"
+  },
+  "screenings": {
+    "title": "Screenings",
+    "intro": "Pseudonymous IDs only. Open a screening to see every result version.",
+    "empty": "No screenings yet.",
+    "columns": {
+      "patient": "Patient",
+      "date": "Date",
+      "risk": "Risk level",
+      "versions": "Versions"
+    }
+  }
+}

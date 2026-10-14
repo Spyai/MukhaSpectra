@@ -63,8 +63,11 @@ def similarity_about_centre(
     cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
     a = math.radians(angle_deg)
     rot = np.array(
-        [[scale * math.cos(a), -scale * math.sin(a), 0], [scale * math.sin(a),
-                                                          scale * math.cos(a), 0], [0, 0, 1]]
+        [
+            [scale * math.cos(a), -scale * math.sin(a), 0],
+            [scale * math.sin(a), scale * math.cos(a), 0],
+            [0, 0, 1],
+        ]
     )
     to_c = np.array([[1, 0, -cx], [0, 1, -cy], [0, 0, 1]], dtype=np.float64)
     back = np.array([[1, 0, cx + shift[0]], [0, 1, cy + shift[1]], [0, 0, 1]], dtype=np.float64)
@@ -125,3 +128,37 @@ def corner_errors(warp: np.ndarray, true_warp: np.ndarray, af_w: int, af_h: int)
     a = a[:2] / a[2]
     b = b[:2] / b[2]
     return np.linalg.norm(a - b, axis=0)
+
+
+def overlay_box(shape: tuple[int, ...]) -> tuple[int, int, int, int]:
+    """(x0, y0, x1, y1) of a camera-fixed label in the bottom-left corner (like a watermark)."""
+    h, w = shape[:2]
+    return 0, h - h // 10, w // 3, h
+
+
+def add_fixed_overlay(img: np.ndarray) -> np.ndarray:
+    """Burn a dark band with white 'SYNTHETIC' text at a fixed image position."""
+    out = img.copy()
+    x0, y0, x1, y1 = overlay_box(img.shape)
+    out[y0:y1, x0:x1] = 0.04
+    scale = (y1 - y0) / 40.0
+    text = np.zeros(img.shape[:2], np.uint8)  # OpenCV draws text on 8-bit images only
+    cv2.putText(
+        text,
+        "SYNTHETIC",
+        (x0 + 8, y1 - 12),
+        cv2.FONT_HERSHEY_DUPLEX,
+        scale,
+        255,
+        max(1, int(round(2 * scale))),
+        cv2.LINE_AA,
+    )
+    alpha = (text.astype(np.float32) / 255.0)[..., None]
+    return (out * (1 - alpha) + 0.93 * alpha).astype(np.float32)
+
+
+def overlay_mask(shape: tuple[int, ...]) -> np.ndarray:
+    mask = np.zeros(shape[:2], dtype=bool)
+    x0, y0, x1, y1 = overlay_box(shape)
+    mask[y0:y1, x0:x1] = True
+    return mask

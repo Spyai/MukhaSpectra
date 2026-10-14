@@ -32,12 +32,12 @@ def _as_float(img: np.ndarray) -> np.ndarray:
 
 
 def _resize_to(arr: np.ndarray, height: int, width: int) -> np.ndarray:
-    """Resize a 2-D or (H, W, C) map to (height, width); area for shrinking, linear otherwise."""
+    """Resize a non-empty 2-D or (H, W, C) map to (height, width) > 0.
+
+    Area averaging when shrinking (a dark frame's noise must not alias), linear otherwise.
+    """
     if arr.shape[0] == height and arr.shape[1] == width:
         return arr
-    if arr.size == 0 or height == 0 or width == 0:
-        shape = (height, width) + arr.shape[2:]
-        return np.zeros(shape, dtype=np.float32)
     shrinking = arr.shape[0] > height and arr.shape[1] > width
     interp = cv2.INTER_AREA if shrinking else cv2.INTER_LINEAR
     out = cv2.resize(arr, (width, height), interpolation=interp)

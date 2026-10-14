@@ -1,0 +1,293 @@
+@import 'tailwindcss';
+
+/*
+ * MukhaSpectra — "Violet in, green out".
+ * The two light modalities are the brand: 405 nm violet excitation and the green glow of healthy
+ * mucosa, on a deep-ink imaging-lab surface. Every colour is a token so both themes (and future
+ * high-contrast modes) switch in one place. Risk colours always travel with an icon and a word.
+ */
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  color-scheme: light;
+  --bg: oklch(0.982 0.005 268);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.962 0.008 268);
+  --surface-3: oklch(0.93 0.012 268);
+  --line: oklch(0.885 0.012 268);
+  --line-strong: oklch(0.78 0.02 268);
+  --fg: oklch(0.21 0.03 268);
+  --fg-muted: oklch(0.4 0.03 268);
+  --fg-subtle: oklch(0.49 0.03 268);
+  --violet: oklch(0.5 0.24 290);
+  --violet-strong: oklch(0.44 0.22 290);
+  --violet-text: oklch(0.46 0.22 290);
+  --violet-soft: oklch(0.5 0.24 290 / 0.09);
+  --on-violet: oklch(0.99 0 0);
+  --green: oklch(0.72 0.19 150);
+  --green-text: oklch(0.46 0.12 152);
+  --green-soft: oklch(0.72 0.19 150 / 0.12);
+  --ref-blue: oklch(0.5 0.15 250);
+  --focus: oklch(0.5 0.24 290);
+  --risk-low: oklch(0.47 0.085 195);
+  --risk-low-bg: oklch(0.95 0.035 195);
+  --risk-moderate: oklch(0.5 0.12 62);
+  --risk-moderate-bg: oklch(0.96 0.05 80);
+  --risk-high: oklch(0.5 0.19 20);
+  --risk-high-bg: oklch(0.95 0.035 15);
+  --risk-inconclusive: oklch(0.45 0.03 260);
+  --risk-inconclusive-bg: oklch(0.95 0.008 260);
+  --danger: oklch(0.5 0.19 25);
+  --warn: oklch(0.5 0.12 62);
+  --ok: oklch(0.47 0.1 160);
+  --shadow: 0 1px 2px oklch(0.2 0.03 268 / 0.06), 0 8px 28px -12px oklch(0.2 0.03 268 / 0.18);
+  --image-well: oklch(0.17 0.02 268);
+  --synthetic: oklch(0.55 0.17 75);
+  --synthetic-ink: oklch(0.22 0.04 70);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: oklch(0.15 0.022 268);
+  --surface: oklch(0.19 0.026 268);
+  --surface-2: oklch(0.225 0.03 268);
+  --surface-3: oklch(0.27 0.032 268);
+  --line: oklch(0.3 0.03 268);
+  --line-strong: oklch(0.42 0.035 268);
+  --fg: oklch(0.96 0.008 268);
+  --fg-muted: oklch(0.8 0.018 268);
+  --fg-subtle: oklch(0.7 0.022 268);
+  --violet: oklch(0.55 0.25 290);
+  --violet-strong: oklch(0.62 0.24 290);
+  --violet-text: oklch(0.78 0.15 290);
+  --violet-soft: oklch(0.55 0.25 290 / 0.18);
+  --on-violet: oklch(0.99 0 0);
+  --green: oklch(0.8 0.2 150);
+  --green-text: oklch(0.84 0.17 150);
+  --green-soft: oklch(0.8 0.2 150 / 0.13);
+  --ref-blue: oklch(0.74 0.12 245);
+  --focus: oklch(0.8 0.15 290);
+  --risk-low: oklch(0.8 0.11 188);
+  --risk-low-bg: oklch(0.8 0.11 188 / 0.13);
+  --risk-moderate: oklch(0.85 0.15 80);
+  --risk-moderate-bg: oklch(0.85 0.15 80 / 0.13);
+  --risk-high: oklch(0.73 0.18 18);
+  --risk-high-bg: oklch(0.73 0.18 18 / 0.15);
+  --risk-inconclusive: oklch(0.8 0.025 260);
+  --risk-inconclusive-bg: oklch(0.8 0.025 260 / 0.1);
+  --danger: oklch(0.73 0.18 22);
+  --warn: oklch(0.85 0.15 80);
+  --ok: oklch(0.82 0.14 160);
+  --shadow: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 12px 40px -18px oklch(0 0 0 / 0.7);
+  --image-well: oklch(0.11 0.02 268);
+  --synthetic: oklch(0.82 0.16 80);
+  --synthetic-ink: oklch(0.2 0.04 70);
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Noto Sans', sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-violet: var(--violet);
+  --color-violet-strong: var(--violet-strong);
+  --color-violet-text: var(--violet-text);
+  --color-violet-soft: var(--violet-soft);
+  --color-on-violet: var(--on-violet);
+  --color-glow: var(--green);
+  --color-glow-text: var(--green-text);
+  --color-glow-soft: var(--green-soft);
+  --color-ref: var(--ref-blue);
+  --color-focus: var(--focus);
+  --color-risk-low: var(--risk-low);
+  --color-risk-low-bg: var(--risk-low-bg);
+  --color-risk-moderate: var(--risk-moderate);
+  --color-risk-moderate-bg: var(--risk-moderate-bg);
+  --color-risk-high: var(--risk-high);
+  --color-risk-high-bg: var(--risk-high-bg);
+  --color-risk-inconclusive: var(--risk-inconclusive);
+  --color-risk-inconclusive-bg: var(--risk-inconclusive-bg);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-ok: var(--ok);
+  --color-image-well: var(--image-well);
+  --color-synthetic: var(--synthetic);
+  --color-synthetic-ink: var(--synthetic-ink);
+  --shadow-card: var(--shadow);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: var(--violet-soft);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+  .eyebrow {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-subtle);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.625rem 1.125rem;
+    border-radius: 0.875rem;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease;
+    user-select: none;
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(1px) scale(0.99);
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--violet);
+    color: var(--on-violet);
+    box-shadow:
+      0 0 0 1px oklch(1 0 0 / 0.08) inset,
+      0 10px 30px -12px var(--violet);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--violet-strong);
+  }
+  .btn-secondary {
+    background: var(--surface-2);
+    color: var(--fg);
+    border: 1px solid var(--line);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--line-strong);
+    background: var(--surface-3);
+  }
+  .btn-ghost {
+    color: var(--fg-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--fg);
+    background: var(--surface-2);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 999px;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--fg-muted);
+  }
+  .field-label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 0.375rem;
+  }
+  .input {
+    width: 100%;
+    min-height: 2.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--fg);
+    padding: 0.5rem 0.75rem;
+    font-size: 1rem;
+  }
+  .input:hover {
+    border-color: var(--line-strong);
+  }
+  .input[aria-invalid='true'] {
+    border-color: var(--danger);
+  }
+  .range {
+    accent-color: var(--violet);
+  }
+  .synthetic-stripes {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--synthetic) 0 10px,
+      color-mix(in oklch, var(--synthetic) 86%, black) 10px 20px
+    );
+    color: var(--synthetic-ink);
+  }
+  .scan-line {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      oklch(0.6 0.25 290 / 0.35) 40%,
+      oklch(0.8 0.2 290 / 0.95) 50%,
+      oklch(0.6 0.25 290 / 0.35) 60%,
+      transparent
+    );
+    box-shadow: 0 0 24px 6px oklch(0.55 0.25 290 / 0.45);
+  }
+  .glow-text {
+    color: var(--green-text);
+    text-shadow: 0 0 24px oklch(0.8 0.2 150 / 0.35);
+  }
+  .violet-text {
+    color: var(--violet-text);
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}

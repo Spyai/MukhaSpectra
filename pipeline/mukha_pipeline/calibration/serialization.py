@@ -52,14 +52,16 @@ def image_calibration_from_bytes(data: bytes) -> ImageCalibration:
         with np.load(io.BytesIO(data), allow_pickle=False) as npz:
             meta = json.loads(bytes(npz["metadata"].astype(np.uint8)).decode("utf-8"))
             color_matrix = np.asarray(npz["color_matrix"], dtype=np.float64).reshape(3, 3)
-            flat = (
-                np.asarray(npz["flat_field"], dtype=np.float32) if "flat_field" in npz else None
-            )
+            flat = np.asarray(npz["flat_field"], dtype=np.float32) if "flat_field" in npz else None
     except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile, UnicodeDecodeError) as e:
         raise CalibrationError("Calibration file is damaged or not a calibration file.") from e
     if not isinstance(meta, dict) or meta.get("format") != FORMAT:
         raise CalibrationError("Calibration file is not a MukhaSpectra image calibration.")
-    if int(meta.get("format_version", 0)) > FORMAT_VERSION:
+    try:
+        version = int(meta.get("format_version", 0))
+    except (TypeError, ValueError) as e:
+        raise CalibrationError("Calibration file has an unreadable format version.") from e
+    if version > FORMAT_VERSION:
         raise CalibrationError("Calibration file was written by a newer version; update first.")
     try:
         return ImageCalibration(

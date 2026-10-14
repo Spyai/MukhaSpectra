@@ -15,9 +15,30 @@ registration:
   ecc_gaussian_sigma: 2.0
   orb_features: 3000
   orb_ratio_test: 0.75
-  ransac_reproj_threshold: 4.0
+  ransac_reproj_threshold: 4.0       # px at the ORB estimation size
   max_translation_fraction: 0.15     # reject warps that move the image more than this
   max_scale_change: 0.15
+  # Added by the registration module (defaults in preprocess/registration.py match these).
+  estimation_max_side_px: 512        # ECC runs on gradient images at this size, warp is lifted
+  orb_max_side_px: 1024              # ORB keypoints are pixel-quantised: estimate larger
+  ecc_gauss_filt_size: 5             # OpenCV ECC internal smoothing (odd)
+  orb_min_matches: 12
+  orb_full_confidence_inliers: 50    # ORB confidence = inlier ratio * min(1, inliers / this)
+  max_rotation_deg: 10.0             # WL and AF are taken < 1 s apart through the same clip
+  accept_confidence_min: 0.30        # method accepted above this; QC applies its own limits
+  cross_check: true                  # run every method; veto the winner if a confident one
+  cross_check_max_disagreement_fraction: 0.02   # disagrees by > this x image diagonal
+  clahe_clip_limit: 2.0
+  clahe_tile_grid: 8
+  valid_erode_px: 2                  # drop border pixels blended with the warp's zero fill
+  # Labels burned into both photos at the same position (watermark, timestamp) do not move
+  # with the tissue and would pull alignment to identity. Tissue never has the same RGB under
+  # white light and 405 nm, so identical non-dark pixels are excluded (plus a margin).
+  auto_exclude_identical: true
+  identical_tolerance: 0.05          # max |WL - AF| per RGB channel (0-1) to count as identical
+  identical_min_luminance: 0.10      # ignore dark pixels (black in both is not a label)
+  identical_min_area_fraction: 0.0001  # drop isolated coincidences smaller than this
+  identical_margin_fraction: 0.04    # dilation (x shorter image side) to cover the label band
 
 segmentation:
   method: classical_hsv_lab
@@ -27,12 +48,21 @@ segmentation:
   mucosa_value_min: 0.18
   teeth_saturation_max: 0.22
   teeth_value_min: 0.62
+  teeth_lab_a_max: 8                 # pinkish whites (Lab a* >= this) are pale mucosa, not teeth
   background_value_max: 0.12
   specular_value_min: 0.96
   specular_saturation_max: 0.20
   fill_holes_max_fraction: 0.10      # white patches enclosed by mucosa are kept as mucosa
   min_component_fraction: 0.01
   morphology_kernel_px: 7
+  mucosa_lab_a_min: 14               # Lab a* (redness) also marks mucosa outside the hue ranges
+  partial_enclosure_min: 0.85        # whitish blob with >= this share of its rim on mucosa (and
+                                     #   not touching the image border) is kept as mucosa too
+  specular_dilate_px: 1              # highlight halo is unreliable as well
+  confidence_full_mucosa_fraction: 0.25  # confidence heuristic saturates at this mucosa share
+  confidence_ambiguous_max: 0.6      # confidence 0 when this share of pixels matches no rule
+  failed_mucosa_fraction: 0.02       # summary status "failed" below this mucosa share
+  low_confidence_below: 0.5          # summary status "low_confidence" below this confidence
 
 af:
   smoothing_sigma_px: 3.0
@@ -42,10 +72,17 @@ af:
   morphology_open_px: 5
   morphology_close_px: 9
   surround_ring_px: 15
+  edge_margin_px: 3                  # ignore a thin mucosa rim: AF/WL misregistration there
+                                     #   would read as a band of fluorescence loss
   reference_percentile_low: 25       # in-image reference uses mucosa between these percentiles
   reference_percentile_high: 90      #   of green, so FVL and glare do not drag it down
   relative_af_grid_size: 96          # downsampled grid for the 3D / interactive view
   heatmap_alpha_max: 0.75
+  reference_min_pixels: 200          # fewer usable mucosa pixels -> no in-image reference
+  reference_min_paired_ratio: 0.67   # paired site dimmer than this x own tissue is not used
+                                     #   (it would inflate relative AF and hide a real loss)
+  insufficient_mucosa_fraction: 0.02 # AF status "insufficient_mucosa" below this image share
+  heatmap_unanalysed_desaturate: 0.35  # grey out what was not analysed (teeth, shadow, glare)
 
 confounders:
   porphyrin_red_over_green_min: 0.85  # AF red / green; red porphyrin fluorescence from plaque
@@ -55,6 +92,9 @@ confounders:
   blood_lab_a_min: 35                 # WL a*: deep red
   blood_lab_l_max: 45
   flag_overlap_min: 0.15              # report a confounder when it covers >= this of a region
+  pigmentation_saturation_min: 0.15   # WL HSV S: grey shadow is not brown pigment
+  af_saturation_min: 0.98             # AF channel at/above this counts as saturated glare
+  glare_dilate_px: 2                  # glare is cut out of mucosa; look just around the region
 
 wl_classifier:
   input_size: 224
@@ -63,6 +103,8 @@ wl_classifier:
   std: [0.229, 0.224, 0.225]
   saliency_patch_fraction: 0.125
   saliency_stride_fraction: 0.0625
+  saliency_max_side_px: 448          # occlusion runs at this size, then the map is upsampled
+  crop_margin_fraction: 0.10         # margin around the mucosa bounding box before resizing
 
 spectral:
   channels_used_for_features: [F1_415, F2_445, F3_480, F4_515, F5_555, F6_590, F7_630, F8_680]

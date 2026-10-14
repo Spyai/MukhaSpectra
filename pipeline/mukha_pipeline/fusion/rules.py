@@ -255,7 +255,9 @@ def _af_rules(af: dict) -> AFRules:
     min_mult = _num(af, "confounder_discount.min_multiplier", positive=True)
     if min_mult > 1.0:
         raise TriageRulesError("triage rules: 'confounder_discount.min_multiplier' must be <= 1")
-    discounts_raw = {k: v for k, v in _get(af, "confounder_discount").items() if k != "min_multiplier"}
+    discounts_raw = {
+        k: v for k, v in _get(af, "confounder_discount").items() if k != "min_multiplier"
+    }
     discounts = _enum_map({"d": discounts_raw}, "d", ConfounderType)
     if any(not 0.0 <= d <= 1.0 for d in discounts.values()):
         raise TriageRulesError("triage rules: confounder discounts must lie in [0, 1]")

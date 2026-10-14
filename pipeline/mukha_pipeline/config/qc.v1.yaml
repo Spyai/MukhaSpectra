@@ -2,27 +2,43 @@
 # Thresholds are starting values tuned on synthetic and bench images. Re-tune on real Scout
 # captures before any field use. Metrics are computed on a copy resized so the longest side is
 # `metric_max_side_px`, which keeps thresholds independent of camera resolution.
+# Purpose: stop false reassurance. A capture that could hide a lesion must fail (error) or be
+# reported as a limitation (warning); it must never be analysed as if it were good.
 name: mukhaspectra-qc
 version: 1.0.0
 status: baseline_unvalidated
 
-metric_max_side_px: 1024
+# 512 px: area-averaging a phone photo down this far suppresses sensor/JPEG noise (which would
+# otherwise make a blurred photo look sharp) while blur that matters for analysis (>= ~3 px at
+# the 1024 px working resolution) still removes almost all Laplacian energy.
+metric_max_side_px: 512
+min_image_side_px: 64                 # shorter side below this: too small to assess or analyse
 
 white_light:
-  blur_laplacian_var_min: 40.0        # variance of Laplacian on grayscale (0-255 scale)
-  mean_brightness_min: 45.0           # 0-255
+  blur_laplacian_var_min: 5.0         # variance of 3x3 Laplacian of luma (0-255) at metric size,
+                                      #   clipped highlights excluded. Synthetic mucosa: sharp
+                                      #   18-250, Gaussian sigma 2 px @1024: 7-20, sigma 4: < 2.5
+  mean_brightness_min: 45.0           # luma 0-255
   mean_brightness_max: 215.0
-  clip_low_fraction_max: 0.20         # fraction of pixels <= 3
-  clip_high_fraction_max: 0.05        # fraction of pixels >= 252
-  glare_fraction_max: 0.04            # near-white saturated highlights
-  glare_value_min: 0.96               # HSV V (0-1) for a glare pixel
-  glare_saturation_max: 0.20          # HSV S (0-1) for a glare pixel
+  clip_low_fraction_max: 0.20         # fraction of pixels whose brightest channel <= 3 (warning)
+  clip_high_fraction_max: 0.05        # fraction of pixels with any channel >= 252 (error)
+  glare_fraction_max: 0.04            # specular highlights: HSV V >= glare_value_min and
+  glare_value_min: 0.98               #   S <= glare_saturation_max. V 0.98 keeps bright but
+  glare_saturation_max: 0.20          #   unclipped teeth from counting as glare
   glare_warning_fraction: 0.015
 
 autofluorescence:
-  blur_laplacian_var_min: 12.0        # AF images are dimmer and smoother than WL
+  blur_laplacian_var_min: 1.2         # AF is intrinsically smooth (emission diffuses from the
+                                      #   stroma), so only gross defocus/motion is caught here.
+                                      #   Synthetic AF: sharp 2.9-40, sigma 4 px @1024: < 0.5
   green_p90_min: 0.12                 # 0-1; below this the violet LED is probably off/blocked
-  blue_fraction_max: 0.35             # blue / (r+g+b) median; high = emission filter missing
+  blue_fraction_max: 0.35             # median B/(R+G+B); high = reflected 405 nm reaching the
+                                      #   sensor (emission filter missing)
+  green_fraction_min: 0.36            # median G/(R+G+B); below = not a green AF image (warning)
+  white_light_blue_fraction_min: 0.18 # red-dominant AND this much blue = a white-light photo
+  white_light_red_excess_min: 0.05    #   (median R share - G share) above this; with little
+                                      #   blue it is only a warning (porphyrin looks the same)
+  signal_sum_min: 0.06                # R+G+B (0-3) for a pixel to count in the colour ratios
   clip_high_fraction_max: 0.05
   mean_brightness_max: 230.0
 
@@ -43,10 +59,12 @@ spectral:
   ambient_leak_ratio_max: 0.15        # dark / lit, CLEAR channel
   contact_clear_min: 800              # lit - dark counts on CLEAR when in tissue contact
   contact_nir_dark_max: 2000          # dark NIR counts; high = probe not sealed against tissue
-  repeatability_cv_max: 0.08          # coefficient of variation across N readings
-  signal_min: 50                      # lit - dark counts on any spectral channel
+  repeatability_cv_max: 0.08          # coefficient of variation across N readings (warning)
+  signal_min: 50                      # lit - dark counts per spectral band; a few weak bands =
+                                      #   warning, more than half weak = error
   min_readings: 3
 
 score_weights:
   error: 0.5
   warning: 0.15
+  info: 0.0

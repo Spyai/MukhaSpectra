@@ -28,6 +28,7 @@ AF -> WL warp is ``W^-1``.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,6 +40,7 @@ from mukha_pipeline.types import RegistrationResult
 DEFAULTS: dict[str, Any] = {
     "method_order": ["ecc_affine", "orb_homography"],
     "estimation_max_side_px": 512,
+    "orb_max_side_px": 1024,
     "ecc_max_iterations": 200,
     "ecc_epsilon": 1.0e-5,
     "ecc_pyramid_levels": 3,
@@ -53,9 +55,16 @@ DEFAULTS: dict[str, Any] = {
     "max_scale_change": 0.15,
     "max_rotation_deg": 10.0,
     "accept_confidence_min": 0.30,
+    "cross_check": True,
+    "cross_check_max_disagreement_fraction": 0.02,
     "clahe_clip_limit": 2.0,
     "clahe_tile_grid": 8,
     "valid_erode_px": 2,
+    "auto_exclude_identical": True,
+    "identical_tolerance": 0.05,
+    "identical_min_luminance": 0.10,
+    "identical_min_area_fraction": 0.0001,
+    "identical_margin_fraction": 0.04,
 }
 
 METHODS = ("ecc_affine", "ecc_homography", "orb_homography")
@@ -64,16 +73,21 @@ MIN_ESTIMATION_SIDE_PX = 16
 # An identity warp was never verified by any method, so its confidence is capped below every
 # acceptance threshold; QC can never pass it on confidence alone.
 IDENTITY_CONFIDENCE_CAP = 0.2
+ORB_EXCLUDE_MARGIN_PX = 16  # ORB describes a 31 px patch; keep keypoints that far from overlays
+MIN_KEEP_FRACTION = 0.2  # with less usable area left, an estimate is not worth trusting
+DUPLICATE_UPLOAD_FRACTION = 0.5  # identical over this share of the frame = same photo twice
+_CV_ERROR = re.compile(r"error: \(-?\d+:([^)]*)\)\s*(.*?)(?:\s*in function.*)?$")
 
 
 @dataclass
 class _Attempt:
-    """Outcome of one estimation method at estimation resolution."""
+    """Outcome of one estimation method."""
 
     method: str
     warp_est: np.ndarray | None  # 3x3, AF-estimation coords -> WL-estimation coords
     confidence: float
-    reason: str | None  # None when the method produced a usable estimate
+    reason: str | None  # why the estimate was rejected; None = accepted
+    residual: np.ndarray | None = None  # 3x3, AF on WL grid -> WL, full resolution
 
 
 # --------------------------------------------------------------------------------------------
@@ -81,14 +95,32 @@ class _Attempt:
 # --------------------------------------------------------------------------------------------
 
 
-def register_af_to_wl(wl: np.ndarray, af: np.ndarray, cfg: dict | None) -> RegistrationResult:
+def register_af_to_wl(
+    wl: np.ndarray,
+    af: np.ndarray,
+    cfg: dict | None,
+    *,
+    exclude: np.ndarray | None = None,
+) -> RegistrationResult:
     """Align ``af`` to ``wl``; ``cfg`` is the ``registration`` section of the analysis config.
 
-    Methods are tried in ``method_order`` (default ECC affine, then ORB + RANSAC homography) on
-    copies whose longest side is ``estimation_max_side_px``; the accepted warp is then scaled to
-    the full WL resolution. A method is accepted when its warp passes the sanity limits
-    (translation, scale, rotation, no fold) and its confidence exceeds
-    ``accept_confidence_min``. Otherwise identity is returned with ``passed=False``.
+    ``exclude`` (optional, bool (H, W) in the WL frame, resized if needed) marks camera-fixed
+    pixels to ignore during estimation: anything at the same image position in both captures
+    regardless of tissue motion, such as the SYNTHETIC watermark, a burned-in timestamp or the
+    clip housing. Such structure would otherwise pull every estimate towards identity. Labels
+    burned identically into both photos are also found automatically
+    (``auto_exclude_identical``); a duplicate upload therefore fails instead of "aligning".
+
+    Methods run in ``method_order`` (default: ECC affine, then ORB + RANSAC homography) on
+    reduced-size copies; the warp is then lifted to the full WL resolution. A method is accepted
+    when its warp passes the sanity limits (translation, scale, rotation, no fold) and its
+    confidence exceeds ``accept_confidence_min``; the first accepted method wins.
+
+    With ``cross_check`` on, the remaining methods also run, and any confident estimate that
+    disagrees with the winner by more than ``cross_check_max_disagreement_fraction`` of the
+    image diagonal vetoes it: two independent methods pointing to different alignments mean one
+    of them locked onto a repeating structure (e.g. the teeth row), and we cannot tell which.
+    When nothing is accepted, identity is returned with ``passed=False`` and a note.
     """
     p = _params(cfg)
     wl_f = _as_rgb(wl)
@@ -101,45 +133,47 @@ def register_af_to_wl(wl: np.ndarray, af: np.ndarray, cfg: dict | None) -> Regis
     to_wl_grid = _resize_matrix(af_f.shape[1], af_f.shape[0], w, h)
     af_on_grid = _resize(af_f, w, h)
 
-    # 2. Estimation copies (speed, and gradients at this scale reflect anatomy, not noise).
-    scale = min(1.0, float(p["estimation_max_side_px"]) / max(h, w))
-    ew, eh = max(1, round(w * scale)), max(1, round(h * scale))
-    to_est = _resize_matrix(w, h, ew, eh)
-    wl_gray = _to_u8(_resize(_wl_gray(wl_f), ew, eh))
-    af_gray = _to_u8(_resize(_af_gray(af_on_grid), ew, eh))
-    clahe = cv2.createCLAHE(
-        clipLimit=float(p["clahe_clip_limit"]),
-        tileGridSize=(int(p["clahe_tile_grid"]), int(p["clahe_tile_grid"])),
-    )
-    wl_eq, af_eq = clahe.apply(wl_gray), clahe.apply(af_gray)
-    sigma = float(p["ecc_gaussian_sigma"])
-    wl_struct, af_struct = _structure(wl_eq, sigma), _structure(af_eq, sigma)
+    # 2. Pixels that cannot inform alignment: the caller's camera-fixed mask plus labels burned
+    #    identically into both photos.
+    excluded = _exclusion_mask(exclude, h, w)
+    identical = _identical_overlay_mask(wl_f, af_on_grid, p)
+    identical_fraction = float(identical.mean()) if identical is not None else 0.0
+    if identical is not None:
+        excluded = identical if excluded is None else (excluded | identical)
+    keep = None if excluded is None else ~excluded
 
+    # 3. Estimate: ECC on gradient structure at a reduced size (speed; gradients at this scale
+    #    reflect anatomy rather than sensor noise), ORB at a larger size (keypoints are
+    #    pixel-quantised, so corner accuracy scales with resolution). First accepted method
+    #    wins, subject to the cross-check.
+    est = _Estimator(wl_f, af_on_grid, p, keep)
     attempts: list[_Attempt] = []
+    winner: _Attempt | None = None
     for method in _method_order(p):
-        if min(ew, eh) < MIN_ESTIMATION_SIDE_PX:
-            attempts.append(_Attempt(method, None, 0.0, "image too small to align"))
-            continue
-        if method.startswith("ecc_"):
-            attempt = _ecc_attempt(wl_struct, af_struct, method, p)
-        else:
-            attempt = _orb_attempt(wl_eq, af_eq, p)
-        if attempt.warp_est is not None and attempt.reason is None:
-            residual = np.linalg.inv(to_est) @ attempt.warp_est @ to_est  # AF grid -> WL
-            attempt.reason = _sanity_problem(residual, w, h, p)
-            if attempt.reason is None and attempt.confidence <= p["accept_confidence_min"]:
-                attempt.reason = (
-                    f"confidence {attempt.confidence:.2f} at or below "
-                    f"{float(p['accept_confidence_min']):.2f}"
-                )
-            if attempt.reason is None:
-                note = _success_note(method, attempts)
-                return _build_result(
-                    af_on_grid, residual, to_wl_grid, method, attempt.confidence, True, note, p
-                )
+        attempt = est.run(method)
         attempts.append(attempt)
+        if winner is None and attempt.reason is None:
+            winner = attempt
+            if not p["cross_check"]:
+                break
 
-    identity_conf = min(_correlation(wl_struct, af_struct), IDENTITY_CONFIDENCE_CAP)
+    if winner is not None:
+        conflict = _cross_check_conflict(winner, attempts, w, h, p)
+        if conflict is None:
+            earlier = attempts[: attempts.index(winner)]
+            return _build_result(
+                af_on_grid,
+                winner.residual,  # type: ignore[arg-type]
+                to_wl_grid,
+                winner.method,
+                winner.confidence,
+                True,
+                _success_note(winner.method, earlier, identical_fraction),
+                p,
+            )
+        winner.reason = conflict
+
+    identity_conf = min(est.identity_confidence(), IDENTITY_CONFIDENCE_CAP)
     return _build_result(
         af_on_grid,
         np.eye(3),
@@ -147,14 +181,212 @@ def register_af_to_wl(wl: np.ndarray, af: np.ndarray, cfg: dict | None) -> Regis
         "identity",
         identity_conf,
         False,
-        _failure_note(attempts, wl_f.shape, af_f.shape),
+        _failure_note(attempts, wl_f.shape, af_f.shape, identical_fraction),
         p,
     )
+
+
+class _Estimator:
+    """Lazily built estimation images shared by all methods of one registration call."""
+
+    def __init__(
+        self,
+        wl_f: np.ndarray,
+        af_on_grid: np.ndarray,
+        p: dict[str, Any],
+        keep: np.ndarray | None,
+    ) -> None:
+        self.p = p
+        self.keep = keep  # bool (H, W) or None: pixels usable for estimation
+        self.h, self.w = wl_f.shape[:2]
+        self.wl_gray, self.af_gray = _wl_gray(wl_f), _af_gray(af_on_grid)
+        tiles = max(1, int(p["clahe_tile_grid"]))
+        self.clahe = cv2.createCLAHE(
+            clipLimit=float(p["clahe_clip_limit"]), tileGridSize=(tiles, tiles)
+        )
+        self._frames: dict[tuple[int, int], _EstimationFrame] = {}
+        self._structs: tuple[np.ndarray, np.ndarray] | None = None
+
+    def frame(self, max_side: int, margin_px: int) -> _EstimationFrame:
+        key = (max_side, margin_px)
+        if key not in self._frames:
+            self._frames[key] = _EstimationFrame.build(
+                self.wl_gray, self.af_gray, max_side, self.clahe, self.keep, margin_px
+            )
+        return self._frames[key]
+
+    def ecc_frame(self) -> _EstimationFrame:
+        # Gaussian + Sobel spread an excluded edge by about 3 sigma + 2 px.
+        margin = int(math.ceil(3.0 * float(self.p["ecc_gaussian_sigma"]))) + 3
+        return self.frame(int(self.p["estimation_max_side_px"]), margin)
+
+    def orb_frame(self) -> _EstimationFrame:
+        return self.frame(int(self.p["orb_max_side_px"]), ORB_EXCLUDE_MARGIN_PX)
+
+    def structures(self) -> tuple[np.ndarray, np.ndarray]:
+        """Gradient-structure maps at the ECC size; excluded pixels are zeroed in both."""
+        if self._structs is None:
+            fr = self.ecc_frame()
+            sigma = float(self.p["ecc_gaussian_sigma"])
+            t, m = _structure(fr.wl_eq, sigma), _structure(fr.af_eq, sigma)
+            if fr.keep is not None:
+                t, m = t * (fr.keep > 0), m * (fr.keep > 0)
+            self._structs = (t, m)
+        return self._structs
+
+    def identity_confidence(self) -> float:
+        keep = self.ecc_frame().keep
+        return _correlation(*self.structures(), valid=None if keep is None else keep > 0)
+
+    def run(self, method: str) -> _Attempt:
+        """Estimate with ``method``, lift to full resolution, and apply the acceptance rules."""
+        is_ecc = method.startswith("ecc_")
+        frame = self.ecc_frame() if is_ecc else self.orb_frame()
+        if min(frame.wl_eq.shape) < MIN_ESTIMATION_SIDE_PX:
+            return _Attempt(method, None, 0.0, "image too small to align")
+        if frame.keep is not None and float(np.mean(frame.keep > 0)) < MIN_KEEP_FRACTION:
+            return _Attempt(method, None, 0.0, "too little of the image left after exclusions")
+        if is_ecc:
+            attempt = _ecc_attempt(*self.structures(), method, self.p, frame.keep)
+        else:
+            attempt = _orb_attempt(frame.wl_eq, frame.af_eq, self.p, frame.keep)
+        if attempt.warp_est is None:
+            return attempt
+        to_est = frame.to_est
+        attempt.residual = np.linalg.inv(to_est) @ attempt.warp_est @ to_est
+        attempt.reason = _sanity_problem(attempt.residual, self.w, self.h, self.p)
+        accept_min = float(self.p["accept_confidence_min"])
+        if attempt.reason is None and attempt.confidence <= accept_min:
+            attempt.reason = f"confidence {attempt.confidence:.2f} at or below {accept_min:.2f}"
+        return attempt
+
+
+def _cross_check_conflict(
+    winner: _Attempt, attempts: list[_Attempt], w: int, h: int, p: dict[str, Any]
+) -> str | None:
+    """Reason to veto ``winner`` when another confident estimate points elsewhere, else None.
+
+    Estimates rejected only by the sanity limits still count: a confident ORB match showing a
+    shift beyond the limit is evidence that an in-range ECC answer is a false lock.
+    """
+    if not p["cross_check"]:
+        return None
+    limit = float(p["cross_check_max_disagreement_fraction"]) * math.hypot(w, h)
+    accept_min = float(p["accept_confidence_min"])
+    for other in attempts:
+        if other is winner or other.residual is None or other.confidence <= accept_min:
+            continue
+        gap = _max_displacement_gap(winner.residual, other.residual, w, h)  # type: ignore[arg-type]
+        if gap > limit:
+            return (
+                f"disagrees with {other.method} by {gap:.0f} px (limit {limit:.0f} px); "
+                "possible false lock on a repeating structure"
+            )
+    return None
+
+
+def _max_displacement_gap(a: np.ndarray, b: np.ndarray, w: int, h: int) -> float:
+    """Largest distance between where two warps send a 3x3 grid at 10/50/90 % of the image.
+
+    Inner points rather than corners: they are where the tissue is, and they are less sensitive
+    to the extrapolation differences between an affine and a homography fit.
+    """
+    xs = [0.1 * (w - 1), 0.5 * (w - 1), 0.9 * (w - 1)]
+    ys = [0.1 * (h - 1), 0.5 * (h - 1), 0.9 * (h - 1)]
+    gap = 0.0
+    for x in xs:
+        for y in ys:
+            ua, va, _ = _apply(a, x, y)
+            ub, vb, _ = _apply(b, x, y)
+            gap = max(gap, math.hypot(ua - ub, va - vb))
+    return gap
 
 
 # --------------------------------------------------------------------------------------------
 # Configuration and image preparation
 # --------------------------------------------------------------------------------------------
+
+
+@dataclass
+class _EstimationFrame:
+    """CLAHE-equalised WL / AF grays at an estimation size, and the WL -> estimation map."""
+
+    wl_eq: np.ndarray
+    af_eq: np.ndarray
+    to_est: np.ndarray
+    keep: np.ndarray | None = None  # uint8 (255 = usable) at this size, shrunk by a margin
+
+    @classmethod
+    def build(
+        cls,
+        wl_gray: np.ndarray,
+        af_gray: np.ndarray,
+        max_side: int,
+        clahe: cv2.CLAHE,
+        keep_full: np.ndarray | None = None,
+        margin_px: int = 0,
+    ) -> _EstimationFrame:
+        h, w = wl_gray.shape
+        scale = min(1.0, max(1, max_side) / max(h, w))
+        ew, eh = max(1, round(w * scale)), max(1, round(h * scale))
+        wl_eq = clahe.apply(_to_u8(_resize(wl_gray, ew, eh)))
+        af_eq = clahe.apply(_to_u8(_resize(af_gray, ew, eh)))
+        keep = None
+        if keep_full is not None:
+            small = cv2.resize(
+                keep_full.astype(np.uint8) * 255, (ew, eh), interpolation=cv2.INTER_NEAREST
+            )
+            if margin_px > 0:
+                kernel = np.ones((2 * margin_px + 1, 2 * margin_px + 1), np.uint8)
+                small = cv2.erode(small, kernel)  # image borders are not eroded
+            keep = small
+        return cls(wl_eq, af_eq, _resize_matrix(w, h, ew, eh), keep)
+
+
+def _exclusion_mask(exclude: np.ndarray | None, h: int, w: int) -> np.ndarray | None:
+    """Caller's exclusion mask as bool (H, W) at WL size; None when absent, empty or unusable."""
+    if exclude is None:
+        return None
+    ex = np.asarray(exclude)
+    if ex.ndim == 3:
+        ex = ex.any(axis=2)
+    if ex.ndim != 2 or ex.size == 0:
+        return None
+    ex = np.nan_to_num(ex.astype(np.float32)) > 0
+    if ex.shape != (h, w):
+        ex = cv2.resize(ex.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+    return ex if ex.any() else None
+
+
+def _identical_overlay_mask(
+    wl_f: np.ndarray, af_on_grid: np.ndarray, p: dict[str, Any]
+) -> np.ndarray | None:
+    """Pixels burned identically into both photos (labels, watermarks), dilated; else None.
+
+    Tissue never looks the same under white light and 405 nm excitation (WL mucosa is pink with
+    a strong red channel, AF is green with almost no red), so non-dark pixels whose RGB agrees
+    within ``identical_tolerance`` in both photos are an overlay that does not move with the
+    tissue. Left in, such a label pulls every estimate towards identity: a silent false lock.
+    The dilation swallows the label's dark background band. A duplicate upload (the WL photo
+    sent as AF) makes almost everything identical, so registration then fails, as it should.
+    """
+    if not p["auto_exclude_identical"]:
+        return None
+    h, w = wl_f.shape[:2]
+    tol = float(p["identical_tolerance"])
+    same = np.all(np.abs(wl_f - af_on_grid) <= tol, axis=2)
+    same &= _wl_gray(wl_f) >= float(p["identical_min_luminance"])
+    if not same.any():
+        return None
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(same.astype(np.uint8), 8)
+    min_area = max(4, int(float(p["identical_min_area_fraction"]) * h * w))
+    big = 1 + np.flatnonzero(stats[1:, cv2.CC_STAT_AREA] >= min_area)
+    if big.size == 0:
+        return None
+    seeds = np.isin(labels, big).astype(np.uint8)
+    radius = max(1, int(round(float(p["identical_margin_fraction"]) * min(h, w))))
+    disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+    return cv2.dilate(seeds, disk) > 0
 
 
 def _params(cfg: dict | None) -> dict[str, Any]:
@@ -256,11 +488,17 @@ def _structure(gray_eq: np.ndarray, sigma: float) -> np.ndarray:
 # --------------------------------------------------------------------------------------------
 
 
-def _ecc_attempt(template: np.ndarray, moving: np.ndarray, method: str, p: dict) -> _Attempt:
+def _ecc_attempt(
+    template: np.ndarray,
+    moving: np.ndarray,
+    method: str,
+    p: dict,
+    keep: np.ndarray | None = None,
+) -> _Attempt:
     """Coarse-to-fine ECC. Returns the AF -> WL warp at estimation resolution."""
     motion = cv2.MOTION_HOMOGRAPHY if method == "ecc_homography" else cv2.MOTION_AFFINE
     try:
-        wl_to_af, cc = _ecc_pyramid(template, moving, motion, p)
+        wl_to_af, cc = _ecc_pyramid(template, moving, motion, p, keep)
     except (cv2.error, np.linalg.LinAlgError) as e:
         return _Attempt(method, None, 0.0, f"did not converge ({_short(e)})")
     if not np.all(np.isfinite(wl_to_af)) or abs(np.linalg.det(wl_to_af)) < 1e-9:
@@ -270,11 +508,20 @@ def _ecc_attempt(template: np.ndarray, moving: np.ndarray, method: str, p: dict)
 
 
 def _ecc_pyramid(
-    template: np.ndarray, moving: np.ndarray, motion: int, p: dict
+    template: np.ndarray,
+    moving: np.ndarray,
+    motion: int,
+    p: dict,
+    keep: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
-    """Run ECC from the coarsest to the finest level; returns (W: WL -> AF, final ECC cc)."""
+    """Run ECC from the coarsest to the finest level; returns (W: WL -> AF, final ECC cc).
+
+    ``keep`` (uint8, 255 = usable) is passed as ECC's input mask: excluded AF pixels are dropped
+    from the objective after warping, so camera-fixed overlays cannot vote for identity.
+    """
     levels = max(1, int(p["ecc_pyramid_levels"]))
     pyr_t, pyr_m, down = [template], [moving], []  # down[k]: level k -> level k+1 coords
+    pyr_k = [keep]
     while len(pyr_t) < levels:
         h, w = pyr_t[-1].shape
         nw, nh = w // 2, h // 2
@@ -283,32 +530,37 @@ def _ecc_pyramid(
         down.append(_resize_matrix(w, h, nw, nh))
         pyr_t.append(cv2.resize(pyr_t[-1], (nw, nh), interpolation=cv2.INTER_AREA))
         pyr_m.append(cv2.resize(pyr_m[-1], (nw, nh), interpolation=cv2.INTER_AREA))
+        prev = pyr_k[-1]
+        pyr_k.append(
+            None if prev is None else cv2.resize(prev, (nw, nh), interpolation=cv2.INTER_NEAREST)
+        )
 
     criteria = (
         cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
         max(1, int(p["ecc_max_iterations"])),
         float(p["ecc_epsilon"]),
     )
-    gauss = int(p["ecc_gauss_filt_size"])
-    gauss = gauss if gauss % 2 == 1 else gauss + 1
-    warp = _initial_translation(pyr_t[-1], pyr_m[-1])
+    gauss = max(1, int(p["ecc_gauss_filt_size"]))
+    gauss = gauss if gauss % 2 == 1 else gauss + 1  # OpenCV requires an odd kernel size
+    coarse_keep = None if pyr_k[-1] is None else pyr_k[-1] > 0
+    warp = _initial_translation(pyr_t[-1], pyr_m[-1], coarse_keep)
     cc = 0.0
     for level in range(len(pyr_t) - 1, -1, -1):
         if level < len(pyr_t) - 1:
             d = down[level]  # finer (level) -> coarser (level + 1)
             warp = np.linalg.inv(d) @ warp @ d
-        init = warp.astype(np.float32) if motion == cv2.MOTION_HOMOGRAPHY else (
-            warp[:2].astype(np.float32)
-        )
+        init = (warp if motion == cv2.MOTION_HOMOGRAPHY else warp[:2]).astype(np.float32)
         cc, out = cv2.findTransformECC(
-            pyr_t[level], pyr_m[level], init, motion, criteria, None, gauss
+            pyr_t[level], pyr_m[level], init, motion, criteria, pyr_k[level], gauss
         )
         warp = np.vstack([out, [0.0, 0.0, 1.0]]) if out.shape[0] == 2 else out
         warp = warp.astype(np.float64)
     return warp, float(cc)
 
 
-def _initial_translation(template: np.ndarray, moving: np.ndarray) -> np.ndarray:
+def _initial_translation(
+    template: np.ndarray, moving: np.ndarray, valid: np.ndarray | None = None
+) -> np.ndarray:
     """Start ECC from the better of identity and a phase-correlation translation.
 
     ECC is a local optimiser; a hand-held shift of tens of pixels can exceed its capture range
@@ -323,14 +575,23 @@ def _initial_translation(template: np.ndarray, moving: np.ndarray) -> np.ndarray
     if not (math.isfinite(dx) and math.isfinite(dy)):
         return identity
     shifted = np.array([[1.0, 0.0, dx], [0.0, 1.0, dy], [0.0, 0.0, 1.0]])
-    if _correlation(template, moving, shifted) > _correlation(template, moving, identity):
+    shifted_corr = _correlation(template, moving, shifted, valid=valid)
+    if shifted_corr > _correlation(template, moving, identity, valid=valid):
         return shifted
     return identity
 
 
-def _correlation(template: np.ndarray, moving: np.ndarray, wl_to_af: np.ndarray | None = None
-                 ) -> float:
-    """Pearson correlation of ``template(x)`` with ``moving(W x)`` over the overlap, in [0, 1]."""
+def _correlation(
+    template: np.ndarray,
+    moving: np.ndarray,
+    wl_to_af: np.ndarray | None = None,
+    *,
+    valid: np.ndarray | None = None,
+) -> float:
+    """Pearson correlation of ``template(x)`` with ``moving(W x)`` over the overlap, in [0, 1].
+
+    ``valid`` (bool, template frame) restricts the overlap further (excluded overlays).
+    """
     if wl_to_af is None:
         warped, mask = moving, np.ones(moving.shape, dtype=bool)
     else:
@@ -338,8 +599,14 @@ def _correlation(template: np.ndarray, moving: np.ndarray, wl_to_af: np.ndarray 
         flags = cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP
         warped = cv2.warpAffine(moving, wl_to_af[:2], (w, h), flags=flags)
         ones = np.ones(moving.shape, dtype=np.uint8)
-        mask = cv2.warpAffine(ones, wl_to_af[:2], (w, h), flags=cv2.INTER_NEAREST
-                              | cv2.WARP_INVERSE_MAP) > 0
+        mask = (
+            cv2.warpAffine(
+                ones, wl_to_af[:2], (w, h), flags=cv2.INTER_NEAREST | cv2.WARP_INVERSE_MAP
+            )
+            > 0
+        )
+    if valid is not None:
+        mask = mask & valid
     if int(mask.sum()) < 16:
         return 0.0
     a = template[mask].astype(np.float64)
@@ -357,13 +624,18 @@ def _correlation(template: np.ndarray, moving: np.ndarray, wl_to_af: np.ndarray 
 # --------------------------------------------------------------------------------------------
 
 
-def _orb_attempt(wl_eq: np.ndarray, af_eq: np.ndarray, p: dict) -> _Attempt:
-    """Feature matching on CLAHE grayscale; confidence = inlier ratio x min(1, inliers / N)."""
+def _orb_attempt(
+    wl_eq: np.ndarray, af_eq: np.ndarray, p: dict, keep: np.ndarray | None = None
+) -> _Attempt:
+    """Feature matching on CLAHE grayscale; confidence = inlier ratio x min(1, inliers / N).
+
+    ``keep`` (uint8, 255 = usable) restricts keypoint detection in both images.
+    """
     method = "orb_homography"
     try:
         orb = cv2.ORB_create(nfeatures=max(10, int(p["orb_features"])))
-        kp_af, des_af = orb.detectAndCompute(af_eq, None)
-        kp_wl, des_wl = orb.detectAndCompute(wl_eq, None)
+        kp_af, des_af = orb.detectAndCompute(af_eq, keep)
+        kp_wl, des_wl = orb.detectAndCompute(wl_eq, keep)
     except cv2.error as e:
         return _Attempt(method, None, 0.0, f"feature detection failed ({_short(e)})")
     if des_af is None or des_wl is None or len(kp_af) < 4 or len(kp_wl) < 4:
@@ -374,20 +646,72 @@ def _orb_attempt(wl_eq: np.ndarray, af_eq: np.ndarray, p: dict) -> _Attempt:
     min_matches = max(4, int(p["orb_min_matches"]))
     if len(good) < min_matches:
         return _Attempt(method, None, 0.0, f"only {len(good)} reliable feature matches")
-    src = np.float32([kp_af[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    dst = np.float32([kp_wl[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    src = np.float64([kp_af[m.queryIdx].pt for m in good])
+    dst = np.float64([kp_wl[m.trainIdx].pt for m in good])
     homography, inlier_mask = cv2.findHomography(
-        src, dst, cv2.RANSAC, float(p["ransac_reproj_threshold"])
+        src.reshape(-1, 1, 2),
+        dst.reshape(-1, 1, 2),
+        cv2.RANSAC,
+        float(p["ransac_reproj_threshold"]),
     )
     if homography is None or inlier_mask is None or not np.all(np.isfinite(homography)):
         return _Attempt(method, None, 0.0, "no consistent homography")
-    inliers = int(inlier_mask.sum())
+    inl = inlier_mask.ravel().astype(bool)
+    inliers = int(inl.sum())
     full = max(1, int(p["orb_full_confidence_inliers"]))
     conf = (inliers / len(good)) * min(1.0, inliers / full)
-    homography = homography.astype(np.float64)
+    warp = _refine_on_inliers(src[inl], dst[inl], homography.astype(np.float64))
+    return _Attempt(method, warp, float(np.clip(conf, 0.0, 1.0)), None)
+
+
+def _reprojection_errors(warp: np.ndarray, src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+    pts = np.hstack([src, np.ones((len(src), 1))]) @ warp.T
+    with np.errstate(divide="ignore", invalid="ignore"):
+        proj = pts[:, :2] / pts[:, 2:3]
+    err = np.linalg.norm(proj - dst, axis=1)
+    return np.where(np.isfinite(err), err, np.inf)
+
+
+def _fit_affine(src: np.ndarray, dst: np.ndarray) -> np.ndarray | None:
+    """Least-squares affine (as a 3x3) from point pairs; None if under-determined."""
+    if len(src) < 3:
+        return None
+    design = np.hstack([src, np.ones((len(src), 1))])
+    if np.linalg.matrix_rank(design) < 3:
+        return None
+    sol, *_ = np.linalg.lstsq(design, dst, rcond=None)
+    out = np.eye(3)
+    out[:2] = sol.T
+    return out
+
+
+def _refine_on_inliers(src: np.ndarray, dst: np.ndarray, homography: np.ndarray) -> np.ndarray:
+    """Refit on the RANSAC inliers and pick the simpler model unless perspective is earned.
+
+    ORB keypoints are quantised to pixel positions at their pyramid octave, and RANSAC keeps
+    matches up to the reprojection threshold. A free homography fits that noise with its two
+    perspective terms, which swings the image corners by pixels. The tissue is not a plane
+    anyway, so after trimming loose inliers we fit both an affine and a homography and keep the
+    homography only if it wins on BIC (residual vs parameter count).
+    """
     if abs(homography[2, 2]) > 1e-12:
-        homography /= homography[2, 2]
-    return _Attempt(method, homography, float(np.clip(conf, 0.0, 1.0)), None)
+        homography = homography / homography[2, 2]
+    err = _reprojection_errors(homography, src, dst)
+    keep = err <= max(2.5 * float(np.median(err)), 0.5)
+    s, d = src[keep], dst[keep]
+    n = len(s)
+    affine = _fit_affine(s, d)
+    if affine is None or n < 8:
+        return homography
+    refit, _ = cv2.findHomography(s.reshape(-1, 1, 2), d.reshape(-1, 1, 2), 0)
+    if refit is None or not np.all(np.isfinite(refit)) or abs(refit[2, 2]) < 1e-12:
+        return affine
+    refit = refit / refit[2, 2]
+    rss_a = float(np.sum(_reprojection_errors(affine, s, d) ** 2)) + 1e-12
+    rss_h = float(np.sum(_reprojection_errors(refit, s, d) ** 2)) + 1e-12
+    bic_a = n * math.log(rss_a / n) + 6 * math.log(n)
+    bic_h = n * math.log(rss_h / n) + 8 * math.log(n)
+    return affine if bic_a <= bic_h else refit
 
 
 # --------------------------------------------------------------------------------------------
@@ -450,10 +774,12 @@ def _sanity_problem(warp: np.ndarray, w: int, h: int, p: dict) -> str | None:
 def _warp_image(img: np.ndarray, warp: np.ndarray, w: int, h: int, interp: int) -> np.ndarray:
     """Resample ``img`` onto the WL grid with a forward (source -> destination) warp."""
     if np.allclose(warp[2], [0.0, 0.0, 1.0]):
-        return cv2.warpAffine(img, warp[:2], (w, h), flags=interp,
-                              borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-    return cv2.warpPerspective(img, warp, (w, h), flags=interp,
-                               borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        return cv2.warpAffine(
+            img, warp[:2], (w, h), flags=interp, borderMode=cv2.BORDER_CONSTANT, borderValue=0
+        )
+    return cv2.warpPerspective(
+        img, warp, (w, h), flags=interp, borderMode=cv2.BORDER_CONSTANT, borderValue=0
+    )
 
 
 def _build_result(
@@ -506,21 +832,41 @@ def _empty_result(h: int, w: int, note: str) -> RegistrationResult:
 
 
 def _short(err: Exception) -> str:
-    """First line of an OpenCV error, trimmed; OpenCV messages include source paths."""
-    text = str(err).strip().splitlines()
-    msg = text[-1] if text else type(err).__name__
-    return msg.strip()[:120]
+    """OpenCV error reduced to its cause (drops version, source path and function name)."""
+    text = " ".join(str(err).split())
+    m = _CV_ERROR.search(text)
+    msg = f"{m.group(1).strip()}: {m.group(2).strip()}".rstrip(": ") if m else text
+    return (msg or type(err).__name__)[:120]
 
 
-def _success_note(method: str, earlier: list[_Attempt]) -> str | None:
-    """Audit note when a fallback was needed."""
-    if not earlier:
-        return None
-    tried = "; ".join(f"{a.method}: {a.reason}" for a in earlier)
-    return f"Aligned with {method} after the preferred method was rejected ({tried})."
+def _identical_note(fraction: float) -> str:
+    if fraction >= DUPLICATE_UPLOAD_FRACTION:
+        return (
+            " The two photos are identical over most of the frame; check that the fluorescence "
+            "photo, not a second white-light photo, was uploaded."
+        )
+    return (
+        f" Ignored {fraction:.0%} of the frame where both photos are identical "
+        "(a label or overlay burned in at the same position)."
+    )
 
 
-def _failure_note(attempts: list[_Attempt], wl_shape: tuple, af_shape: tuple) -> str:
+def _success_note(
+    method: str, earlier: list[_Attempt], identical_fraction: float = 0.0
+) -> str | None:
+    """Audit note when a fallback was needed or an overlay was ignored; None otherwise."""
+    note = ""
+    if earlier:
+        tried = "; ".join(f"{a.method}: {a.reason}" for a in earlier)
+        note = f"Aligned with {method} after the preferred method was rejected ({tried})."
+    if identical_fraction > 0:
+        note = (note + _identical_note(identical_fraction)).strip()
+    return note or None
+
+
+def _failure_note(
+    attempts: list[_Attempt], wl_shape: tuple, af_shape: tuple, identical_fraction: float = 0.0
+) -> str:
     """Plain explanation of why the AF image could not be aligned."""
     parts = "; ".join(f"{a.method}: {a.reason}" for a in attempts) or "no method configured"
     note = (
@@ -531,4 +877,6 @@ def _failure_note(attempts: list[_Attempt], wl_shape: tuple, af_shape: tuple) ->
     af_aspect = af_shape[1] / max(af_shape[0], 1)
     if abs(math.log(max(wl_aspect, 1e-6) / max(af_aspect, 1e-6))) > 0.1:
         note += " The two photos have different aspect ratios (orientation or crop differs)."
+    if identical_fraction > 0:
+        note += _identical_note(identical_fraction)
     return note

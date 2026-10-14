@@ -20,7 +20,7 @@ Size = tuple[int, int]
 
 MUCOSA_RGB = np.array([0.80, 0.50, 0.52], dtype=np.float32)
 VESSEL_RGB = np.array([0.58, 0.22, 0.28], dtype=np.float32)
-TEETH_RGB = np.array([0.93, 0.91, 0.84], dtype=np.float32)
+TEETH_RGB = np.array([0.88, 0.86, 0.79], dtype=np.float32)
 
 
 def fractal_noise(
@@ -113,7 +113,8 @@ def make_af_image(
     img = np.stack([red * base, green * base, blue * base], axis=-1)
     if teeth:
         band = int(0.18 * h)
-        img[:band] = np.array([0.25, 0.75, 0.30], dtype=np.float32)  # enamel/dentin glow
+        # enamel/dentin fluoresce brighter than mucosa under the same excitation
+        img[:band] = np.array([0.6, 1.8, 0.7], dtype=np.float32) * green
     img += rng.normal(0.0, sensor_noise, img.shape).astype(np.float32)
     return np.clip(img, 0.0, 1.0).astype(np.float32)
 
@@ -123,6 +124,26 @@ def remove_emission_filter(af: np.ndarray, leak: float = 0.55) -> np.ndarray:
     out = af.copy()
     out[..., 2] = np.clip(out[..., 2] + leak, 0.0, 1.0)
     out[..., 0] = np.clip(out[..., 0] + 0.15 * leak, 0.0, 1.0)  # Bayer red leaks in the violet
+    return out
+
+
+def grey_world(img: np.ndarray) -> np.ndarray:
+    """Auto white balance (grey world): equal channel means, as an unlocked phone camera does."""
+    means = img.reshape(-1, 3).mean(axis=0)
+    return np.clip(img * (means.mean() / np.maximum(means, 1e-6)), 0.0, 1.0).astype(np.float32)
+
+
+def through_emission_filter(img: np.ndarray) -> np.ndarray:
+    """White light seen through the long-pass emission filter: blue blocked, image orange-pink."""
+    out = img.copy()
+    out[..., 2] *= 0.1
+    return out
+
+
+def add_porphyrin(af: np.ndarray, level: float = 0.5) -> np.ndarray:
+    """Heavy red (~635 nm) porphyrin fluorescence from bacterial coating over the whole field."""
+    out = af.copy()
+    out[..., 0] = np.clip(out[..., 0] + level, 0.0, 1.0)
     return out
 
 

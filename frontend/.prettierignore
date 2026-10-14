@@ -1,0 +1,10 @@
+dist
+dist-mock
+node_modules
+coverage
+test-results
+playwright-report
+e2e-screenshots
+src/api/types.gen.ts
+src/mocks/assets
+package-lock.json

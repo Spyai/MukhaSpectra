@@ -1,0 +1,475 @@
+/* MukhaSpectra clinician report — print stylesheet (WeasyPrint, A4).
+   Calm clinical typography: Inter with DejaVu Sans fallback, tabular numbers, risk colour always
+   paired with an icon and the level text. Page-level running header/footer rules that depend on
+   the report (report id, versions) are injected by the template. */
+
+:root {
+  --ink: #1d2939;
+  --ink-2: #344054;
+  --muted: #667085;
+  --faint: #98a2b3;
+  --rule: #e4e7ec;
+  --rule-strong: #d0d5dd;
+  --soft: #f6f7f9;
+  --brand: #5b3cc4;
+  --brand-soft: #f3f0fd;
+  --brand-line: #ddd5f8;
+  --green: #1f9d6b;
+  --low: #0f766e;
+  --low-tint: #e2f4f1;
+  --moderate: #b45309;
+  --moderate-tint: #fdf0d8;
+  --high: #b42318;
+  --high-tint: #fde7e4;
+  --inconclusive: #475467;
+  --inconclusive-tint: #eef1f5;
+  --reference: #2563eb;
+}
+
+@page {
+  size: A4;
+  margin: 17mm 13mm 15mm 13mm;
+
+  @top-left {
+    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-size: 7.4pt;
+    font-weight: 700;
+    color: #b42318;
+    letter-spacing: 0.02em;
+    vertical-align: bottom;
+    padding-bottom: 3mm;
+  }
+  @top-center {
+    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-size: 7.4pt;
+    font-weight: 800;
+    color: #b42318;
+    letter-spacing: 0.12em;
+    vertical-align: bottom;
+    padding-bottom: 3mm;
+  }
+  @top-right {
+    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-size: 7.4pt;
+    color: #475467;
+    vertical-align: bottom;
+    padding-bottom: 3mm;
+    font-variant-numeric: tabular-nums;
+  }
+  @bottom-left {
+    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-size: 6.8pt;
+    color: #667085;
+    vertical-align: top;
+    padding-top: 3mm;
+    width: 80%;
+  }
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-size: 7.2pt;
+    font-weight: 600;
+    color: #344054;
+    vertical-align: top;
+    padding-top: 3mm;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html {
+  font-family: Inter, "DejaVu Sans", Arial, sans-serif;
+  font-size: 9.6pt;
+  line-height: 1.38;
+  color: var(--ink);
+  background: #ffffff;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+}
+
+body { margin: 0; background: #ffffff; }
+
+p { margin: 0 0 1.6mm; }
+ul, ol { margin: 0; padding-left: 4.2mm; }
+li { margin: 0 0 0.6mm; }
+strong { font-weight: 650; }
+.muted { color: var(--muted); }
+.small { font-size: 8pt; }
+.tiny { font-size: 7.2pt; }
+.num { text-align: right; white-space: nowrap; }
+.nowrap { white-space: nowrap; }
+.mono { font-family: "DejaVu Sans Mono", monospace; font-size: 0.86em; letter-spacing: -0.01em; }
+
+/* ---------------------------------------------------------------- watermark + screen banner */
+
+.watermark {
+  position: fixed;
+  top: 112mm;
+  left: -22mm;
+  width: 228mm;
+  text-align: center;
+  transform: rotate(-33deg);
+  font-size: 66pt;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(180, 35, 24, 0.075);
+  z-index: 50;
+}
+
+.screen-only { display: none; }
+
+@media screen {
+  html { background: #e9ecf1; }
+  body { max-width: 210mm; margin: 0 auto; padding: 10mm 13mm 16mm; background: #ffffff; }
+  .screen-only { display: block; }
+  .screen-banner {
+    margin: -10mm -13mm 6mm;
+    padding: 2.2mm 13mm;
+    background: #b42318;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 8.5pt;
+  }
+  .watermark { position: fixed; top: 40%; left: 0; width: 100%; pointer-events: none; }
+}
+
+/* ---------------------------------------------------------------- header */
+
+.report-header { display: grid; grid-template-columns: 1fr auto; column-gap: 6mm; }
+.report-header .logo { height: 9.2mm; width: auto; display: block; margin-bottom: 1.6mm; }
+.report-header h1 {
+  font-size: 15pt;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  margin: 0;
+}
+.report-header .subtitle { color: var(--muted); font-size: 8.4pt; margin-top: 0.6mm; }
+.report-meta { text-align: right; font-size: 8.2pt; color: var(--ink-2); }
+.report-meta .rid { font-size: 10.5pt; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
+.report-meta div { margin-bottom: 0.4mm; }
+
+.context-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr 1fr;
+  column-gap: 3mm;
+  row-gap: 1.6mm;
+  margin-top: 3.2mm;
+  padding: 2.6mm 3mm;
+  background: var(--soft);
+  border: 0.6pt solid var(--rule);
+  border-radius: 2mm;
+}
+.kv .k {
+  font-size: 6.6pt;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.kv .v { font-size: 8.5pt; font-weight: 500; color: var(--ink); }
+
+.versions {
+  margin-top: 1.6mm;
+  font-size: 7pt;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.versions span.item { white-space: nowrap; margin-right: 3mm; }
+.versions b { color: var(--ink-2); font-weight: 600; }
+
+.status-chip {
+  display: inline-block;
+  padding: 0.2mm 1.8mm;
+  border-radius: 8pt;
+  font-size: 7.6pt;
+  font-weight: 650;
+  border: 0.6pt solid;
+}
+.status-chip.ok { color: var(--low); background: var(--low-tint); border-color: #9bd6cd; }
+.status-chip.warn { color: var(--moderate); background: var(--moderate-tint); border-color: #efc98a; }
+.status-chip.bad { color: var(--high); background: var(--high-tint); border-color: #f1aaa2; }
+.status-chip.neutral { color: var(--inconclusive); background: var(--inconclusive-tint); border-color: var(--rule-strong); }
+
+/* ---------------------------------------------------------------- notices */
+
+.synthetic-ribbon {
+  margin-top: 3mm;
+  padding: 2mm 3mm;
+  border: 1pt dashed #e0786d;
+  background: #fff4f2;
+  color: #912018;
+  border-radius: 2mm;
+  font-size: 8.2pt;
+}
+.synthetic-ribbon b { letter-spacing: 0.04em; }
+
+.disclaimer {
+  margin-top: 3mm;
+  padding: 2.6mm 3.4mm 2.6mm 11mm;
+  position: relative;
+  background: var(--brand-soft);
+  border: 0.7pt solid var(--brand-line);
+  border-radius: 2mm;
+}
+.disclaimer .icon { position: absolute; left: 3.4mm; top: 2.8mm; width: 5mm; height: 5mm; }
+.disclaimer .title { font-weight: 700; font-size: 10pt; color: #3f2a8c; margin-bottom: 0.5mm; }
+.disclaimer p { margin: 0; font-size: 8.6pt; color: var(--ink-2); }
+
+/* ---------------------------------------------------------------- sections */
+
+section { margin-top: 5mm; }
+h2 {
+  font-size: 10.8pt;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  margin: 0 0 2.2mm;
+  padding-bottom: 1.2mm;
+  border-bottom: 0.8pt solid var(--rule);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h2 .sec-no {
+  display: inline-block;
+  min-width: 4.6mm;
+  color: var(--brand);
+  font-weight: 800;
+}
+h3 {
+  font-size: 9.2pt;
+  font-weight: 700;
+  margin: 2.6mm 0 1.2mm;
+  color: var(--ink-2);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.keep { break-inside: avoid; page-break-inside: avoid; }
+
+.cols-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; }
+.cols-main-side { display: grid; grid-template-columns: 1.08fr 0.92fr; column-gap: 5mm; }
+
+.card {
+  border: 0.6pt solid var(--rule);
+  border-radius: 2mm;
+  padding: 2.6mm 3mm;
+  background: #ffffff;
+}
+.card.soft { background: var(--soft); }
+
+dl.facts { display: grid; grid-template-columns: auto 1fr; column-gap: 3mm; row-gap: 0.8mm; margin: 0; }
+dl.facts dt { color: var(--muted); font-size: 8.2pt; }
+dl.facts dd { margin: 0; font-weight: 500; }
+
+.rf-summary { font-weight: 650; font-size: 9.4pt; margin-bottom: 1.6mm; }
+.rf-groups { font-size: 8.4pt; }
+.rf-groups .grp { margin-bottom: 0.6mm; }
+.rf-groups .grp b { display: inline-block; min-width: 15mm; color: var(--muted); font-weight: 600; }
+
+/* ---------------------------------------------------------------- risk badges */
+
+.risk-high { --c: var(--high); --t: var(--high-tint); }
+.risk-moderate { --c: var(--moderate); --t: var(--moderate-tint); }
+.risk-low { --c: var(--low); --t: var(--low-tint); }
+.risk-inconclusive { --c: var(--inconclusive); --t: var(--inconclusive-tint); }
+
+.risk-badge {
+  display: inline-block;
+  padding: 2.4mm 4.2mm 2.4mm 3.4mm;
+  border-radius: 2.2mm;
+  background: var(--c);
+  color: #ffffff;
+  border: 1.2pt solid var(--c);
+  font-weight: 800;
+  font-size: 15pt;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+.risk-badge.risk-inconclusive { background: var(--t); color: var(--c); border-style: dashed; border-width: 1.4pt; }
+.risk-badge svg { width: 5mm; height: 5mm; vertical-align: -0.6mm; margin-right: 1.8mm; }
+.risk-badge .lvl-sub { display: block; font-size: 7.2pt; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 1.2mm; opacity: 0.9; }
+
+.pill {
+  display: inline-block;
+  padding: 0.35mm 1.9mm 0.35mm 1.3mm;
+  border-radius: 8pt;
+  background: var(--t);
+  color: var(--c);
+  border: 0.7pt solid var(--c);
+  font-size: 7.2pt;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.pill.risk-inconclusive { border-style: dashed; }
+.pill svg { width: 2.9mm; height: 2.9mm; vertical-align: -0.45mm; margin-right: 0.8mm; }
+
+.overall { border-left: 2.6pt solid var(--c); background: #ffffff; }
+.overall .when { margin-top: 2.4mm; }
+.overall .when .k { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+.overall .when .v { font-size: 10.4pt; font-weight: 700; color: var(--c); }
+.overall .summary { font-size: 9.8pt; font-weight: 650; margin: 2.4mm 0 1.4mm; }
+.overall ol { font-size: 8.8pt; }
+.overall .expl { margin-top: 2mm; font-size: 8.2pt; color: var(--ink-2); }
+.review-chip { display: inline-block; margin-left: 2mm; font-size: 7.4pt; font-weight: 650; color: var(--brand); border: 0.6pt solid var(--brand-line); background: var(--brand-soft); border-radius: 8pt; padding: 0.3mm 1.8mm; vertical-align: 1.4mm; }
+
+.map-col img.sitemap { width: 100%; height: auto; display: block; }
+.map-col .orient { font-size: 7.2pt; color: var(--muted); text-align: center; margin-top: 0.8mm; }
+.findings-list { margin-top: 1.6mm; font-size: 8.2pt; }
+.findings-list .f { margin-bottom: 0.8mm; }
+.findings-list .no {
+  display: inline-block; width: 4.2mm; height: 4.2mm; line-height: 4.2mm; border-radius: 50%;
+  border: 1pt solid var(--c); color: var(--c); text-align: center; font-weight: 800; font-size: 7pt;
+  margin-right: 1mm;
+}
+
+/* ---------------------------------------------------------------- tables */
+
+table { width: 100%; border-collapse: collapse; font-size: 8.2pt; }
+th {
+  text-align: left;
+  font-size: 6.6pt;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 650;
+  padding: 1.1mm 1.6mm;
+  background: var(--soft);
+  border-bottom: 0.7pt solid var(--rule-strong);
+}
+td { padding: 1.05mm 1.6mm; border-bottom: 0.5pt solid var(--rule); vertical-align: top; }
+tr { break-inside: avoid; page-break-inside: avoid; }
+td.num, th.num { text-align: right; }
+td .detail { display: block; color: var(--muted); font-size: 7.4pt; }
+tr.override td { background: #fff7f5; }
+tr.override .tag {
+  display: inline-block; margin-top: 0.4mm; font-size: 6.8pt; font-weight: 700; color: var(--high);
+  letter-spacing: 0.02em;
+}
+td.pts { font-weight: 650; }
+td.pts.neg { color: var(--low); }
+td.pts.floor { color: var(--high); font-style: italic; font-weight: 600; }
+table.compact td, table.compact th { padding: 0.8mm 1.4mm; }
+
+.score-line { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; margin-bottom: 1.8mm; }
+.score-line .gauge { display: block; }
+.score-line .txt { font-size: 8.2pt; color: var(--ink-2); }
+.note-line { font-size: 7.8pt; color: var(--muted); margin-top: 1mm; }
+
+/* ---------------------------------------------------------------- lesion blocks */
+
+.lesion {
+  margin-top: 4mm;
+  border: 0.7pt solid var(--rule-strong);
+  border-top: 2.6pt solid var(--c);
+  border-radius: 2mm;
+  padding: 2.8mm 3.2mm 3mm;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.lesion-head { display: grid; grid-template-columns: auto 1fr auto; column-gap: 2.6mm; align-items: center; }
+.lesion-head .no {
+  width: 7mm; height: 7mm; border-radius: 50%; border: 1.4pt solid var(--c); color: var(--c);
+  text-align: center; line-height: 6.4mm; font-weight: 800; font-size: 10pt;
+}
+.lesion-head .title { font-size: 10.6pt; font-weight: 700; }
+.lesion-head .origins { font-size: 7.6pt; color: var(--muted); }
+.lesion-head .right { text-align: right; }
+.lesion-head .score { font-size: 7.6pt; color: var(--muted); margin-top: 0.6mm; }
+.lesion .summary { margin: 2mm 0 2mm; font-size: 8.9pt; }
+
+.triptych { display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 2.4mm; }
+.panel { margin: 0; }
+.panel .frame {
+  height: 41mm;
+  background: #0f1419;
+  border-radius: 1.2mm;
+  overflow: hidden;
+  text-align: center;
+}
+.panel img { width: 100%; height: 41mm; object-fit: contain; display: block; }
+.panel .placeholder {
+  height: 41mm;
+  background: var(--soft);
+  border: 0.8pt dashed var(--rule-strong);
+  border-radius: 1.2mm;
+  color: var(--faint);
+  text-align: center;
+  padding-top: 15mm;
+  font-size: 8pt;
+}
+.panel .placeholder .ph-title { font-weight: 650; color: var(--muted); }
+.panel figcaption { margin-top: 0.8mm; font-size: 7.6pt; }
+.panel figcaption b { font-weight: 700; }
+.panel figcaption span { color: var(--muted); }
+
+.measure-wrap { margin-top: 2.2mm; }
+.measure-wrap .cap { font-size: 7.2pt; color: var(--muted); margin-top: 0.8mm; }
+.obs { margin-top: 1.6mm; font-size: 8pt; color: var(--ink-2); }
+.obs b { color: var(--muted); font-weight: 600; }
+.confounders { margin-top: 1mm; font-size: 7.6pt; color: #8a4b08; }
+.chip-warn {
+  display: inline-block; font-size: 7pt; padding: 0.1mm 1.4mm; border-radius: 6pt;
+  background: var(--moderate-tint); color: #8a4b08; border: 0.5pt solid #efc98a; margin: 0 0.6mm 0.4mm 0;
+  white-space: nowrap;
+}
+
+.spectral { display: grid; grid-template-columns: 1.05fr 0.95fr; column-gap: 4mm; margin-top: 2.4mm; }
+.spectral img.plot { width: 100%; height: auto; display: block; }
+.spectral .meta { font-size: 7.4pt; color: var(--muted); margin-top: 0.6mm; }
+.clf { margin-top: 1.8mm; padding: 1.6mm 2.2mm; background: var(--soft); border-radius: 1.4mm; font-size: 7.9pt; }
+.clf .status { color: var(--moderate); font-weight: 650; }
+.clf ul { margin-top: 0.6mm; }
+
+.model-line {
+  margin-top: 2.2mm; padding: 1.5mm 2.2mm; border-radius: 1.4mm; font-size: 8pt;
+  background: var(--inconclusive-tint); color: var(--ink-2);
+}
+.model-line b { font-weight: 650; }
+
+.lesion .factors { margin-top: 2.2mm; }
+
+/* ---------------------------------------------------------------- QC */
+
+ul.issues-list { font-size: 8.2pt; }
+.qc-summary { font-size: 8.8pt; margin-bottom: 2mm; }
+.ok-text { color: var(--low); font-weight: 650; }
+.bad-text { color: var(--high); font-weight: 650; }
+.warn-text { color: var(--moderate); font-weight: 650; }
+td.sev.error { color: var(--high); font-weight: 650; white-space: nowrap; }
+td.sev.warning { color: var(--moderate); font-weight: 600; white-space: nowrap; }
+tr.muted td { color: var(--muted); }
+.limits li { font-size: 8.3pt; }
+
+/* ---------------------------------------------------------------- review + referral */
+
+.review { border: 1pt solid var(--ink-2); border-radius: 2mm; padding: 3mm 3.6mm; break-inside: avoid; page-break-inside: avoid; }
+.review .row { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6mm; margin-bottom: 3mm; }
+.field .lbl { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 650; }
+.field .line { border-bottom: 0.8pt solid var(--ink-2); height: 7mm; padding-top: 2mm; font-weight: 600; }
+.checks { font-size: 9pt; margin: 1mm 0 3mm; }
+.checks .opt { display: inline-block; margin-right: 5mm; white-space: nowrap; }
+.box {
+  display: inline-block; width: 3.6mm; height: 3.6mm; border: 0.9pt solid var(--ink-2); border-radius: 0.6mm;
+  vertical-align: -0.7mm; margin-right: 1.4mm; text-align: center; line-height: 3.2mm; font-size: 8pt; font-weight: 800;
+}
+.notes-lines .nl { border-bottom: 0.6pt solid var(--rule-strong); height: 6.6mm; }
+.notes-filled { min-height: 12mm; padding: 1.6mm 0; border-bottom: 0.6pt solid var(--rule-strong); }
+
+.referral { display: grid; grid-template-columns: 1fr 40mm; column-gap: 5mm; break-inside: avoid; page-break-inside: avoid; }
+.facility { padding: 2mm 2.6mm; border: 0.6pt solid var(--rule); border-radius: 1.6mm; margin-bottom: 1.8mm; font-size: 8.2pt; break-inside: avoid; }
+.facility .name { font-weight: 700; font-size: 8.9pt; }
+.facility .example {
+  display: inline-block; font-size: 6.8pt; font-weight: 700; color: var(--moderate); background: var(--moderate-tint);
+  border: 0.5pt dashed #e0a24a; border-radius: 6pt; padding: 0 1.6mm; margin-left: 1mm; vertical-align: 0.3mm;
+}
+.facility .first { font-size: 6.6pt; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: 0.07em; }
+.qr { text-align: center; }
+.qr img { width: 34mm; height: 34mm; display: block; margin: 0 auto; }
+.qr .url { font-size: 6.6pt; color: var(--ink-2); word-break: break-all; margin-top: 1mm; }
+.qr .hint { font-size: 7pt; color: var(--muted); margin-top: 0.8mm; }
+.qr .noqr { border: 0.8pt dashed var(--rule-strong); border-radius: 1.6mm; padding: 4mm 2mm; font-size: 7.6pt; color: var(--muted); }
+.urgency { font-size: 9.6pt; font-weight: 700; color: var(--c); margin-bottom: 1.6mm; }
+
+.end-note { margin-top: 4mm; font-size: 7.2pt; color: var(--muted); border-top: 0.6pt solid var(--rule); padding-top: 1.6mm; }

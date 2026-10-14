@@ -75,7 +75,9 @@ lesion:
       # A lower 555/630 ratio means more absorption in the haemoglobin band.
       - {max: -0.05, points: 0.5}
       - {max: -0.10, points: 1.0}
-    # Without a reference reading the absolute features are hard to interpret.
+    # Without a reference reading the absolute features are hard to interpret. v1 scores deltas
+    # only, so such a reading contributes 0 points (0 x this multiplier) and is reported as a
+    # limitation; the multiplier is kept for a future absolute-feature rule.
     no_reference_multiplier: 0.5
 
   clinical_visual:
@@ -123,7 +125,8 @@ patient:
 # Floors from clinical red flags. Evaluated after scoring; the overall level is the maximum of the
 # scored level and every floor that applies. Condition keys:
 #   symptom: <Symptoms field>              patient-reported symptom is true
-#   visual_appearance: [..]                any examined site's visual flag has one of these
+#   visual_appearance: [..]                any site's visual flag has one of these (examined or
+#                                          reference-only: a worker's observation is never ignored)
 #   history: prior_oral_cancer|prior_oral_lesion
 #   any_lesion: true                       at least one lesion assessment exists
 # All keys in one `when` must hold.
@@ -164,8 +167,8 @@ overrides:
     label: "Difficulty opening the mouth (possible oral submucous fibrosis)"
     when: {symptom: difficulty_opening_mouth}
     floor: MODERATE
-  - code: symptom.red_or_white_patch_reported
-    label: "Patient reports a red or white patch"
+  - code: symptom.red_patch_reported
+    label: "Patient reports a red patch"
     when: {symptom: red_patch}
     floor: MODERATE
   - code: symptom.white_patch_reported

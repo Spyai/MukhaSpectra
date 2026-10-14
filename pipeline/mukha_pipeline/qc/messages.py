@@ -52,7 +52,10 @@ _SPECS: tuple[IssueSpec, ...] = (
     IssueSpec("af_filter_leak", _E, "Violet-light photo too blue — fit the yellow filter, retake."),
     IssueSpec("af_overexposed", _E, "Violet-light photo too bright — move back slightly, retake."),
     IssueSpec("af_blur", _E, "Violet-light photo blurry — hold the phone steady and retake."),
-    IssueSpec("af_not_green", _W, "Violet-light photo not green — check filter and colour setting."),
+    IssueSpec("af_white_light", _E, "Looks like a white-light photo — retake with violet light."),
+    IssueSpec(
+        "af_not_green", _W, "Violet-light photo not green — check filter and colour setting."
+    ),
     # --- dark frame ----------------------------------------------------------------------------
     IssueSpec("ambient_light", _E, "Dark photo too bright — block room light and retake."),
     IssueSpec("ambient_light_minor", _W, "Some room light seen — dim lights or shade the mouth."),
@@ -63,11 +66,17 @@ _SPECS: tuple[IssueSpec, ...] = (
     IssueSpec("insufficient_mucosa", _E, "Too little tissue in view — open wider, move closer."),
     # --- spectral probe (AS7341) ---------------------------------------------------------------
     IssueSpec("spectral_no_readings", _E, "No probe readings — repeat the probe measurement."),
-    IssueSpec("spectral_few_readings", _W, "Too few probe readings — repeat the probe measurement."),
-    IssueSpec("spectral_channels_missing", _E, "Probe data incomplete — reconnect the probe, repeat."),
+    IssueSpec(
+        "spectral_few_readings", _W, "Too few probe readings — repeat the probe measurement."
+    ),
+    IssueSpec(
+        "spectral_channels_missing", _E, "Probe data incomplete — reconnect the probe, repeat."
+    ),
     IssueSpec("spectral_checks_skipped", _W, "Probe contact not checked — hold it flat on tissue."),
     IssueSpec("spectral_saturated", _E, "Probe signal too strong — lower probe gain and repeat."),
-    IssueSpec("spectral_ambient_leak", _E, "Room light reaching probe — press it gently on tissue."),
+    IssueSpec(
+        "spectral_ambient_leak", _E, "Room light reaching probe — press it gently on tissue."
+    ),
     IssueSpec("probe_no_contact", _E, "Probe not touching tissue — place it flat and repeat."),
     IssueSpec("spectral_signal_low", _W, "Probe signal too weak — check probe light and repeat."),
     IssueSpec(
