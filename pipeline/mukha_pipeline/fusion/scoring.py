@@ -299,6 +299,17 @@ def _availability_notes(draft: LesionDraft, readable: bool, led: Ledger) -> None
         )
 
 
+def red_area_override(draft: LesionDraft, rules: TriageRules) -> Override | None:
+    """Floor for FVL overlapping a deep-red area (possible red patch); never a discount."""
+    raf = rules.af.red_area_floor
+    if raf is None or draft.region is None:
+        return None
+    for c in draft.region.confounders:
+        if c.type == raf.confounder and c.overlap_fraction >= raf.min_overlap:
+            return Override(code="af.red_area_floor", label=raf.label, floor=raf.floor)
+    return None
+
+
 def score_lesion(
     draft: LesionDraft, lesion_id: str, rules: TriageRules, risk_factors: RiskFactors
 ) -> ScoredLesion:
@@ -329,6 +340,9 @@ def score_lesion(
     if draft.visual is not None:
         ctx = ClinicalContext(risk_factors, frozenset(draft.visual.appearance), any_lesion=True)
         floors = matching_overrides(rules.overrides, ctx, visual_only=True)
+    red_floor = red_area_override(draft, rules)
+    if red_floor is not None:
+        floors.append(red_floor)
     level = score_level
     floor = highest_floor(floors)
     if floor is not None and RISK_ORDER[floor] > RISK_ORDER[level]:

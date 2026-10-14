@@ -175,7 +175,7 @@ def test_multiplier_order_is_reference_diascopy_confounders_site_then_high_risk(
         [
             site(
                 S.LOWER_GINGIVA,
-                [base_region(confounders=[(C.BLOOD, 0.5)])],
+                [base_region(confounders=[(C.PIGMENTATION, 0.5)])],
                 ref_type=ReferenceType.IN_IMAGE_AUTO,
                 diascopy=Diascopy.FVL_PERSISTS,
             )

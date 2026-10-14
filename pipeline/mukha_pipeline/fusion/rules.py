@@ -73,6 +73,17 @@ class MinPoints:
 
 
 @dataclass(frozen=True)
+class RedAreaFloor:
+    """FVL overlapping a deep-red WL area: inflammation or a red patch cannot be told apart, so
+    the lesion is kept at least at ``floor`` instead of being discounted."""
+
+    confounder: ConfounderType
+    min_overlap: float
+    floor: RiskLevel
+    label: str
+
+
+@dataclass(frozen=True)
 class AFRules:
     fvl_present: float
     depth_points_per_0_1: float
@@ -85,6 +96,7 @@ class AFRules:
     diascopy_multipliers: dict[Diascopy, float]
     confounder_discount: dict[ConfounderType, float]
     min_confounder_multiplier: float
+    red_area_floor: RedAreaFloor | None = None
 
 
 @dataclass(frozen=True)
@@ -273,6 +285,31 @@ def _af_rules(af: dict) -> AFRules:
         diascopy_multipliers=_enum_map(af, "multipliers.diascopy", Diascopy, positive=True),
         confounder_discount=discounts,
         min_confounder_multiplier=min_mult,
+        red_area_floor=_red_area_floor(af.get("red_area_floor")),
+    )
+
+
+def _red_area_floor(raw: Any) -> RedAreaFloor | None:
+    if raw is None:
+        return None
+    where = "lesion.af.red_area_floor"
+    if not isinstance(raw, dict):
+        raise TriageRulesError(f"triage rules: '{where}' must be a mapping")
+    try:
+        confounder = ConfounderType(_get(raw, "confounder"))
+        floor = RiskLevel(_get(raw, "floor"))
+    except ValueError as exc:
+        raise TriageRulesError(f"triage rules: '{where}' has an unknown value") from exc
+    if floor not in FLOOR_LEVELS:
+        raise TriageRulesError(f"triage rules: '{where}.floor' must be MODERATE or HIGH")
+    min_overlap = float(_get(raw, "min_overlap"))
+    if not 0.0 <= min_overlap <= 1.0:
+        raise TriageRulesError(f"triage rules: '{where}.min_overlap' must lie in [0, 1]")
+    return RedAreaFloor(
+        confounder=confounder,
+        min_overlap=min_overlap,
+        floor=floor,
+        label=_check_text(_get(raw, "label"), f"{where}.label"),
     )
 
 

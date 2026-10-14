@@ -144,6 +144,14 @@ def run_triage(
 
     ctx = ClinicalContext(risk_factors, site_appearances(sites), any_lesion=bool(scored))
     floors = matching_overrides(tr.overrides, ctx)
+    # Lesion-only floors (e.g. a red area with FVL) must also hold for the patient: the overall
+    # level is never lower than any lesion's level.
+    seen_codes = {o.code for o in floors}
+    for s in scored:
+        for o in s.floors:
+            if o.code not in seen_codes:
+                seen_codes.add(o.code)
+                floors.append(o)
     examined = [s for s in sites if s.role == SiteRole.EXAMINED]
     readable = sum(1 for s in examined if site_readable(s))
     decision = decide_level(

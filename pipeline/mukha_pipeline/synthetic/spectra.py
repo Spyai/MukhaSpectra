@@ -353,9 +353,9 @@ def _row(
 
 def spectral_inputs_to_csv(
     readings: Sequence[SpectralInput],
-    calibration: SpectralCalibration
-    | tuple[Sequence[SpectralFrame], Sequence[SpectralFrame]]
-    | None = None,
+    calibration: (
+        SpectralCalibration | tuple[Sequence[SpectralFrame], Sequence[SpectralFrame]] | None
+    ) = None,
 ) -> str:
     """Serialise readings (and optionally the white reference) as spectral CSV v1.
 

@@ -93,14 +93,16 @@ class ArraySource:
                 exposure_time_ms=exposures.get("af"),
                 **common,
             ),
-            dark=None
-            if dark is None
-            else self.image_capture(
-                dark,
-                CaptureKind.DARK_FRAME,
-                oral_site,
-                exposure_time_ms=exposures.get("dark"),
-                **common,
+            dark=(
+                None
+                if dark is None
+                else self.image_capture(
+                    dark,
+                    CaptureKind.DARK_FRAME,
+                    oral_site,
+                    exposure_time_ms=exposures.get("dark"),
+                    **common,
+                )
             ),
             role=SiteRole(role),
             visual_flag=visual_flag or VisualFlag(),

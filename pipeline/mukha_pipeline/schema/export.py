@@ -1,7 +1,7 @@
 """Generate the ScreeningResult JSON Schema from the pydantic models.
 
-    python -m mukha_pipeline.schema.export            # rewrite the checked-in schema
-    python -m mukha_pipeline.schema.export --check    # exit 1 if it is out of date
+python -m mukha_pipeline.schema.export            # rewrite the checked-in schema
+python -m mukha_pipeline.schema.export --check    # exit 1 if it is out of date
 """
 
 from __future__ import annotations

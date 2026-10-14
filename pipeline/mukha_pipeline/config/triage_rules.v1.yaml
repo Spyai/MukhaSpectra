@@ -52,9 +52,17 @@ lesion:
       # and the combined multiplier never goes below `min_multiplier`.
       porphyrin_red: 0.6
       pigmentation: 0.6
-      blood: 0.6
+      # A deep-red area in white light may be blood or inflammation, but it may also be a red
+      # patch (erythroplakia), the highest-risk oral lesion. It is never discounted; instead
+      # `red_area_floor` keeps the lesion at least MODERATE (re-examine in 2 weeks).
+      blood: 0.0
       glare: 0.5
       min_multiplier: 0.2
+    red_area_floor:
+      confounder: blood
+      min_overlap: 0.15
+      floor: MODERATE
+      label: "Red area with loss of fluorescence: may be inflammation or a red patch; re-examine in 2 weeks and refer if it persists"
 
   wl_model:
     # Ignored when the classifier status is not "ok" (e.g. model_unavailable).

@@ -20,8 +20,12 @@ ALLOWED_PHRASES: tuple[str, ...] = (
 FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("diagnosis", re.compile(r"\bdiagnos[a-z]*", re.IGNORECASE)),
     ("malignant", re.compile(r"\bmalignan[a-z]*", re.IGNORECASE)),
-    ("cancer detected", re.compile(r"\bcancer\s+(?:was\s+|is\s+)?(?:detected|found|present|confirmed)",
-                                   re.IGNORECASE)),
+    (
+        "cancer detected",
+        re.compile(
+            r"\bcancer\s+(?:was\s+|is\s+)?(?:detected|found|present|confirmed)", re.IGNORECASE
+        ),
+    ),
     ("no cancer", re.compile(r"\bno\s+(?:sign\s+of\s+)?cancer\b", re.IGNORECASE)),
     ("cancer-free", re.compile(r"\bcancer[\s-]free\b", re.IGNORECASE)),
 )
