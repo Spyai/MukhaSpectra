@@ -111,7 +111,9 @@ export function AppShell() {
       </main>
 
       <footer
-        className={`border-t border-line px-4 py-6 text-center text-xs text-fg-subtle sm:mb-0 ${hideTabBar ? '' : 'mb-16'}`}
+        className={`border-t border-line px-4 py-6 text-center text-xs text-fg-subtle ${
+          hideTabBar ? 'mb-20 lg:mb-0' : 'mb-16 sm:mb-0'
+        }`}
       >
         <p>{t('app.footer')}</p>
         {version.data?.software ? (

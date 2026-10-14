@@ -7,8 +7,8 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
-const SPAN = 6.0; // beam travels from -SPAN/2 to +SPAN/2 (beyond the visible surface)
-const PERIOD = 7.5; // seconds per sweep
+const SPAN = 4.4; // beam travels from -SPAN/2 to +SPAN/2 (just past the visible surface)
+const PERIOD = 6.5; // seconds per sweep
 
 const vertex = /* glsl */ `
   uniform float uTime;
@@ -67,9 +67,13 @@ const fragment = /* glsl */ `
     float bz = (vXZ.y - uBeamZ) / 1.55;
     float footprint = exp(-(bx * bx + bz * bz) * 1.6);
     float behind = uBeamX - vXZ.x;
-    float age = behind >= 0.0 ? behind : behind + ${SPAN.toFixed(2)};
     float zcover = smoothstep(2.2, 1.2, abs(vXZ.y - uBeamZ));
-    float glow = exp(-age / 1.35) * smoothstep(4.4, 2.6, age) * zcover;
+    // Healthy tissue keeps a soft glow between sweeps, brightest just behind the beam. Ahead
+    // of the beam the glow is what is left from the previous sweep; the two blend smoothly at
+    // the beam so there is no hard leading edge.
+    float glowBehind = 0.22 + 0.78 * exp(-max(behind, 0.0) / 1.5);
+    float glowAhead = 0.22 + 0.78 * exp(-(behind + ${SPAN.toFixed(2)}) / 1.5);
+    float glow = mix(glowAhead, glowBehind, smoothstep(-0.5, 0.0, behind)) * zcover;
     glow = max(glow, footprint);
 
     // Colours are authored in display (sRGB) space; no colour-space conversion below.
@@ -100,7 +104,7 @@ const fragment = /* glsl */ `
   }
 `;
 
-function Tissue({ reduced }: { reduced: boolean }) {
+function Tissue({ reduced, detail }: { reduced: boolean; detail: 'high' | 'low' }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const cone = useRef<THREE.Group>(null);
   const uniforms = useMemo(
@@ -130,7 +134,7 @@ function Tissue({ reduced }: { reduced: boolean }) {
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[5.8, 4.2, 300, 220]} />
+        <planeGeometry args={detail === 'high' ? [5.8, 4.2, 300, 220] : [5.8, 4.2, 120, 90]} />
         <shaderMaterial
           ref={mat}
           vertexShader={vertex}
@@ -140,8 +144,8 @@ function Tissue({ reduced }: { reduced: boolean }) {
       </mesh>
       <group ref={cone}>
         {/* light cone: apex at the LED, base on the tissue */}
-        <mesh position={[0, 0.95, 0]}>
-          <coneGeometry args={[0.5, 1.9, 48, 1, true]} />
+        <mesh position={[0, 0.75, 0]}>
+          <coneGeometry args={[0.46, 1.5, 48, 1, true]} />
           <meshBasicMaterial
             color="#7b5cff"
             transparent
@@ -151,8 +155,8 @@ function Tissue({ reduced }: { reduced: boolean }) {
             side={THREE.DoubleSide}
           />
         </mesh>
-        <mesh position={[0, 0.95, 0]} scale={[0.55, 1, 0.55]}>
-          <coneGeometry args={[0.5, 1.9, 48, 1, true]} />
+        <mesh position={[0, 0.75, 0]} scale={[0.55, 1, 0.55]}>
+          <coneGeometry args={[0.46, 1.5, 48, 1, true]} />
           <meshBasicMaterial
             color="#9d86ff"
             transparent
@@ -162,8 +166,8 @@ function Tissue({ reduced }: { reduced: boolean }) {
             side={THREE.DoubleSide}
           />
         </mesh>
-        <mesh position={[0, 1.9, 0]}>
-          <sphereGeometry args={[0.05, 24, 24]} />
+        <mesh position={[0, 1.5, 0]}>
+          <sphereGeometry args={[0.045, 24, 24]} />
           <meshBasicMaterial color="#c9bbff" />
         </mesh>
       </group>
@@ -171,16 +175,26 @@ function Tissue({ reduced }: { reduced: boolean }) {
   );
 }
 
-export default function HeroScene({ reduced }: { reduced: boolean }) {
+export default function HeroScene({
+  reduced,
+  active = true,
+  detail = 'high',
+}: {
+  reduced: boolean;
+  /** False when off screen or the tab is hidden: stop the render loop. */
+  active?: boolean;
+  /** 'low' ≈ 120 × 90 segments for smaller screens. */
+  detail?: 'high' | 'low';
+}) {
   return (
     <Canvas
-      camera={{ position: [0, 2.05, 2.3], fov: 38 }}
-      dpr={[1, 1.75]}
-      frameloop={reduced ? 'demand' : 'always'}
+      camera={{ position: [0, 2.45, 2.85], fov: 38 }}
+      dpr={detail === 'high' ? [1, 1.75] : [1, 1.5]}
+      frameloop={reduced || !active ? 'demand' : 'always'}
       gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
-      onCreated={({ camera }) => camera.lookAt(0, -0.05, 0.05)}
+      onCreated={({ camera }) => camera.lookAt(0, -0.12, 0.12)}
     >
-      <Tissue reduced={reduced} />
+      <Tissue reduced={reduced} detail={detail} />
     </Canvas>
   );
 }

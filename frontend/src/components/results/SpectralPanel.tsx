@@ -1,9 +1,10 @@
 import { m } from 'motion/react';
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ScreeningResult, SpectralFeatures, SpectralReadingResult } from '../../api/types';
 import { monotonePath, SPECTRAL_CHANNELS } from '../../lib/chart';
 import { formatNumber, formatSigned } from '../../lib/format';
+import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
 import { Icon } from '../ui/Icon';
 
 const FEATURES: Array<keyof SpectralFeatures> = [
@@ -16,11 +17,30 @@ const FEATURES: Array<keyof SpectralFeatures> = [
   'slope_590_680',
 ];
 
-const W = 560;
-const H = 300;
-const PAD = { l: 48, r: 16, t: 18, b: 40 };
+const PAD = { l: 48, r: 16, t: 20, b: 42 };
 const X0 = 405;
 const X1 = 690;
+const MIN_W = 300;
+
+/** Chart width in CSS px, so SVG text renders at its true size (≥ 11 px) on every screen. */
+function useWidth(fallback = 560) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const width = el.getBoundingClientRect().width;
+      if (width > 0) setW(Math.max(MIN_W, Math.round(width)));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
 
 function SpectrumChart({
   lesion,
@@ -31,6 +51,10 @@ function SpectrumChart({
 }) {
   const { t } = useTranslation();
   const titleId = useId();
+  const reduced = usePrefersReducedMotion();
+  const [box, W] = useWidth();
+  const narrow = W < 440;
+  const H = narrow ? 250 : 300;
   const series = [lesion, reference].filter(Boolean) as SpectralReadingResult[];
   const maxY =
     Math.max(
@@ -64,32 +88,39 @@ function SpectrumChart({
   const R = reference ? build(reference) : null;
   const yLabel = t(`results.spectral.${lesion.signal_type}`);
 
+  // On phones label every other channel (plus the last) so ticks never collide.
+  const xTicks = SPECTRAL_CHANNELS.filter(
+    (_, i) => !narrow || i % 2 === 0 || i === SPECTRAL_CHANNELS.length - 1,
+  );
+
   return (
-    <figure>
+    <figure ref={box} className="min-w-0">
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="h-auto w-full"
+        width={W}
+        height={H}
+        className="block h-auto max-w-full"
         role="img"
         aria-labelledby={titleId}
         data-testid="spectral-chart"
       >
         <title id={titleId}>{t('results.spectral.chartLabel')}</title>
-        {/* Hb dip band */}
+        {/* Hb dip band (neutral: it marks where to look, not a risk) */}
         <rect
           x={x(540)}
           y={PAD.t}
           width={x(580) - x(540)}
           height={H - PAD.t - PAD.b}
-          fill="var(--risk-high)"
-          opacity={0.08}
+          fill="var(--fg-subtle)"
+          opacity={0.1}
         />
         <text
           x={(x(540) + x(580)) / 2}
-          y={PAD.t + 12}
+          y={PAD.t - 6}
           textAnchor="middle"
-          className="fill-fg-subtle text-[10px] font-semibold"
+          className="fill-fg-subtle text-[11px] font-semibold"
         >
-          {t('results.spectral.hbBand')}
+          {narrow ? t('results.spectral.hbBandShort') : t('results.spectral.hbBand')}
         </text>
         {yTicks.map((v) => (
           <g key={v}>
@@ -105,19 +136,19 @@ function SpectrumChart({
               x={PAD.l - 8}
               y={y(v) + 4}
               textAnchor="end"
-              className="fill-fg-subtle text-[10.5px] tabular"
+              className="fill-fg-subtle text-[11px] tabular"
             >
               {v.toFixed(step < 0.1 ? 2 : 1)}
             </text>
           </g>
         ))}
-        {SPECTRAL_CHANNELS.map(([k, nm]) => (
+        {xTicks.map(([k, nm]) => (
           <text
             key={k}
             x={x(nm)}
             y={H - PAD.b + 18}
             textAnchor="middle"
-            className="fill-fg-subtle text-[10.5px] tabular"
+            className="fill-fg-subtle text-[11px] tabular"
           >
             {nm}
           </text>
@@ -126,14 +157,14 @@ function SpectrumChart({
           x={(PAD.l + W - PAD.r) / 2}
           y={H - 4}
           textAnchor="middle"
-          className="fill-fg-muted text-[11px] font-semibold"
+          className="fill-fg-muted text-[12px] font-semibold"
         >
           {t('results.spectral.wavelength')}
         </text>
         <text
-          transform={`translate(12 ${(PAD.t + H - PAD.b) / 2}) rotate(-90)`}
+          transform={`translate(13 ${(PAD.t + H - PAD.b) / 2}) rotate(-90)`}
           textAnchor="middle"
-          className="fill-fg-muted text-[11px] font-semibold"
+          className="fill-fg-muted text-[12px] font-semibold"
         >
           {yLabel}
         </text>
@@ -153,7 +184,7 @@ function SpectrumChart({
               stroke="var(--ref-blue)"
               strokeWidth={2.4}
               strokeDasharray="7 5"
-              initial={{ pathLength: 0 }}
+              initial={reduced ? false : { pathLength: 0 }}
               animate={{ pathLength: 1 }}
               transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
             />
@@ -184,7 +215,7 @@ function SpectrumChart({
           fill="none"
           stroke="var(--violet)"
           strokeWidth={2.8}
-          initial={{ pathLength: 0 }}
+          initial={reduced ? false : { pathLength: 0 }}
           animate={{ pathLength: 1 }}
           transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
         />
@@ -230,6 +261,10 @@ function SpectrumChart({
         <span className="flex items-center gap-2">
           <span className="h-3 w-6 rounded-sm bg-violet/20" aria-hidden="true" />
           {t('results.spectral.band')}
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-6 rounded-sm bg-fg-subtle/15" aria-hidden="true" />
+          {t('results.spectral.hbBand')}
         </span>
       </figcaption>
       <div className="sr-only">
@@ -300,8 +335,31 @@ export function SpectralPanel({ result }: { result: ScreeningResult }) {
       </div>
 
       {lesion.features ? (
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[420px] text-sm tabular">
+        <>
+          {/* Phones: one row per feature, difference first (it is what matters). */}
+          <dl
+            className="mt-5 flex flex-col divide-y divide-line/70 sm:hidden"
+            data-testid="spectral-features-stacked"
+          >
+            {FEATURES.map((f) => (
+              <div key={f} className="py-2.5">
+                <div className="flex items-baseline justify-between gap-3">
+                  <dt className="text-sm font-medium text-fg">
+                    {t(`results.spectral.features.${f}`)}
+                  </dt>
+                  <dd className="text-sm font-bold tabular">
+                    <span className="sr-only">{t('results.spectral.delta')}: </span>
+                    {formatSigned(lesion.delta_vs_reference?.[f], 3)}
+                  </dd>
+                </div>
+                <dd className="mt-0.5 text-xs text-fg-muted tabular">
+                  {t('results.spectral.lesionValue')} {formatNumber(lesion.features?.[f], 3)} ·{' '}
+                  {t('results.spectral.refValue')} {formatNumber(reference?.features?.[f], 3)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <table className="mt-5 hidden w-full text-sm tabular sm:table">
             <thead>
               <tr className="border-b border-line text-left text-xs text-fg-subtle">
                 <th scope="col" className="py-2 pr-3 font-semibold">
@@ -335,7 +393,7 @@ export function SpectralPanel({ result }: { result: ScreeningResult }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </>
       ) : null}
 
       {cls ? (

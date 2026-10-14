@@ -108,4 +108,40 @@ describe('SiteMap', () => {
       'buccal_mucosa_left',
     );
   });
+
+  it('gives small sites an enlarged tap target and names the touched site in a caption', () => {
+    const onSelect = vi.fn();
+    renderWithProviders(
+      <SiteMap
+        catalogue={BUILTIN_SITE_CATALOGUE}
+        mode="select"
+        selected={null}
+        onSelect={onSelect}
+        label="Map"
+      />,
+    );
+    const hit = document.querySelector('[data-hit="lateral_tongue_right"]')!;
+    expect(Number(hit.getAttribute('rx'))).toBeGreaterThanOrEqual(17);
+    expect(Number(hit.getAttribute('ry'))).toBeGreaterThanOrEqual(17);
+    fireEvent.click(hit);
+    expect(onSelect).toHaveBeenCalledWith('lateral_tongue_right');
+    fireEvent.pointerEnter(document.querySelector('[data-hit="retromolar_left"]')!);
+    expect(screen.getByTestId('site-map-caption')).toHaveTextContent('Left retromolar area');
+  });
+
+  it('labels sites from en.json (Upper / Lower gum, never an ambiguous "L gum")', () => {
+    renderWithProviders(
+      <SiteMap
+        catalogue={BUILTIN_SITE_CATALOGUE}
+        mode="select"
+        selected={null}
+        onSelect={() => {}}
+        label="Map"
+      />,
+    );
+    const text = screen.getByTestId('site-map').textContent ?? '';
+    expect(text).toContain('Lower gum');
+    expect(text).toContain('Upper gum');
+    expect(text).not.toContain('L gum');
+  });
 });

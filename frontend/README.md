@@ -46,9 +46,13 @@ Point the proxy elsewhere with `MUKHA_API_TARGET=http://host:port npm run dev`.
 
 - **Unit** (`npm test`): API client (mock + real URL building, multipart manifest, error
   mapping, envelope normalisers), risk badge per level, factor bars sum to the score, site map
-  (14 sites, spatial keyboard navigation), wipe slider keyboard control, upload validation
-  (consent required, WL + AF required), prototype banner on every route, SYNTHETIC ribbon,
-  results honesty (model statuses, retake prompts, pending review), fixtures validated against
+  (14 sites, spatial keyboard navigation, enlarged tap targets, live caption, i18n labels), wipe
+  slider keyboard control, upload validation (consent required, WL + AF required, `?site=`
+  preselection, "Not asked" habits never sent as "no"), prototype banner on every route,
+  SYNTHETIC ribbon, the analysis overlay (no step marked done before the server answers, retake
+  sites stop auto-continue, modal outside the inert app root), results honesty (model statuses,
+  retake call-out, every finding score shown with its main reasons, DOM order = reading order,
+  pending review), fixtures validated against
   the JSON Schema (ajv, draft 2020-12), and the **positioning scan**: `en.json` plus every
   `.ts/.tsx` source are checked with the regexes ported from
   `pipeline/mukha_pipeline/positioning.py` (disclaimer phrases allowed) and `en.json` must make
@@ -59,6 +63,8 @@ Point the proxy elsewhere with `MUKHA_API_TARGET=http://host:port npm run dev`.
   ```bash
   export PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers   # if unset, the config points at the bundled chrome
   npm run e2e:mock      # builds with VITE_MOCK=1, serves :4174, runs e2e/mock-smoke.spec.ts
+                        # (incl. a 360 × 640 check: no horizontal scroll after choosing files,
+                        #  banner + submit stay on screen, keyboard focus never hidden under bars)
   npm run e2e           # integration, runs e2e/upload-to-report.spec.ts
   ```
 
@@ -82,9 +88,10 @@ src/
     layout/     AppShell, PrototypeBanner, SyntheticRibbon, Logo
     home/       Hero (lazy r3f scene + static fallback), ScreeningList
     upload/     DropZone, uploadForm.ts (state, validation, manifest builder)
-    analysis/   AnalysisOverlay (pipeline tracker with scan line + real stage timings)
-    results/    RiskHeader, RiskBadge, FactorBars, SiteViewer, LesionList, SpectralPanel,
-                QcPanel, VersionsFooter, ResultActions
+    analysis/   AnalysisOverlay (portal modal; scan line while waiting; ticks + timings only
+                from result.processing.stages)
+    results/    RiskHeader, RiskBadge, RetakeCallout, FactorBars, SiteViewer, LesionList,
+                SpectralPanel, QcPanel, VersionsFooter, ResultActions
     viz/        SiteMap, WipeSlider, RegionMarkers
   three/        HeroScene.tsx, Terrain3D.tsx (lazy chunks only)
   lib/          positioning guard, risk palette, formatting, colour map, theme, stages, …
@@ -106,9 +113,18 @@ scripts/        gen-types.mjs, make_mock_assets.py
   contributing factor (source icon, points, detail) adding up to the score, with the moderate
   and high thresholds marked; clinical red-flag floors are called out as "the device cannot lower
   this". Every result carries "Pending clinician review".
-- Synthetic results get a "SYNTHETIC DATA" notice strip and corner ribbon on every view; demo
-  cards and list rows carry a SYNTHETIC tag; uploads whose file names contain "SYNTHETIC" are
-  recorded with `data_provenance: synthetic`.
+- Synthetic results get a "SYNTHETIC DATA" notice strip (plus a corner ribbon from `sm`) and a
+  SYNTHETIC tag on the analysis overlay, the 2D viewer and the 3D terrain; demo cards and list
+  rows carry the tag too; uploads whose file names contain "SYNTHETIC" are recorded with
+  `data_provenance: synthetic`.
+- Camp workflow: a site that failed quality checks is called out right under the risk header
+  with its plain retake prompts and a "Retake photos for …" link (`/upload?site=…`). For an
+  INCONCLUSIVE result that is the primary action and Re-analyse is demoted (same photos, same
+  problem). The pseudonymous ID has a copy button and "Write this ID on the person's referral
+  slip".
+- Honest data capture: habits are Not asked / Current / Former / Never with products, years and
+  amount per day; alcohol Not asked / Never / Occasional / Weekly / Daily. "Not asked" is left
+  out of the manifest (never sent as "no"); empty years / per day are sent as `null`.
 - Privacy: the console never collects names; it shows pseudonymous id, age and sex only.
 - Re-analysis creates a new version; the version switcher keeps v1, v2… and an older version is
   clearly marked as superseded.
@@ -127,7 +143,14 @@ scripts/        gen-types.mjs, make_mock_assets.py
 - The site map, wipe slider, tabs and version switcher are keyboard operable (roving tab stop
   with spatial arrow-key navigation on the map; WAI-ARIA slider with arrows / Shift / PageUp /
   PageDown / Home / End).
-- three / r3f / drei only load with the hero scene or the 3D tab (separate chunk).
+- three / r3f / drei only load with the hero scene or the 3D tab (separate chunk). The hero
+  scene only loads on screens ≥ 640 px, without Save-Data, with > 2 GB device memory, once it
+  is on screen; it stops rendering when off screen or the tab is hidden (so does the terrain).
+- Phones: the upload submit bar is pinned to the bottom (the tab bar is hidden on that page);
+  results get a sticky section index and start with Probe spectrum and Versions collapsed.
+  `scroll-padding` keeps focused fields clear of the sticky banner/header and bottom bars.
+- Phase 2 (hi/kn): Inter has no Indic glyphs; the font stack already names Noto Sans
+  Devanagari / Kannada, which should be self-hosted (`@fontsource`) when those locales ship.
 
 ## API assumptions
 

@@ -1,14 +1,15 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useApi } from '../api/ApiContext';
 import { useReanalyze, useResultVersion, useScreening, useSiteCatalogue } from '../api/queries';
-import type { OralSite, RiskFactors, ScreeningResult } from '../api/types';
+import type { ContributingFactor, OralSite, RiskFactors, ScreeningResult } from '../api/types';
 import { AnalysisOverlay } from '../components/analysis/AnalysisOverlay';
 import { SyntheticRibbon } from '../components/layout/SyntheticRibbon';
 import { FactorBars } from '../components/results/FactorBars';
 import { LesionList } from '../components/results/LesionList';
 import { QcPanel } from '../components/results/QcPanel';
+import { RetakeCallout } from '../components/results/RetakeCallout';
 import { ResultActions, VersionSwitcher } from '../components/results/ResultActions';
 import { RiskPill } from '../components/results/RiskBadge';
 import { RiskHeader } from '../components/results/RiskHeader';
@@ -19,9 +20,11 @@ import { Card } from '../components/ui/Card';
 import { Icon } from '../components/ui/Icon';
 import { SiteMap, type SiteStatus } from '../components/viz/SiteMap';
 import { errorMessage } from '../lib/errors';
-import { formatDateTime } from '../lib/format';
+import { formatDateTime, formatPoints } from '../lib/format';
+import { failedSites } from '../lib/qc';
+import { wlThumbnail } from '../lib/thumbnail';
 import { RISK_LEVELS } from '../lib/risk';
-import { usePrefersReducedMotion } from '../lib/useMediaQuery';
+import { useMediaQuery, usePrefersReducedMotion } from '../lib/useMediaQuery';
 
 function defaultSite(r: ScreeningResult): OralSite | null {
   const top = r.lesions?.find((l) => l.lesion_id === r.triage.highest_risk_lesion_id);
@@ -30,25 +33,29 @@ function defaultSite(r: ScreeningResult): OralSite | null {
   return examined?.site ?? r.sites[0]?.site ?? null;
 }
 
-function riskFactorChips(rf: RiskFactors, t: ReturnType<typeof useTranslation>['t']): string[] {
+type T = ReturnType<typeof useTranslation>['t'];
+
+function riskFactorChips(rf: RiskFactors, t: T): string[] {
   const out: string[] = [];
-  const habit = (uses: boolean, former: boolean | undefined, label: string, types?: string[]) => {
-    if (uses) out.push(types && types.length ? `${label} (${types.join(', ')})` : label);
-    else if (former) out.push(`${label} · ${t('results.factor.former')}`);
+  const habit = (
+    use:
+      | { uses?: boolean; former?: boolean; years?: number | null; per_day?: number | null }
+      | undefined,
+    label: string,
+    types: string[] = [],
+  ) => {
+    if (!use || (!use.uses && !use.former)) return;
+    const detail = [
+      ...types.map((x) => t(`upload.product.${x as 'gutka'}`, { defaultValue: x })),
+      ...(use.years != null ? [t('results.factor.yearsShort', { count: use.years })] : []),
+      ...(use.per_day != null ? [t('results.factor.perDayShort', { count: use.per_day })] : []),
+    ];
+    const head = use.uses ? label : `${label} · ${t('results.factor.former')}`;
+    out.push(detail.length ? `${head} (${detail.join(' · ')})` : head);
   };
-  habit(
-    rf.smokeless_tobacco?.uses ?? false,
-    rf.smokeless_tobacco?.former,
-    t('results.factor.smokeless'),
-    rf.smokeless_tobacco?.types,
-  );
-  habit(
-    rf.smoking?.uses ?? false,
-    rf.smoking?.former,
-    t('results.factor.smoking'),
-    rf.smoking?.types,
-  );
-  habit(rf.areca_nut?.uses ?? false, rf.areca_nut?.former, t('results.factor.areca'));
+  habit(rf.smokeless_tobacco, t('results.factor.smokeless'), rf.smokeless_tobacco?.types);
+  habit(rf.smoking, t('results.factor.smoking'), rf.smoking?.types);
+  habit(rf.areca_nut, t('results.factor.areca'));
   if (rf.alcohol?.uses)
     out.push(
       `${t('results.factor.alcohol')} (${t(`results.factor.alcoholFrequency.${rf.alcohol.frequency ?? 'occasional'}`)})`,
@@ -57,6 +64,53 @@ function riskFactorChips(rf: RiskFactors, t: ReturnType<typeof useTranslation>['
   if (rf.prior_oral_cancer) out.push(t('results.factor.priorCancer'));
   return out;
 }
+
+const RISK_FACTOR_SOURCES = new Set<ContributingFactor['source']>(['clinical_history', 'symptom']);
+
+/** The pseudonymous ID, with a copy button and the hand-off instruction. */
+function PatientId({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable: the ID is visible to copy by hand */
+    }
+  };
+  return (
+    <div className="mt-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl" data-testid="patient-id">
+          {t('results.patientLabel')} <span className="id-text whitespace-nowrap">{id}</span>
+        </h1>
+        <button
+          type="button"
+          className="btn btn-secondary min-h-10 min-w-10 px-2.5 py-1.5 text-sm sm:px-3"
+          onClick={() => void copy()}
+          aria-label={copied ? t('results.copiedId') : t('results.copyId')}
+          data-testid="copy-id"
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={16} />
+          <span className="hidden sm:inline" aria-hidden="true">
+            {copied ? t('results.copiedId') : t('results.copyId')}
+          </span>
+        </button>
+        <span className="sr-only" aria-live="polite">
+          {copied ? t('results.copiedId') : ''}
+        </span>
+      </div>
+      <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-fg-muted">
+        <Icon name="clipboard" size={15} className="shrink-0 text-violet-text" />
+        {t('results.idHint')}
+      </p>
+    </div>
+  );
+}
+
+const JUMPS = ['why', 'map', 'viewer', 'lesions', 'spectral', 'qc'] as const;
 
 export default function ResultsPage() {
   const { t } = useTranslation();
@@ -145,6 +199,8 @@ export default function ResultsPage() {
         <AnalysisOverlay
           open={overlay}
           mode="reanalyse"
+          thumbnailUrl={wlThumbnail(api, result).url}
+          syntheticHint={result.synthetic}
           result={reanalyse.data?.latest ?? null}
           error={reanalyse.isError ? errorMessage(reanalyse.error, t) : null}
           onContinue={onReanalysed}
@@ -182,7 +238,9 @@ function ResultView({
   overlay: ReactNode;
 }) {
   const { t } = useTranslation();
+  const desktop = useMediaQuery('(min-width: 1024px)');
   const [selected, setSelected] = useState<OralSite | null>(() => defaultSite(result));
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const viewerRef = useRef<HTMLDivElement>(null);
   const site = result.sites.find((s) => s.site === selected) ?? result.sites[0];
   const statuses = useMemo(() => {
@@ -193,6 +251,39 @@ function ResultView({
   }, [result.sites]);
   const factors = riskFactorChips(result.risk_factors, t);
   const p = result.patient;
+  const inconclusive = result.triage.overall_risk_level === 'INCONCLUSIVE';
+  const needsRetake = failedSites(result).length > 0;
+
+  // Phones: long, secondary sections start collapsed (always open on desktop).
+  const collapsible = !desktop;
+  const isOpen = (id: string) => desktop || (openSections[id] ?? false);
+  const setOpen = (id: string, v: boolean) => setOpenSections((o) => ({ ...o, [id]: v }));
+
+  // "Why this level": the finding vs the person's risk factors, with subtotals.
+  const lesions = result.lesions ?? [];
+  const topLesion = [...lesions].sort((a, b) => b.score - a.score)[0];
+  const groupBy = (f: ContributingFactor) =>
+    RISK_FACTOR_SOURCES.has(f.source)
+      ? { key: 'risk', label: t('results.why.groupRiskFactors') }
+      : topLesion
+        ? {
+            key: 'finding',
+            label: t('results.why.groupFinding', {
+              id: topLesion.lesion_id,
+              site: t(`sites.${topLesion.site}`),
+            }),
+          }
+        : { key: 'other', label: t('results.why.groupOther') };
+  const others = lesions.filter((l) => l !== topLesion);
+  const whyNote =
+    topLesion && others.length > 0
+      ? t('results.why.onlyTopFinding', {
+          id: topLesion.lesion_id,
+          others: others
+            .map((l) => `${l.lesion_id} · ${formatPoints(l.score).replace('+', '')}`)
+            .join(', '),
+        })
+      : undefined;
 
   const selectSite = (s: OralSite) => {
     setSelected(s);
@@ -201,30 +292,148 @@ function ResultView({
     }
   };
 
+  const jump = (e: MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault();
+    if (!isOpen(id)) setOpen(id, true);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.focus({ preventScroll: true });
+      el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    });
+  };
+
+  const cards = {
+    why: (
+      <Card
+        id="why"
+        title={t('results.sections.why')}
+        icon="layers"
+        subtitle={t('results.why.intro')}
+      >
+        {inconclusive && (result.triage.contributing_factors ?? []).length === 0 ? (
+          <p className="rounded-xl border border-dashed border-risk-inconclusive p-4 text-sm text-fg-muted">
+            {t('results.why.noScore')}
+          </p>
+        ) : (
+          <FactorBars
+            factors={result.triage.contributing_factors}
+            thresholds={result.triage.thresholds}
+            score={result.triage.score}
+            level={result.triage.overall_risk_level}
+            groupBy={groupBy}
+            note={whyNote}
+          />
+        )}
+      </Card>
+    ),
+    map: (
+      <Card id="map" title={t('results.sections.map')} icon="pin" subtitle={t('results.map.hint')}>
+        <SiteMap
+          catalogue={catalogue}
+          mode="results"
+          selected={site?.site ?? null}
+          statuses={statuses}
+          onSelect={selectSite}
+          label={t('results.map.label')}
+          className="mx-auto max-w-md"
+        />
+        <ul className="mt-4 flex flex-wrap gap-2" aria-label={t('results.map.legend')}>
+          {RISK_LEVELS.map((l) => (
+            <li key={l}>
+              <RiskPill level={l} />
+            </li>
+          ))}
+          <li>
+            <span className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-ref px-2.5 py-1 text-xs font-bold tracking-wide text-ref uppercase">
+              <Icon name="target" size={13} />
+              {t('results.map.reference')}
+            </span>
+          </li>
+          <li>
+            <span className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-line px-2.5 py-1 text-xs font-bold tracking-wide text-fg-subtle uppercase opacity-80">
+              <span className="h-3 w-3 rounded-full border border-line-strong" aria-hidden="true" />
+              {t('results.map.notExamined')}
+            </span>
+          </li>
+        </ul>
+      </Card>
+    ),
+    viewer: (
+      <div ref={viewerRef} className="scroll-mt-28">
+        <Card id="viewer" title={t('results.sections.viewer')} icon="eye">
+          {site ? <SiteViewer key={site.site} result={result} site={site} /> : null}
+        </Card>
+      </div>
+    ),
+    lesions: (
+      <Card id="lesions" title={t('results.sections.lesions')} icon="target">
+        <LesionList result={result} onSelectSite={selectSite} selectedSite={site?.site ?? null} />
+      </Card>
+    ),
+    spectral: (
+      <Card
+        id="spectral"
+        title={t('results.sections.spectral')}
+        icon="wave"
+        collapsible={collapsible}
+        open={isOpen('spectral')}
+        onOpenChange={(v) => setOpen('spectral', v)}
+      >
+        <SpectralPanel result={result} />
+      </Card>
+    ),
+    qc: (
+      <Card id="qc" title={t('results.sections.qc')} icon="shield">
+        <QcPanel result={result} />
+      </Card>
+    ),
+  };
+
+  const actions = (
+    <div
+      className="flex flex-wrap items-center gap-2 lg:max-w-md lg:flex-col lg:items-end lg:gap-3"
+      data-testid="result-actions"
+    >
+      <VersionSwitcher
+        versions={versions}
+        current={result.result_version}
+        latest={latestVersion}
+        onChange={onVersion}
+      />
+      <ResultActions
+        reportUrl={reportUrl}
+        onReanalyse={onReanalyse}
+        reanalysing={reanalysing}
+        demoteReanalyse={inconclusive && needsRetake}
+      />
+    </div>
+  );
+
   return (
     <div
-      className="mx-auto max-w-7xl px-4 pt-6 pb-16 sm:px-6"
+      className="mx-auto max-w-7xl px-4 pt-4 pb-16 sm:px-6 sm:pt-6"
       data-testid="results-page"
       data-synthetic={result.synthetic}
     >
       <div className="flex flex-col gap-4">
-        <Link to="/screenings" className="btn btn-ghost -ml-3 self-start px-3 text-sm">
+        {/* Phones reach Screenings from the tab bar; the back link would only push the result down. */}
+        <Link
+          to="/screenings"
+          className="btn btn-ghost -ml-3 hidden self-start px-3 text-sm sm:inline-flex"
+        >
           <Icon name="arrowLeft" size={16} />
           {t('app.nav.screenings')}
         </Link>
         {result.synthetic ? <SyntheticRibbon notice={result.notices?.synthetic_notice} /> : null}
 
-        {/* Mobile: patient → risk → actions. Desktop: patient | actions, then the risk header. */}
-        <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <header className="min-w-0 lg:col-start-1 lg:row-start-1">
+        {/* DOM order = visual order. Desktop: patient | actions, then risk and retake. Phones:
+            patient, risk, retake, then actions, so the risk level is on the first screen. */}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <header className="min-w-0">
             <p className="eyebrow">{t('results.pageTitle')}</p>
-            <h1
-              className="mt-1.5 text-2xl font-extrabold tracking-tight tabular sm:text-3xl"
-              data-testid="patient-id"
-            >
-              {t('results.patient', { id: p.pseudonymous_id })}
-            </h1>
-            <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-fg-muted tabular">
+            <PatientId id={p.pseudonymous_id} />
+            <p className="mt-2 flex flex-col gap-y-0.5 text-sm text-fg-muted tabular sm:flex-row sm:flex-wrap sm:gap-x-3">
               <span>
                 {t('results.patientMeta', {
                   age:
@@ -234,7 +443,9 @@ function ResultView({
                   sex: t(`upload.sex.${p.sex ?? 'undisclosed'}`),
                 })}
               </span>
-              <span aria-hidden="true">·</span>
+              <span aria-hidden="true" className="hidden sm:inline">
+                ·
+              </span>
               <span>
                 {t('results.capturedAt', {
                   date: formatDateTime(result.context.captured_at ?? result.created_at),
@@ -242,7 +453,9 @@ function ResultView({
               </span>
               {result.context.screening_site_name ? (
                 <>
-                  <span aria-hidden="true">·</span>
+                  <span aria-hidden="true" className="hidden sm:inline">
+                    ·
+                  </span>
                   <span>{t('results.camp', { name: result.context.screening_site_name })}</span>
                 </>
               ) : null}
@@ -262,143 +475,90 @@ function ResultView({
               )}
             </div>
           </header>
-          <div className="order-3 flex flex-col items-start gap-3 lg:order-none lg:col-start-2 lg:row-start-1 lg:items-end">
-            <VersionSwitcher
-              versions={versions}
-              current={result.result_version}
-              latest={latestVersion}
-              onChange={onVersion}
-            />
-            <ResultActions
-              reportUrl={reportUrl}
-              onReanalyse={onReanalyse}
-              reanalysing={reanalysing}
-            />
-          </div>
+          {desktop ? <div className="shrink-0">{actions}</div> : null}
+        </div>
 
-          {result.result_version !== latestVersion ? (
-            <div
-              className="order-1 flex flex-wrap items-center gap-3 rounded-xl border border-warn/60 bg-risk-moderate-bg p-3 text-sm lg:order-none lg:col-span-2"
-              role="status"
+        {result.result_version !== latestVersion ? (
+          <div
+            className="flex flex-wrap items-center gap-3 rounded-xl border border-warn/60 bg-risk-moderate-bg p-3 text-sm"
+            role="status"
+          >
+            <Icon name="history" size={18} className="text-warn" />
+            <span className="flex-1">
+              {t('results.superseded', { version: result.result_version, latest: latestVersion })}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary min-h-9 py-1 text-sm"
+              onClick={() => onVersion(latestVersion)}
             >
-              <Icon name="history" size={18} className="text-warn" />
-              <span className="flex-1">
-                {t('results.superseded', { version: result.result_version, latest: latestVersion })}
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary min-h-9 py-1 text-sm"
-                onClick={() => onVersion(latestVersion)}
+              {t('results.viewLatest')}
+            </button>
+          </div>
+        ) : null}
+
+        <RiskHeader result={result} />
+        <RetakeCallout result={result} />
+        {desktop ? null : actions}
+      </div>
+
+      {/* Phones and tablets: a sticky section index so the long page stays navigable. */}
+      <nav
+        aria-label={t('results.jump.label')}
+        className="sticky top-[5.5rem] z-20 -mx-4 mt-5 border-y border-line/70 bg-bg/90 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:hidden"
+        data-testid="section-jump"
+      >
+        <ul className="flex justify-between gap-1 overflow-x-auto [scrollbar-width:none] sm:justify-start sm:gap-1.5">
+          {JUMPS.map((id) => (
+            <li key={id} className="shrink-0">
+              <a
+                href={`#${id}`}
+                onClick={(e) => jump(e, id)}
+                className="inline-flex min-h-9 items-center rounded-full border border-line bg-surface-2 px-2 text-xs font-semibold text-fg-muted hover:text-fg sm:px-3 sm:text-sm"
               >
-                {t('results.viewLatest')}
-              </button>
-            </div>
-          ) : null}
+                {t(`results.jump.${id}`)}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
-          <div className="order-2 lg:order-none lg:col-span-2">
-            <RiskHeader result={result} />
+      {/* Phones: one column in reading order (Why, Map, Viewer, Findings, Probe, QC).
+          Desktop: two real columns, each read top to bottom. The DOM follows what is on
+          screen at each size, so keyboard focus never jumps around (no CSS `order`). */}
+      {desktop ? (
+        <div className="mt-5 grid grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] items-start gap-5">
+          <div className="flex min-w-0 flex-col gap-5">
+            {cards.why}
+            {cards.viewer}
+            {cards.spectral}
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+            {cards.map}
+            {cards.lesions}
+            {cards.qc}
           </div>
         </div>
-      </div>
-
-      <div className="mt-5 flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-start">
-        <div className="contents lg:flex lg:flex-col lg:gap-5">
-          <Card
-            id="why"
-            title={t('results.sections.why')}
-            icon="layers"
-            className="order-1 lg:order-none"
-            subtitle={t('results.why.intro')}
-          >
-            {result.triage.overall_risk_level === 'INCONCLUSIVE' &&
-            (result.triage.contributing_factors ?? []).length === 0 ? (
-              <p className="rounded-xl border border-dashed border-risk-inconclusive p-4 text-sm text-fg-muted">
-                {t('results.why.noScore')}
-              </p>
-            ) : (
-              <FactorBars
-                factors={result.triage.contributing_factors}
-                thresholds={result.triage.thresholds}
-                score={result.triage.score}
-                level={result.triage.overall_risk_level}
-              />
-            )}
-          </Card>
-
-          <div ref={viewerRef} className="order-3 scroll-mt-28 lg:order-none">
-            <Card id="viewer" title={t('results.sections.viewer')} icon="eye">
-              {site ? <SiteViewer key={site.site} result={result} site={site} /> : null}
-            </Card>
-          </div>
-
-          <Card
-            id="spectral"
-            title={t('results.sections.spectral')}
-            icon="wave"
-            className="order-5 lg:order-none"
-          >
-            <SpectralPanel result={result} />
-          </Card>
+      ) : (
+        <div className="mt-5 flex flex-col gap-5">
+          {cards.why}
+          {cards.map}
+          {cards.viewer}
+          {cards.lesions}
+          {cards.spectral}
+          {cards.qc}
         </div>
-
-        <div className="contents lg:flex lg:flex-col lg:gap-5">
-          <Card
-            id="map"
-            title={t('results.sections.map')}
-            icon="pin"
-            className="order-2 lg:order-none"
-            subtitle={t('results.map.hint')}
-          >
-            <SiteMap
-              catalogue={catalogue}
-              mode="results"
-              selected={site?.site ?? null}
-              statuses={statuses}
-              onSelect={selectSite}
-              label={t('results.map.label')}
-              className="mx-auto max-w-md"
-            />
-            <ul className="mt-4 flex flex-wrap gap-2" aria-label={t('results.map.legend')}>
-              {RISK_LEVELS.map((l) => (
-                <li key={l}>
-                  <RiskPill level={l} />
-                </li>
-              ))}
-              <li>
-                <span className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-ref px-2.5 py-1 text-xs font-bold tracking-wide text-ref uppercase">
-                  <Icon name="target" size={13} />
-                  {t('results.map.reference')}
-                </span>
-              </li>
-            </ul>
-          </Card>
-
-          <Card
-            id="lesions"
-            title={t('results.sections.lesions')}
-            icon="target"
-            className="order-4 lg:order-none"
-          >
-            <LesionList
-              result={result}
-              onSelectSite={selectSite}
-              selectedSite={site?.site ?? null}
-            />
-          </Card>
-
-          <Card
-            id="qc"
-            title={t('results.sections.qc')}
-            icon="shield"
-            className="order-6 lg:order-none"
-          >
-            <QcPanel result={result} />
-          </Card>
-        </div>
-      </div>
+      )}
 
       <div className="mt-5">
-        <Card id="versions" title={t('results.sections.versions')} icon="history">
+        <Card
+          id="versions"
+          title={t('results.sections.versions')}
+          icon="history"
+          collapsible={collapsible}
+          open={isOpen('versions')}
+          onOpenChange={(v) => setOpen('versions', v)}
+        >
           <VersionsFooter result={result} />
         </Card>
       </div>

@@ -30,3 +30,13 @@ export function waterfall(factors: ContributingFactor[]): { rows: WaterfallRow[]
   });
   return { rows, total: round(acc, 2) };
 }
+
+/** The reasons that moved the score most (by absolute points), in their original order. */
+export function topFactors(factors: ContributingFactor[], n = 3): ContributingFactor[] {
+  const ranked = [...factors]
+    .map((f, i) => ({ f, i }))
+    .filter(({ f }) => f.points !== 0)
+    .sort((a, b) => Math.abs(b.f.points) - Math.abs(a.f.points) || a.i - b.i)
+    .slice(0, n);
+  return ranked.sort((a, b) => a.i - b.i).map(({ f }) => f);
+}

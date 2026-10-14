@@ -2,15 +2,7 @@ import { m } from 'motion/react';
 import { useEffect, useId, useRef, useState, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon, type IconName } from '../ui/Icon';
-import { IMAGE_ACCEPT, PREVIEWABLE, SPECTRUM_ACCEPT } from './fileTypes';
-
-/** Keep the start and the informative end of long file names ("…tongue_right_wl.jpg"). */
-export function middleTruncate(name: string, max = 44): string {
-  if (name.length <= max) return name;
-  const tail = Math.ceil(max * 0.55);
-  const head = max - tail - 1;
-  return `${name.slice(0, head)}…${name.slice(-tail)}`;
-}
+import { IMAGE_ACCEPT, middleTruncate, PREVIEWABLE, SPECTRUM_ACCEPT } from './fileTypes';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -128,6 +120,12 @@ export function DropZone({
             [hint ? hintId : null, error ? errId : null].filter(Boolean).join(' ') || undefined
           }
           data-testid={`file-${id}`}
+          // The input is visually hidden: bring the whole drop zone clear of the sticky bars.
+          onFocus={(e) =>
+            e.currentTarget
+              .closest('[data-testid^="dropzone"]')
+              ?.scrollIntoView({ block: 'nearest' })
+          }
           onChange={(e) => {
             const f = e.target.files?.[0];
             onFile(f ?? undefined);

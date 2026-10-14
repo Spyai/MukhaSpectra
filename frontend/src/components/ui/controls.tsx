@@ -130,7 +130,7 @@ export function Checkbox({
   return (
     <label
       htmlFor={inputId}
-      className={`flex cursor-pointer gap-3 rounded-xl border p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
+      className={`relative flex cursor-pointer gap-3 rounded-xl border p-3.5 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
         invalid
           ? 'border-danger bg-risk-high-bg'
           : checked
@@ -148,6 +148,8 @@ export function Checkbox({
         aria-required={required || undefined}
         data-testid={testId}
         className="sr-only"
+        // The input is visually hidden: bring the whole label clear of the sticky bars.
+        onFocus={(e) => e.currentTarget.closest('label')?.scrollIntoView({ block: 'nearest' })}
       />
       <span
         aria-hidden="true"

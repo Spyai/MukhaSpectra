@@ -667,9 +667,14 @@ export default function UploadPage() {
               <p className="font-semibold text-fg">
                 {t('upload.errorsSummary', { count: errorEntries.length })}
               </p>
-              <ul className="mt-1.5 list-disc pl-5">
+              <ul className="mt-1.5 flex flex-col">
                 {errorEntries.map(([field, key]) => (
-                  <li key={field}>
+                  <li key={field} className="flex items-start gap-1.5">
+                    <Icon
+                      name="arrowRight"
+                      size={14}
+                      className="mt-[0.45rem] shrink-0 text-danger"
+                    />
                     <a
                       href={`#${FIELD_ANCHOR[field]}`}
                       className="inline-block py-1 font-medium text-danger underline underline-offset-2"
@@ -685,16 +690,23 @@ export default function UploadPage() {
               </ul>
             </div>
           ) : null}
-          <div className="sticky bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-20 rounded-2xl border border-line bg-bg/85 p-2 shadow-card backdrop-blur-xl sm:bottom-4">
-            <button
-              type="submit"
-              className="btn btn-primary min-h-14 w-full text-base"
-              disabled={create.isPending}
-              data-testid="submit-upload"
-            >
-              <Icon name="glow" size={20} />
-              {create.isPending ? t('upload.submitting') : t('upload.submit')}
-            </button>
+          {/* Phones / tablets: pinned to the bottom of the screen (the tab bar is hidden on this
+              page). Desktop: sticky at the bottom of the form column. */}
+          <div
+            className="fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:sticky lg:bottom-4 lg:px-0 lg:pb-0"
+            data-testid="submit-bar"
+          >
+            <div className="mx-auto max-w-xl rounded-2xl border border-line bg-bg/90 p-2 shadow-card backdrop-blur-xl lg:max-w-none">
+              <button
+                type="submit"
+                className="btn btn-primary min-h-13 w-full text-base"
+                disabled={create.isPending}
+                data-testid="submit-upload"
+              >
+                <Icon name="glow" size={20} />
+                {create.isPending ? t('upload.submitting') : t('upload.submit')}
+              </button>
+            </div>
           </div>
         </div>
       </form>
@@ -703,6 +715,7 @@ export default function UploadPage() {
         open={overlay}
         mode="upload"
         thumbnailUrl={thumb}
+        syntheticHint={form.provenance === 'synthetic' || synthetic}
         result={create.data?.latest ?? null}
         error={create.isError ? errorMessage(create.error, t) : null}
         onContinue={onContinue}

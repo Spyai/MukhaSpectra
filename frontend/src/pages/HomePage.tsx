@@ -175,6 +175,7 @@ export default function HomePage() {
       <AnalysisOverlay
         open={running !== null}
         mode="demo"
+        syntheticHint
         result={demo.data?.latest ?? null}
         error={demo.isError ? errorMessage(demo.error, t) : null}
         onContinue={onContinue}

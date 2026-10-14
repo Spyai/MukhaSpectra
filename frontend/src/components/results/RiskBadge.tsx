@@ -8,11 +8,26 @@ import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
  * Level glyph that never relies on colour: ascending bars (1/2/3 lit) for LOW/MODERATE/HIGH and
  * a "?" in a dashed circle for INCONCLUSIVE.
  */
-export function RiskGlyph({ level, size = 20 }: { level: RiskLevel; size?: number }) {
+export function RiskGlyph({
+  level,
+  size = 20,
+  className,
+}: {
+  level: RiskLevel;
+  size?: number;
+  className?: string;
+}) {
   const style = RISK_STYLE[level];
   if (level === 'INCONCLUSIVE') {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+        className={className}
+      >
         <circle
           cx="12"
           cy="12"
@@ -39,7 +54,14 @@ export function RiskGlyph({ level, size = 20 }: { level: RiskLevel; size?: numbe
     { x: 16, h: 15 },
   ];
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      className={className}
+    >
       {bars.map((b, i) => (
         <rect
           key={b.x}
@@ -96,22 +118,24 @@ const SEGMENTS = [arc(-135, -49), arc(-41, 41), arc(49, 135)];
 
 /**
  * Large risk badge: a three-step level gauge (not a probability) that draws itself in,
- * the level glyph in the centre and the level in words.
+ * the level glyph in the centre and the level in words. The gauge is 76 px on phones (so the
+ * level word stays above the fold) and 132 px from `sm`; if the word does not fit beside the
+ * gauge it wraps below it rather than overflowing.
  */
-export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: number }) {
+export function RiskBadge({ level }: { level: RiskLevel }) {
   const { t } = useTranslation();
   const reduced = usePrefersReducedMotion();
   const style = RISK_STYLE[level];
   const label = t(`risk.levelLong.${level}`);
   return (
     <div
-      className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4"
+      className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2"
       data-testid="risk-badge"
       data-level={level}
       role="img"
       aria-label={t('risk.badgeLabel', { level: label })}
     >
-      <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <div className="relative h-[76px] w-[76px] shrink-0 sm:h-[132px] sm:w-[132px]">
         <m.div
           className="absolute inset-3 rounded-full blur-2xl"
           style={{ background: style.color }}
@@ -119,13 +143,7 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
           animate={{ opacity: 0.22 }}
           transition={{ duration: 0.6, delay: 0.25 }}
         />
-        <svg
-          viewBox="0 0 120 120"
-          width={size}
-          height={size}
-          className="relative"
-          aria-hidden="true"
-        >
+        <svg viewBox="0 0 120 120" className="relative h-full w-full" aria-hidden="true">
           {style.dashed ? (
             <m.circle
               cx={C}
@@ -178,13 +196,13 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: 'spring', stiffness: 300, damping: 18, delay: 0.2 }}
         >
-          <RiskGlyph level={level} size={Math.round(size * 0.36)} />
+          <RiskGlyph level={level} size={48} className="h-[36%] w-[36%]" />
         </m.div>
       </div>
       <div className="max-w-full min-w-0">
         <div className="eyebrow">{t('risk.eyebrow')}</div>
         <m.div
-          className="text-3xl leading-tight font-extrabold tracking-tight break-words sm:text-5xl"
+          className="text-[1.75rem] leading-tight font-extrabold tracking-tight break-words sm:text-5xl"
           style={{ color: style.color }}
           initial={{ opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}

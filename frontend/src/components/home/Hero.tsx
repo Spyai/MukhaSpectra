@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { m } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { hasWebGL } from '../../lib/webgl';
-import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
+import { useMediaQuery, usePrefersReducedMotion } from '../../lib/useMediaQuery';
 import { Icon } from '../ui/Icon';
 
 const HeroScene = lazy(() => import('../../three/HeroScene'));
@@ -66,12 +66,65 @@ export function HeroFallback() {
   );
 }
 
+/**
+ * Camp phones: the 3D hero is a nice-to-have. Only load it (≈240 kB gzip) on screens ≥ 640 px,
+ * when the person has not asked to save data and the device reports more than 2 GB of memory.
+ */
+function canAfford3d(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & {
+    connection?: { saveData?: boolean };
+    deviceMemory?: number;
+  };
+  if (nav.connection?.saveData) return false;
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 2) return false;
+  return true;
+}
+
+/** On screen and tab visible: the scene renders only while it can be seen. */
+function useOnScreen(ref: React.RefObject<HTMLElement | null>) {
+  const [inView, setInView] = useState(false);
+  const [seen, setSeen] = useState(false);
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      setSeen(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        const v = Boolean(entry?.isIntersecting);
+        setInView(v);
+        if (v) setSeen(true);
+      },
+      { rootMargin: '100px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref]);
+  useEffect(() => {
+    const onVis = () => setVisible(document.visibilityState !== 'hidden');
+    onVis();
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+  return { active: inView && visible, seen };
+}
+
 export function Hero() {
   const { t } = useTranslation();
   const reduced = usePrefersReducedMotion();
+  const wide = useMediaQuery('(min-width: 640px)');
+  const large = useMediaQuery('(min-width: 1024px)');
+  const frame = useRef<HTMLDivElement>(null);
+  const { active, seen } = useOnScreen(frame);
   const [webgl, setWebgl] = useState<boolean | null>(null);
-  useEffect(() => setWebgl(hasWebGL()), []);
-  const show3d = webgl === true && !reduced;
+  useEffect(() => setWebgl(canAfford3d() && hasWebGL()), []);
+  // The lazy chunk is requested only once the frame has been on screen.
+  const show3d = webgl === true && !reduced && wide && seen;
 
   return (
     <section className="relative overflow-hidden border-b border-line" aria-labelledby="hero-title">
@@ -123,32 +176,39 @@ export function Hero() {
 
         <div className="order-1 lg:order-2">
           <div
+            ref={frame}
             className="relative aspect-[16/10] w-full overflow-hidden rounded-[1.75rem] border border-line bg-[oklch(0.12_0.02_268)] shadow-card dark:bg-[oklch(0.1_0.02_268)]"
             role="img"
             aria-label={t('home.sceneLabel')}
+            data-testid="hero-scene"
+            data-mode={show3d ? '3d' : 'static'}
           >
             {show3d ? (
               <Suspense fallback={<HeroFallback />}>
-                <HeroScene reduced={reduced} />
+                <HeroScene reduced={reduced} active={active} detail={large ? 'high' : 'low'} />
               </Suspense>
             ) : (
               <HeroFallback />
             )}
-            <div className="pointer-events-none absolute inset-x-3 bottom-3 flex flex-wrap gap-2 text-[11px] font-semibold text-white sm:text-xs">
-              <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 backdrop-blur">
-                <span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.25_290)]" />
-                {t('home.sceneLegendBeam')}
-              </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 backdrop-blur">
-                <span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.82_0.2_150)] shadow-[0_0_8px_oklch(0.82_0.2_150)]" />
-                {t('home.sceneLegendGlow')}
-              </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 backdrop-blur">
-                <span className="h-2.5 w-2.5 rounded-full border border-dashed border-white bg-[oklch(0.16_0.03_160)]" />
-                {t('home.sceneLegendLoss')}
-              </span>
-            </div>
           </div>
+          {/* Legend sits under the frame so it never covers the glow-loss ring. */}
+          <ul
+            className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs font-semibold text-fg-muted"
+            aria-hidden="true"
+          >
+            <li className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.62_0.25_290)]" />
+              {t('home.sceneLegendBeam')}
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-[oklch(0.75_0.2_150)] shadow-[0_0_8px_oklch(0.82_0.2_150)]" />
+              {t('home.sceneLegendGlow')}
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full border border-dashed border-fg-muted bg-[oklch(0.16_0.03_160)]" />
+              {t('home.sceneLegendLoss')}
+            </li>
+          </ul>
         </div>
       </div>
     </section>

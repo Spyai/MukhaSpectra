@@ -8,6 +8,7 @@ import { formatNumber } from '../../lib/format';
 import { useTheme } from '../../lib/theme';
 import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
 import { hasWebGL } from '../../lib/webgl';
+import { SyntheticTag } from '../layout/SyntheticRibbon';
 import { Icon } from '../ui/Icon';
 import { RegionMarkers } from '../viz/RegionMarkers';
 import { WipeSlider } from '../viz/WipeSlider';
@@ -141,6 +142,12 @@ export function SiteViewer({ result, site }: { result: ScreeningResult; site: Si
                 overlayOpacity={opacity / 100}
               >
                 <RegionMarkers regions={regions} threshold={threshold} />
+                {result.synthetic ? (
+                  <SyntheticTag
+                    solid
+                    className="pointer-events-none absolute right-2 bottom-2 z-10"
+                  />
+                ) : null}
               </WipeSlider>
             ) : (
               <p className="flex aspect-[4/3] items-center justify-center rounded-xl bg-image-well p-6 text-center text-sm text-[oklch(0.8_0.02_268)]">
@@ -148,9 +155,9 @@ export function SiteViewer({ result, site }: { result: ScreeningResult; site: Si
               </p>
             )}
 
-            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
-              {heatmap ? (
-                <>
+            {heatmap ? (
+              <div className="mt-4 flex flex-col gap-3">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                   <label className="inline-flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-semibold">
                     <span className="relative inline-flex">
                       <input
@@ -162,33 +169,34 @@ export function SiteViewer({ result, site }: { result: ScreeningResult; site: Si
                         className="peer sr-only"
                         data-testid="heatmap-toggle"
                       />
-                      <span className="h-6 w-11 rounded-full bg-surface-3 transition-colors peer-checked:bg-violet peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus" />
+                      <span className="h-6 w-11 rounded-full bg-surface-3 ring-1 ring-line-strong transition-colors ring-inset peer-checked:bg-violet peer-checked:ring-violet peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus" />
                       <span className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
                     </span>
                     {t('results.viewer.heatmap')}
                   </label>
-                  <label
-                    className={`flex min-w-48 flex-1 items-center gap-3 text-sm ${heat ? '' : 'opacity-50'}`}
-                  >
-                    <span className="shrink-0 font-medium text-fg-muted">
-                      {t('results.viewer.opacity')}
-                    </span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={opacity}
-                      disabled={!heat}
-                      onChange={(e) => setOpacity(Number(e.target.value))}
-                      className="range w-full"
-                      aria-valuetext={`${opacity}%`}
-                    />
-                    <span className="w-10 text-right text-fg-subtle tabular">{opacity}%</span>
-                  </label>
-                </>
-              ) : null}
-            </div>
+                  {heat ? (
+                    <label className="flex min-w-48 flex-1 items-center gap-3 text-sm">
+                      <span className="shrink-0 font-medium text-fg-muted">
+                        {t('results.viewer.opacity')}
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={opacity}
+                        onChange={(e) => setOpacity(Number(e.target.value))}
+                        className="range h-6 w-full"
+                        aria-valuetext={`${opacity}%`}
+                        data-testid="heatmap-opacity"
+                      />
+                      <span className="w-10 text-right text-fg-muted tabular">{opacity}%</span>
+                    </label>
+                  ) : null}
+                </div>
+                {heat ? <LossLegend threshold={threshold} testId="heatmap-legend" /> : null}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div role="tabpanel" id="panel-terrain" aria-labelledby="tab-terrain">
@@ -211,7 +219,9 @@ export function SiteViewer({ result, site }: { result: ScreeningResult; site: Si
         {site.registration ? (
           <li>
             {t('results.viewer.registration', {
-              method: site.registration.method.replace(/_/g, ' '),
+              method: t(`results.viewer.registrationMethod.${site.registration.method}`, {
+                defaultValue: site.registration.method.replace(/_/g, ' '),
+              }),
               value: formatNumber(site.registration.confidence, 2),
             })}
           </li>
@@ -234,6 +244,7 @@ function TerrainPanel({ result, site }: { result: ScreeningResult; site: SiteRes
     result.result_version,
   );
   const threshold = q.data?.threshold ?? site.af?.fvl_threshold ?? 0.75;
+  const regions = site.af?.status === 'ok' ? (site.af.regions ?? []) : [];
 
   return (
     <div>
@@ -267,29 +278,60 @@ function TerrainPanel({ result, site }: { result: ScreeningResult; site: SiteRes
               reducedMotion={reduced}
               dark={theme === 'dark'}
               label={t('results.viewer.terrainLabel')}
+              regions={regions}
+              topLabel={t('results.viewer.topOfPhoto')}
             />
           </Suspense>
         )}
+        {result.synthetic ? (
+          <SyntheticTag solid className="pointer-events-none absolute bottom-2 left-2 z-10" />
+        ) : null}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-fg-muted">
+      <LossLegend threshold={threshold} plane className="mt-3" />
+      <p className="mt-2 text-xs text-fg-subtle">{t('results.viewer.terrainHint')}</p>
+    </div>
+  );
+}
+
+/** Colour key for AF loss, shared by the 2D heatmap and the 3D terrain. */
+function LossLegend({
+  threshold,
+  plane = false,
+  className = '',
+  testId,
+}: {
+  threshold?: number;
+  plane?: boolean;
+  className?: string;
+  testId?: string;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-fg-muted ${className}`}
+      data-testid={testId}
+    >
+      <div className="flex items-center gap-2">
+        <span className="sr-only">{t('results.viewer.heatmapLegend')}:</span>
+        <span>{t('results.viewer.lossLegendLow')}</span>
+        <span
+          className="h-2.5 w-32 rounded-full"
+          style={{ background: LOSS_GRADIENT_CSS }}
+          aria-hidden="true"
+        />
+        <span>{t('results.viewer.lossLegendHigh')}</span>
+      </div>
+      {threshold !== undefined ? (
         <div className="flex items-center gap-2">
-          <span>{t('results.viewer.lossLegendLow')}</span>
-          <span
-            className="h-2.5 w-32 rounded-full"
-            style={{ background: LOSS_GRADIENT_CSS }}
-            aria-hidden="true"
-          />
-          <span>{t('results.viewer.lossLegendHigh')}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            className="h-3 w-5 rounded-sm border border-[#a48bff] bg-[#7c5cff]/25"
-            aria-hidden="true"
-          />
+          {plane ? (
+            <span
+              className="h-3 w-5 rounded-sm border border-[#a48bff] bg-[#7c5cff]/25"
+              aria-hidden="true"
+            />
+          ) : null}
           <span>{t('results.viewer.threshold', { value: threshold })}</span>
         </div>
-      </div>
-      <p className="mt-2 text-xs text-fg-subtle">{t('results.viewer.terrainHint')}</p>
+      ) : null}
     </div>
   );
 }

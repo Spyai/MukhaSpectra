@@ -2,8 +2,8 @@ import { m } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ContributingFactor, RiskLevel, ScoreThresholds } from '../../api/types';
-import { SOURCE_ICON, waterfall } from '../../lib/factors';
-import { formatPoints } from '../../lib/format';
+import { SOURCE_ICON, waterfall, type WaterfallRow } from '../../lib/factors';
+import { formatPoints, round } from '../../lib/format';
 import { RISK_STYLE } from '../../lib/risk';
 import { Icon } from '../ui/Icon';
 
@@ -15,6 +15,10 @@ interface FactorBarsProps {
   level?: RiskLevel;
   compact?: boolean;
   id?: string;
+  /** Optional grouping of contiguous rows, e.g. the finding vs the person's risk factors. */
+  groupBy?: (f: ContributingFactor) => { key: string; label: string };
+  /** Shown under the total, e.g. that only the highest-scoring finding counts. */
+  note?: ReactNode;
 }
 
 export function FactorBars({
@@ -24,6 +28,8 @@ export function FactorBars({
   level,
   compact = false,
   id,
+  groupBy,
+  note,
 }: FactorBarsProps) {
   const { t } = useTranslation();
   const { rows, total } = waterfall(factors);
@@ -68,6 +74,96 @@ export function FactorBars({
     </div>
   );
 
+  const renderRow = ({ factor, start, end }: WaterfallRow, i: number) => {
+    const left = pct(Math.min(start, end));
+    const width = Math.max(pct(Math.max(start, end)) - left, 0.6);
+    const positive = factor.points >= 0;
+    return (
+      <li
+        key={`${factor.code}-${i}`}
+        data-testid="factor-row"
+        data-points={factor.points}
+        className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_4rem] sm:gap-x-4"
+      >
+        <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-2 sm:col-start-auto sm:row-start-auto">
+          <span
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-2 text-fg-muted"
+            title={t(`results.source.${factor.source}`)}
+          >
+            <Icon name={SOURCE_ICON[factor.source]} size={15} />
+          </span>
+          <div className="min-w-0">
+            <span className="sr-only">
+              {t('results.why.factorAria', {
+                label: factor.label,
+                points: formatPoints(factor.points),
+                source: t(`results.source.${factor.source}`),
+              })}
+            </span>
+            <p aria-hidden="true" className="text-sm leading-snug font-medium text-fg">
+              {factor.label}
+            </p>
+            {!compact && factor.detail ? (
+              <p aria-hidden="true" className="mt-0.5 text-xs leading-snug text-fg-subtle">
+                {factor.detail}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div
+          className="col-span-2 col-start-1 row-start-2 sm:col-span-1 sm:col-start-auto sm:row-start-auto"
+          aria-hidden="true"
+        >
+          {track(
+            <m.div
+              className="absolute inset-y-1 rounded-[5px]"
+              style={{
+                left: `${left}%`,
+                width: `${width}%`,
+                background: positive ? 'var(--violet)' : 'var(--green)',
+                opacity: positive ? 0.85 : 0.9,
+                transformOrigin: positive ? 'left center' : 'right center',
+              }}
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: 1 }}
+              transition={{
+                type: 'spring',
+                stiffness: 260,
+                damping: 30,
+                delay: Math.min(i * 0.045, 0.5),
+              }}
+            />,
+          )}
+        </div>
+        <span
+          aria-hidden="true"
+          className={`col-start-2 row-start-1 text-right text-sm font-bold tabular sm:col-start-auto sm:row-start-auto ${positive ? 'text-violet-text' : 'text-glow-text'}`}
+        >
+          {formatPoints(factor.points)}
+        </span>
+      </li>
+    );
+  };
+
+  // Contiguous groups (e.g. "Finding L1" then "Risk factors"), each with its subtotal.
+  const groups: Array<{
+    key: string;
+    label: string;
+    first: number;
+    subtotal: number;
+    rows: Array<{ row: WaterfallRow; index: number }>;
+  }> = [];
+  rows.forEach((row, index) => {
+    const g = groupBy ? groupBy(row.factor) : { key: 'all', label: '' };
+    const last = groups[groups.length - 1];
+    if (last && last.key === g.key) {
+      last.rows.push({ row, index });
+      last.subtotal = round(last.subtotal + row.factor.points, 6);
+    } else {
+      groups.push({ ...g, first: index, subtotal: row.factor.points, rows: [{ row, index }] });
+    }
+  });
+
   if (factors.length === 0) {
     return (
       <p
@@ -101,78 +197,23 @@ export function FactorBars({
           </div>
         </div>
       ) : null}
-      <ol aria-label={t('results.why.chartLabel')} className="flex flex-col gap-2.5">
-        {rows.map(({ factor, start, end }, i) => {
-          const left = pct(Math.min(start, end));
-          const width = Math.max(pct(Math.max(start, end)) - left, 0.6);
-          const positive = factor.points >= 0;
-          return (
-            <li
-              key={`${factor.code}-${i}`}
-              data-testid="factor-row"
-              data-points={factor.points}
-              className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_4rem] sm:gap-x-4"
-            >
-              <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-2 sm:col-start-auto sm:row-start-auto">
-                <span
-                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-2 text-fg-muted"
-                  title={t(`results.source.${factor.source}`)}
-                >
-                  <Icon name={SOURCE_ICON[factor.source]} size={15} />
-                </span>
-                <div className="min-w-0">
-                  <span className="sr-only">
-                    {t('results.why.factorAria', {
-                      label: factor.label,
-                      points: formatPoints(factor.points),
-                      source: t(`results.source.${factor.source}`),
-                    })}
-                  </span>
-                  <p aria-hidden="true" className="text-sm leading-snug font-medium text-fg">
-                    {factor.label}
-                  </p>
-                  {!compact && factor.detail ? (
-                    <p aria-hidden="true" className="mt-0.5 text-xs leading-snug text-fg-subtle">
-                      {factor.detail}
-                    </p>
-                  ) : null}
-                </div>
+      <div role="group" aria-label={t('results.why.chartLabel')} className="flex flex-col gap-4">
+        {groups.map((g) => (
+          <div key={`${g.key}-${g.first}`} data-testid="factor-group" data-group={g.key}>
+            {g.label ? (
+              <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-line/70 pb-1.5">
+                <p className="text-xs font-bold tracking-wide text-fg-muted uppercase">{g.label}</p>
+                <p className="text-xs font-semibold text-fg-subtle tabular">
+                  {t('results.why.subtotal', { value: formatPoints(g.subtotal) })}
+                </p>
               </div>
-              <div
-                className="col-span-2 col-start-1 row-start-2 sm:col-span-1 sm:col-start-auto sm:row-start-auto"
-                aria-hidden="true"
-              >
-                {track(
-                  <m.div
-                    className="absolute inset-y-1 rounded-[5px]"
-                    style={{
-                      left: `${left}%`,
-                      width: `${width}%`,
-                      background: positive ? 'var(--violet)' : 'var(--green)',
-                      opacity: positive ? 0.85 : 0.9,
-                      transformOrigin: positive ? 'left center' : 'right center',
-                    }}
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 260,
-                      damping: 30,
-                      delay: Math.min(i * 0.045, 0.5),
-                    }}
-                  />,
-                )}
-              </div>
-              <span
-                aria-hidden="true"
-                className={`col-start-2 row-start-1 text-right text-sm font-bold tabular sm:col-start-auto sm:row-start-auto ${positive ? 'text-violet-text' : 'text-glow-text'}`}
-              >
-                {formatPoints(factor.points)}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+            ) : null}
+            <ol aria-label={g.label || undefined} className="flex flex-col gap-2.5">
+              {g.rows.map(({ row, index }) => renderRow(row, index))}
+            </ol>
+          </div>
+        ))}
+      </div>
       <div
         className="mt-4 grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-x-3 gap-y-1.5 border-t border-line pt-4 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_4rem] sm:gap-x-4"
         data-testid="factor-total"
@@ -208,6 +249,15 @@ export function FactorBars({
         </span>
       </div>
       {!compact ? <p className="mt-3 text-xs text-fg-subtle">{t('results.why.sumNote')}</p> : null}
+      {note ? (
+        <p
+          className="mt-2 flex items-start gap-1.5 text-xs text-fg-muted"
+          data-testid="factor-note"
+        >
+          <Icon name="info" size={14} className="mt-px shrink-0" />
+          <span>{note}</span>
+        </p>
+      ) : null}
     </div>
   );
 }

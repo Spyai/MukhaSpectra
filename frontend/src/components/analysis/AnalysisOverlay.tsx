@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useApi } from '../../api/ApiContext';
 import type { ScreeningResult } from '../../api/types';
+import { wlThumbnail } from '../../lib/thumbnail';
 import { formatDuration } from '../../lib/format';
 import { failedSites } from '../../lib/qc';
 import { DISPLAY_STAGES, summariseStages } from '../../lib/stages';
@@ -36,31 +37,6 @@ export function AnalysisOverlay(props: AnalysisOverlayProps) {
   );
 }
 
-/** Top site's registered white-light artifact: the real photo, never a stand-in. */
-function useResultThumbnail(result: ScreeningResult | null | undefined): {
-  url: string | null;
-  site: string | null;
-} {
-  const api = useApi();
-  return useMemo(() => {
-    if (!result) return { url: null, site: null };
-    const topLesion = result.lesions?.find(
-      (l) => l.lesion_id === result.triage.highest_risk_lesion_id,
-    );
-    const site =
-      result.sites.find((s) => s.site === topLesion?.site && s.artifacts?.wl_image) ??
-      result.sites.find((s) => s.role !== 'reference_only' && s.artifacts?.wl_image) ??
-      result.sites.find((s) => s.artifacts?.wl_image);
-    const key = site?.artifacts?.wl_image;
-    return key
-      ? {
-          url: api.artifactUrl(result.screening_id, key, result.result_version),
-          site: site.site,
-        }
-      : { url: null, site: null };
-  }, [api, result]);
-}
-
 function OverlayBody({
   mode,
   thumbnailUrl,
@@ -80,7 +56,8 @@ function OverlayBody({
   const done = Boolean(result);
   const failed = Boolean(error);
   const synthetic = result?.synthetic ?? syntheticHint;
-  const fromResult = useResultThumbnail(result);
+  const api = useApi();
+  const fromResult = useMemo(() => wlThumbnail(api, result), [api, result]);
   const thumb = thumbnailUrl ?? fromResult.url;
   const retakeSites = useMemo(() => (result ? failedSites(result) : []), [result]);
   const needsRetake = retakeSites.length > 0;
@@ -197,7 +174,7 @@ function OverlayBody({
                   alt={
                     fromResult.site && !thumbnailUrl
                       ? t('analysis.thumbnailArtifactAlt', {
-                          site: t(`sites.${fromResult.site as 'tongue_dorsum'}`),
+                          site: t(`sites.${fromResult.site}`),
                         })
                       : t('analysis.thumbnailAlt')
                   }
@@ -215,7 +192,7 @@ function OverlayBody({
                   </span>
                 </div>
               )}
-              {synthetic ? <SyntheticTag className="absolute top-2 left-2" /> : null}
+              {synthetic ? <SyntheticTag solid className="absolute top-2 left-2" /> : null}
               {!done && !failed ? (
                 <>
                   <m.div
@@ -245,21 +222,17 @@ function OverlayBody({
               {done ? (
                 <m.div
                   aria-hidden="true"
-                  className={`absolute inset-0 flex items-center justify-center ${needsRetake ? 'bg-[oklch(0.85_0.15_80/0.14)]' : 'bg-[oklch(0.8_0.2_150/0.16)]'}`}
+                  className="absolute inset-0 flex items-center justify-center bg-[oklch(0.8_0.2_150/0.16)]"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                 >
                   <m.span
-                    className={`flex h-14 w-14 items-center justify-center rounded-full ${
-                      needsRetake
-                        ? 'bg-[oklch(0.85_0.15_80)] text-[oklch(0.25_0.05_70)]'
-                        : 'bg-[oklch(0.8_0.2_150)] text-[oklch(0.2_0.05_150)] shadow-[0_0_40px_oklch(0.8_0.2_150/0.6)]'
-                    }`}
+                    className="flex h-14 w-14 items-center justify-center rounded-full bg-[oklch(0.8_0.2_150)] text-[oklch(0.2_0.05_150)] shadow-[0_0_40px_oklch(0.8_0.2_150/0.6)]"
                     initial={{ scale: 0.5 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 380, damping: 16 }}
                   >
-                    <Icon name={needsRetake ? 'camera' : 'check'} size={28} strokeWidth={2.5} />
+                    <Icon name="check" size={30} strokeWidth={2.5} />
                   </m.span>
                 </m.div>
               ) : null}
@@ -272,13 +245,7 @@ function OverlayBody({
                 const s = summary?.[i];
                 const state:
                   'waiting' | 'pulse' | 'done' | 'warn' | 'skipped' | 'not-timed' | 'failed' =
-                  failed
-                    ? 'waiting'
-                    : s
-                      ? s.status
-                      : !reduced && i === pulse
-                        ? 'pulse'
-                        : 'waiting';
+                  failed ? 'waiting' : s ? s.status : !reduced && i === pulse ? 'pulse' : 'waiting';
                 return (
                   <li
                     key={stage}

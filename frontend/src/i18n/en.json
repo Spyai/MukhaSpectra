@@ -133,8 +133,8 @@
     "recentEmpty": "No screenings yet. Run a demo or upload captures to begin.",
     "recentError": "Could not load recent screenings.",
     "recentItem": "Screening {{id}}",
-    "sitesCount_one": "{{count}} site",
-    "sitesCount_other": "{{count}} sites",
+    "sitesCount_one": "{{count}} site",
+    "sitesCount_other": "{{count}} sites",
     "open": "Open"
   },
   "upload": {
@@ -155,7 +155,8 @@
       "referenceSuggested": "Reference site suggested: {{site}} ({{pairing}}). Its photos let the analysis compare the glow with the same person's healthy tissue.",
       "noPair": "This site has no paired site. The analysis will use an in-image reference.",
       "useReference": "Add reference photos from {{site}}",
-      "caption": "No site chosen yet. Tap one on the map."
+      "caption": "No site chosen yet. Tap one on the map.",
+      "chosen": "chosen"
     },
     "pairing": {
       "contralateral": "same site, other side",
@@ -348,6 +349,7 @@
     "pageTitle": "Screening result",
     "loading": "Loading result…",
     "patient": "Patient {{id}}",
+    "patientLabel": "Patient",
     "patientMeta": "{{age}} · {{sex}}",
     "ageUnknown": "Age not recorded",
     "capturedAt": "Captured {{date}}",
@@ -358,8 +360,8 @@
     "action": "Recommended action",
     "timeline": "Act within",
     "timelineNow": "Before the person leaves",
-    "timelineDays_one": "{{count}} day",
-    "timelineDays_other": "{{count}} days",
+    "timelineDays_one": "{{count}} day",
+    "timelineDays_other": "{{count}} days",
     "urgency": {
       "none": "Routine",
       "reexamine": "Re-examine",
@@ -507,6 +509,7 @@
       "reflectance": "Reflectance",
       "relative_signal": "Relative signal",
       "hbBand": "Hb dip 540–580 nm",
+      "hbBandShort": "Hb dip",
       "band": "±1 SD",
       "feature": "Feature",
       "lesionValue": "Lesion",
@@ -521,8 +524,8 @@
       },
       "heuristicScore": "Heuristic score {{value}} (not a probability)",
       "none": "No probe spectrum was recorded for this screening.",
-      "readings_one": "{{count}} reading",
-      "readings_other": "{{count}} readings",
+      "readings_one": "{{count}} reading",
+      "readings_other": "{{count}} readings",
       "features": {
         "ratio_555_630": "555 / 630 nm ratio",
         "ratio_590_680": "590 / 680 nm ratio",
@@ -714,9 +717,10 @@
     "empty": "No screenings yet.",
     "columns": {
       "patient": "Patient",
-      "date": "Date",
+      "date": "Captured",
       "risk": "Risk level",
-      "versions": "Versions"
+      "versions": "Versions",
+      "details": "Details"
     }
   },
   "sitesShort": {

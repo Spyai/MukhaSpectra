@@ -1,8 +1,8 @@
 import { AnimatePresence, m } from 'motion/react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ContributingFactor, LesionAssessment, OralSite, ScreeningResult } from '../../api/types';
-import { SOURCE_ICON } from '../../lib/factors';
+import type { LesionAssessment, OralSite, ScreeningResult } from '../../api/types';
+import { SOURCE_ICON, topFactors } from '../../lib/factors';
 import { formatPoints } from '../../lib/format';
 import { failedSites } from '../../lib/qc';
 import { Icon, type IconName } from '../ui/Icon';
@@ -15,16 +15,6 @@ const ORIGIN_ICON: Record<LesionAssessment['origins'][number], IconName> = {
   wl_model: 'camera',
   spectral: 'wave',
 };
-
-/** The reasons that moved the score most (by absolute points), in their original order. */
-export function topFactors(factors: ContributingFactor[], n = 3): ContributingFactor[] {
-  const ranked = [...factors]
-    .map((f, i) => ({ f, i }))
-    .filter(({ f }) => f.points !== 0)
-    .sort((a, b) => Math.abs(b.f.points) - Math.abs(a.f.points) || a.i - b.i)
-    .slice(0, n);
-  return ranked.sort((a, b) => a.i - b.i).map(({ f }) => f);
-}
 
 function NotAnalysedNote({ count }: { count: number }) {
   const { t } = useTranslation();
@@ -93,7 +83,10 @@ export function LesionList({
               <p className="mt-1 text-sm leading-relaxed text-fg-muted">{l.summary}</p>
 
               {/* A score is never shown without its reasons: the main ones are always visible. */}
-              <div className="mt-3 rounded-xl border border-line bg-surface p-3" data-testid="lesion-reasons">
+              <div
+                className="mt-3 rounded-xl border border-line bg-surface p-3"
+                data-testid="lesion-reasons"
+              >
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-xs font-semibold text-fg-subtle">
                     {t('results.lesions.topReasons')}

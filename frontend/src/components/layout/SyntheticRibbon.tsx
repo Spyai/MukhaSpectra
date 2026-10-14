@@ -13,7 +13,7 @@ export function SyntheticRibbon({ notice }: { notice?: string | null }) {
       <span className="rounded-md bg-synthetic-ink px-2 py-0.5 text-xs font-bold tracking-widest text-synthetic">
         {t('synthetic.ribbon')}
       </span>
-      <span className="min-w-0 flex-1 rounded-md bg-synthetic px-1.5 py-0.5 text-[13px] leading-snug sm:text-sm">
+      <span className="min-w-0 flex-1 rounded-md bg-synthetic px-1.5 py-0.5 text-xs leading-snug sm:text-sm">
         {notice ?? t('synthetic.defaultNotice')}
       </span>
     </div>
@@ -35,11 +35,23 @@ export function SyntheticCorner() {
   );
 }
 
-export function SyntheticTag({ className = '' }: { className?: string }) {
+/** Small SYNTHETIC label. `solid` is for use over images (always legible on any pixel). */
+export function SyntheticTag({
+  className = '',
+  solid = false,
+}: {
+  className?: string;
+  solid?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <span
-      className={`inline-flex items-center rounded-md border border-synthetic/70 bg-synthetic/20 px-1.5 py-0.5 text-[11px] font-bold tracking-widest text-fg ${className}`}
+      className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-bold tracking-widest ${
+        solid
+          ? 'synthetic-stripes shadow-[0_1px_6px_oklch(0_0_0/0.45)]'
+          : 'border border-synthetic/70 bg-synthetic/20 text-fg'
+      } ${className}`}
+      data-testid="synthetic-tag"
     >
       {t('synthetic.tag')}
     </span>
