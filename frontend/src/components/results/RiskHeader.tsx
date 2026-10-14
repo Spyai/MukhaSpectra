@@ -3,8 +3,33 @@ import { useTranslation } from 'react-i18next';
 import type { ScreeningResult } from '../../api/types';
 import { RISK_STYLE, isRiskLevel, overrideFloor } from '../../lib/risk';
 import { SyntheticCorner } from '../layout/SyntheticRibbon';
-import { Icon } from '../ui/Icon';
+import { Icon, type IconName } from '../ui/Icon';
 import { RiskBadge, RiskPill } from './RiskBadge';
+
+const URGENCY_ICON: Record<string, IconName> = {
+  none: 'calendar',
+  reexamine: 'eye',
+  urgent: 'siren',
+  retake: 'camera',
+};
+
+/** "Act within 14 days", "Next screening · in 12 months", "When · Before the person leaves". */
+function useTimeline(days: number | null | undefined, urgency: string) {
+  const { t } = useTranslation();
+  if (days === null || days === undefined)
+    return { label: t('results.timeline'), value: '—', long: false };
+  if (days === 0)
+    return { label: t('results.timelineWhen'), value: t('results.timelineNow'), long: true };
+  const value =
+    days >= 60
+      ? t('results.timelineMonths', { count: Math.round(days / 30.44) })
+      : t('results.timelineDays', { count: days });
+  return {
+    label: urgency === 'none' ? t('results.timelineNext') : t('results.timeline'),
+    value,
+    long: days >= 60,
+  };
+}
 
 export function RiskHeader({ result }: { result: ScreeningResult }) {
   const { t } = useTranslation();
@@ -15,6 +40,7 @@ export function RiskHeader({ result }: { result: ScreeningResult }) {
   const days = action.timeline_days;
   const overrides = tri.overrides_applied ?? [];
   const reviewed = tri.review_status === 'reviewed';
+  const timeline = useTimeline(days, action.referral_urgency);
 
   return (
     <section
@@ -22,7 +48,11 @@ export function RiskHeader({ result }: { result: ScreeningResult }) {
       aria-labelledby="risk-header-title"
       data-testid="risk-header"
     >
-      {result.synthetic ? <SyntheticCorner /> : null}
+      {result.synthetic ? (
+        <div className="hidden sm:block">
+          <SyntheticCorner />
+        </div>
+      ) : null}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full opacity-40 blur-3xl"
@@ -31,8 +61,8 @@ export function RiskHeader({ result }: { result: ScreeningResult }) {
       <h2 id="risk-header-title" className="sr-only">
         {t('risk.eyebrow')}
       </h2>
-      <div className="relative grid gap-6 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-10">
-        <div className="flex flex-col gap-4">
+      <div className="relative grid grid-cols-1 gap-6 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-10">
+        <div className="flex min-w-0 flex-col gap-4">
           <RiskBadge level={level} />
           <div className="flex flex-wrap gap-2">
             <span
@@ -46,8 +76,8 @@ export function RiskHeader({ result }: { result: ScreeningResult }) {
               />
               {reviewed ? t('results.reviewed') : t('results.pendingReview')}
             </span>
-            <span className="chip">
-              <Icon name="alert" size={14} />
+            <span className="chip" data-testid="urgency-chip">
+              <Icon name={URGENCY_ICON[action.referral_urgency] ?? 'info'} size={14} />
               {t(`results.urgency.${action.referral_urgency}`)}
             </span>
           </div>
@@ -66,20 +96,16 @@ export function RiskHeader({ result }: { result: ScreeningResult }) {
           </m.p>
           <div className="mt-4 flex flex-wrap items-stretch gap-4">
             <div
-              className="flex min-w-36 flex-col justify-center rounded-2xl border px-4 py-3"
+              className="flex max-w-56 min-w-36 flex-col justify-center rounded-2xl border px-4 py-3"
               style={{ borderColor: style.color, background: style.bg }}
             >
-              <span className="text-xs font-semibold text-fg-muted">{t('results.timeline')}</span>
+              <span className="text-xs font-semibold text-fg-muted">{timeline.label}</span>
               <span
-                className="text-2xl font-extrabold tabular"
+                className={`font-extrabold tabular ${timeline.long ? 'text-xl leading-tight' : 'text-2xl'}`}
                 style={{ color: style.color }}
                 data-testid="timeline"
               >
-                {days === null || days === undefined
-                  ? '—'
-                  : days === 0
-                    ? t('results.timelineNow')
-                    : t('results.timelineDays', { count: days })}
+                {timeline.value}
               </span>
             </div>
             {(action.steps ?? []).length > 0 ? (

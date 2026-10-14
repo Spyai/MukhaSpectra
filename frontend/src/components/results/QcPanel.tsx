@@ -1,12 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import type { CaptureRecord, ModelInfo, QCIssue, ScreeningResult } from '../../api/types';
+import type { CaptureRecord, ModelInfo, ScreeningResult } from '../../api/types';
+import { issueText } from '../../lib/qc';
 import { Icon } from '../ui/Icon';
-
-function issueText(issue: QCIssue, t: ReturnType<typeof useTranslation>['t']): string {
-  // Prefer the frontend translation (i18n key qc.<code>), fall back to the pipeline's English.
-  const key = issue.message_key?.startsWith('qc.') ? issue.message_key : `qc.${issue.code}`;
-  return t(key as 'qc.blur', { defaultValue: issue.message });
-}
 
 function CaptureChip({ c }: { c: CaptureRecord }) {
   const { t } = useTranslation();

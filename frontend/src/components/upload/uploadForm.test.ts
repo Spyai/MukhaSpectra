@@ -76,9 +76,11 @@ describe('manifest building', () => {
       lesionSeen: true,
       appearance: ['white_patch'],
       note: '  rough patch  ',
-      smokeless: true,
-      alcoholDaily: true,
+      smokeless: { status: 'current', products: ['gutka'], years: '20', perDay: '6' },
+      smoking: { status: 'former', products: ['bidi'], years: '12', perDay: '' },
+      alcohol: 'weekly',
       ulcer: true,
+      burning: true,
       research: true,
       files: {
         wl: img('wl.jpg'),
@@ -111,11 +113,42 @@ describe('manifest building', () => {
       research_use_opt_in: true,
     });
     expect(manifest.patient).toEqual({ age_years: 52, sex: 'male' });
-    expect(manifest.risk_factors.smokeless_tobacco?.uses).toBe(true);
-    expect(manifest.risk_factors.alcohol).toEqual({ uses: true, frequency: 'daily' });
+    expect(manifest.risk_factors.smokeless_tobacco).toEqual({
+      uses: true,
+      former: false,
+      types: ['gutka'],
+      years: 20,
+      per_day: 6,
+    });
+    // A former bidi smoker is recorded as former; an unanswered "per day" is null, not 0.
+    expect(manifest.risk_factors.smoking).toEqual({
+      uses: false,
+      former: true,
+      types: ['bidi'],
+      years: 12,
+      per_day: null,
+    });
+    // A weekly drinker is recorded as weekly (never collapsed to "never").
+    expect(manifest.risk_factors.alcohol).toEqual({ uses: true, frequency: 'weekly' });
     expect(manifest.risk_factors.symptoms?.non_healing_ulcer_over_2_weeks).toBe(true);
+    expect(manifest.risk_factors.symptoms?.burning_sensation).toBe(true);
     // No name or contact details are ever sent from the console.
     expect(JSON.stringify(manifest)).not.toMatch(/"name"/);
+  });
+
+  it('never records "no" for a habit that was not asked', () => {
+    const rf = buildUploadRequest(valid()).manifest.risk_factors;
+    expect(rf.smokeless_tobacco).toBeUndefined();
+    expect(rf.smoking).toBeUndefined();
+    expect(rf.areca_nut).toBeUndefined();
+    expect(rf.alcohol).toBeUndefined();
+    const never = buildUploadRequest({
+      ...valid(),
+      areca: { status: 'never', products: [], years: '9', perDay: '9' },
+      alcohol: 'never',
+    }).manifest.risk_factors;
+    expect(never.areca_nut).toEqual({ uses: false, former: false, years: null, per_day: null });
+    expect(never.alcohol).toEqual({ uses: false, frequency: 'never' });
   });
 
   it('omits the reference site when the reference toggle is off', () => {

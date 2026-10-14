@@ -25,14 +25,17 @@ export function AppShell() {
   const version = useVersionInfo();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
-  const first = useRef(true);
+  const prevPath = useRef(location.pathname);
+  // The upload form has its own sticky submit bar; on phones the tab bar would leave too little
+  // room for the form, so it is hidden there (the header logo still links home).
+  const hideTabBar = location.pathname === '/upload';
 
   // Move focus to the main landmark on route change so screen readers announce the new page.
+  // Compared with the previous path (not a "first run" flag) so StrictMode's double effect on
+  // first load never steals focus from the skip link.
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
+    if (prevPath.current === location.pathname) return;
+    prevPath.current = location.pathname;
     mainRef.current?.focus({ preventScroll: true });
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
@@ -107,7 +110,9 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      <footer className="mb-16 border-t border-line px-4 py-6 text-center text-xs text-fg-subtle sm:mb-0">
+      <footer
+        className={`border-t border-line px-4 py-6 text-center text-xs text-fg-subtle sm:mb-0 ${hideTabBar ? '' : 'mb-16'}`}
+      >
         <p>{t('app.footer')}</p>
         {version.data?.software ? (
           <p className="mt-1 tabular" data-testid="app-version">
@@ -122,7 +127,8 @@ export function AppShell() {
 
       <nav
         aria-label={t('app.nav.label')}
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-3 border-t border-line bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden"
+        className={`fixed inset-x-0 bottom-0 z-30 grid-cols-3 border-t border-line bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden ${hideTabBar ? 'hidden' : 'grid'}`}
+        data-testid="tab-bar"
       >
         {NAV.map((item) => (
           <NavLink

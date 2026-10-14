@@ -9,6 +9,7 @@ export function ToggleChip({
   hint,
   icon,
   testId,
+  size = 'md',
 }: {
   pressed: boolean;
   onChange: (next: boolean) => void;
@@ -16,6 +17,7 @@ export function ToggleChip({
   hint?: string;
   icon?: IconName;
   testId?: string;
+  size?: 'sm' | 'md';
 }) {
   return (
     <button
@@ -23,7 +25,9 @@ export function ToggleChip({
       aria-pressed={pressed}
       onClick={() => onChange(!pressed)}
       data-testid={testId}
-      className={`inline-flex min-h-11 items-center gap-2 rounded-xl border px-3.5 py-2 text-left text-sm font-semibold transition-colors ${
+      className={`inline-flex items-center gap-2 rounded-xl border text-left text-sm font-semibold transition-colors ${
+        size === 'sm' ? 'min-h-10 px-2.5 py-1.5' : 'min-h-11 px-3.5 py-2'
+      } ${
         pressed
           ? 'border-violet bg-violet-soft text-fg'
           : 'border-line bg-surface-2 text-fg-muted hover:border-line-strong hover:text-fg'
@@ -48,29 +52,41 @@ export function ToggleChip({
 
 export function Segmented<T extends string>({
   label,
+  hint,
   value,
   options,
   onChange,
   name,
+  compact = false,
 }: {
   label: string;
+  hint?: string;
   value: T;
-  options: Array<{ value: T; label: string }>;
+  /** `muted`: an "unknown / not asked" option, drawn dashed when selected. */
+  options: Array<{ value: T; label: string; muted?: boolean }>;
   onChange: (v: T) => void;
   name?: string;
+  compact?: boolean;
 }) {
   const auto = useId();
   const group = name ?? auto;
   return (
     <fieldset>
-      <legend className="field-label">{label}</legend>
-      <div className="flex flex-wrap gap-2">
+      <legend className="field-label">
+        {label}
+        {hint ? (
+          <span className="mt-0.5 block text-xs font-normal text-fg-subtle">{hint}</span>
+        ) : null}
+      </legend>
+      <div className={`flex flex-wrap ${compact ? 'gap-1.5' : 'gap-2'}`}>
         {options.map((o) => (
           <label
             key={o.value}
-            className={`relative inline-flex min-h-11 cursor-pointer items-center rounded-xl border px-3.5 text-sm font-semibold transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
+            className={`relative inline-flex min-h-11 cursor-pointer items-center rounded-xl border text-sm font-semibold transition-colors ${compact ? 'px-3' : 'px-3.5'} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus ${
               value === o.value
-                ? 'border-violet bg-violet-soft text-fg'
+                ? o.muted
+                  ? 'border-dashed border-line-strong bg-surface-2 text-fg'
+                  : 'border-violet bg-violet-soft text-fg'
                 : 'border-line bg-surface-2 text-fg-muted hover:border-line-strong'
             }`}
           >

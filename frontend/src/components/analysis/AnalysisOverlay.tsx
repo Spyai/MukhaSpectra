@@ -1,19 +1,26 @@
 import { AnimatePresence, m } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { useApi } from '../../api/ApiContext';
 import type { ScreeningResult } from '../../api/types';
-import { DISPLAY_STAGES, summariseStages } from '../../lib/stages';
 import { formatDuration } from '../../lib/format';
+import { failedSites } from '../../lib/qc';
+import { DISPLAY_STAGES, summariseStages } from '../../lib/stages';
 import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
+import { SyntheticTag } from '../layout/SyntheticRibbon';
 import { Icon } from '../ui/Icon';
 
-// Expected relative pacing while we wait (purely cosmetic; never shown as numbers).
-const PACE_MS = [500, 650, 450, 700, 350, 300];
+// Cosmetic pace of the "working" pulse while we wait. It never marks a step as done: ticks,
+// warnings and timings appear only once the server's measured stages arrive.
+const PULSE_MS = 650;
 
 export interface AnalysisOverlayProps {
   open: boolean;
   mode: 'upload' | 'demo' | 'reanalyse';
   thumbnailUrl?: string | null;
+  /** Known before the server answers (demo runs, re-analysis of a synthetic result). */
+  syntheticHint?: boolean;
   result?: ScreeningResult | null;
   error?: string | null;
   onContinue: () => void;
@@ -22,12 +29,42 @@ export interface AnalysisOverlayProps {
 }
 
 export function AnalysisOverlay(props: AnalysisOverlayProps) {
-  return <AnimatePresence>{props.open ? <OverlayBody {...props} /> : null}</AnimatePresence>;
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <AnimatePresence>{props.open ? <OverlayBody {...props} /> : null}</AnimatePresence>,
+    document.body,
+  );
+}
+
+/** Top site's registered white-light artifact: the real photo, never a stand-in. */
+function useResultThumbnail(result: ScreeningResult | null | undefined): {
+  url: string | null;
+  site: string | null;
+} {
+  const api = useApi();
+  return useMemo(() => {
+    if (!result) return { url: null, site: null };
+    const topLesion = result.lesions?.find(
+      (l) => l.lesion_id === result.triage.highest_risk_lesion_id,
+    );
+    const site =
+      result.sites.find((s) => s.site === topLesion?.site && s.artifacts?.wl_image) ??
+      result.sites.find((s) => s.role !== 'reference_only' && s.artifacts?.wl_image) ??
+      result.sites.find((s) => s.artifacts?.wl_image);
+    const key = site?.artifacts?.wl_image;
+    return key
+      ? {
+          url: api.artifactUrl(result.screening_id, key, result.result_version),
+          site: site.site,
+        }
+      : { url: null, site: null };
+  }, [api, result]);
 }
 
 function OverlayBody({
   mode,
   thumbnailUrl,
+  syntheticHint = false,
   result,
   error,
   onContinue,
@@ -36,34 +73,36 @@ function OverlayBody({
 }: AnalysisOverlayProps) {
   const { t } = useTranslation();
   const reduced = usePrefersReducedMotion();
-  const [active, setActive] = useState(0);
+  const [pulse, setPulse] = useState(0);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const done = Boolean(result);
   const failed = Boolean(error);
+  const synthetic = result?.synthetic ?? syntheticHint;
+  const fromResult = useResultThumbnail(result);
+  const thumb = thumbnailUrl ?? fromResult.url;
+  const retakeSites = useMemo(() => (result ? failedSites(result) : []), [result]);
+  const needsRetake = retakeSites.length > 0;
+  const autoContinue = done && !needsRetake && !reduced;
 
-  // Advance the waiting animation; hold on "Triage" until the server answers.
+  // A pulse walks along the steps while waiting (cosmetic only, never "done").
   useEffect(() => {
-    if (done || failed) return;
-    let i = 0;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      if (i >= PACE_MS.length - 1) return;
-      timer = setTimeout(() => {
-        i += 1;
-        setActive(i);
-        tick();
-      }, PACE_MS[i]);
-    };
-    tick();
-    return () => clearTimeout(timer);
-  }, [done, failed]);
+    if (done || failed || reduced) return;
+    const timer = setInterval(() => setPulse((p) => (p + 1) % DISPLAY_STAGES.length), PULSE_MS);
+    return () => clearInterval(timer);
+  }, [done, failed, reduced]);
 
+  // Modal: the app behind is inert (no focus, no clicks) and does not scroll.
   useEffect(() => {
     titleRef.current?.focus();
+    const root = document.getElementById('root');
+    const prevInert = root?.inert ?? false;
+    if (root) root.inert = true;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
+      if (root) root.inert = prevInert;
       document.body.style.overflow = prev;
     };
   }, []);
@@ -71,9 +110,10 @@ function OverlayBody({
   useEffect(() => {
     if (!done) return;
     continueRef.current?.focus();
+    if (!autoContinue) return;
     const timer = setTimeout(onContinue, autoContinueMs);
     return () => clearTimeout(timer);
-  }, [done, onContinue, autoContinueMs]);
+  }, [done, autoContinue, onContinue, autoContinueMs]);
 
   const summary = useMemo(
     () => (result ? summariseStages(result.processing.stages ?? []) : null),
@@ -95,10 +135,12 @@ function OverlayBody({
       transition={{ duration: 0.2 }}
     >
       <m.div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="analysis-title"
         data-testid="analysis-overlay"
+        data-synthetic={synthetic}
         className="card max-h-[92dvh] w-full max-w-3xl overflow-y-auto rounded-b-none p-5 sm:rounded-b-[1.25rem] sm:p-7"
         initial={{ y: 32, opacity: 0, scale: 0.98 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -106,34 +148,74 @@ function OverlayBody({
         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && (done || failed)) (done ? onContinue : onClose)();
+          // Focus trap: the backdrop app is inert, so only wrap Tab within the dialog.
+          if (e.key === 'Tab' && dialogRef.current) {
+            const items = dialogRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+            );
+            const first = items[0];
+            const last = items[items.length - 1];
+            if (!first || !last) {
+              e.preventDefault();
+              titleRef.current?.focus();
+            } else if (e.shiftKey && document.activeElement === first) {
+              e.preventDefault();
+              last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
         }}
       >
-        <div className="grid gap-6 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <div>
-            <h2
-              id="analysis-title"
-              ref={titleRef}
-              tabIndex={-1}
-              className="text-xl font-bold tracking-tight outline-none"
-            >
-              {failed ? t('analysis.failed') : done ? t('analysis.done') : title}
-            </h2>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2
+                id="analysis-title"
+                ref={titleRef}
+                tabIndex={-1}
+                className="text-xl font-bold tracking-tight outline-none"
+              >
+                {failed ? t('analysis.failed') : done ? t('analysis.done') : title}
+              </h2>
+              {synthetic ? <SyntheticTag /> : null}
+            </div>
             <p className="mt-1 text-sm text-fg-muted">
-              {failed ? error : done ? t('analysis.doneBody') : t('analysis.subtitle')}
+              {failed
+                ? error
+                : done
+                  ? autoContinue
+                    ? t('analysis.doneBodyAuto')
+                    : t('analysis.doneBody')
+                  : t('analysis.subtitle')}
             </p>
             <div className="relative mt-5 aspect-[4/3] overflow-hidden rounded-xl border border-line bg-image-well">
-              {thumbnailUrl ? (
+              {thumb ? (
                 <img
-                  src={thumbnailUrl}
-                  alt={t('analysis.thumbnailAlt')}
+                  src={thumb}
+                  alt={
+                    fromResult.site && !thumbnailUrl
+                      ? t('analysis.thumbnailArtifactAlt', {
+                          site: t(`sites.${fromResult.site as 'tongue_dorsum'}`),
+                        })
+                      : t('analysis.thumbnailAlt')
+                  }
                   className="h-full w-full object-cover"
+                  data-testid="analysis-thumbnail"
                 />
               ) : (
                 <div
-                  aria-hidden="true"
-                  className="h-full w-full bg-[radial-gradient(60%_55%_at_45%_55%,oklch(0.62_0.12_10),oklch(0.32_0.08_10)_70%,oklch(0.14_0.03_268))]"
-                />
+                  className="flex h-full w-full flex-col items-center justify-center gap-2 text-[oklch(0.75_0.03_268)]"
+                  data-testid="analysis-thumbnail-placeholder"
+                >
+                  <Icon name="camera" size={32} />
+                  <span className="text-xs font-semibold">
+                    {synthetic ? t('analysis.placeholderThumb') : t('analysis.thumbnailAlt')}
+                  </span>
+                </div>
               )}
+              {synthetic ? <SyntheticTag className="absolute top-2 left-2" /> : null}
               {!done && !failed ? (
                 <>
                   <m.div
@@ -163,42 +245,40 @@ function OverlayBody({
               {done ? (
                 <m.div
                   aria-hidden="true"
-                  className="absolute inset-0 flex items-center justify-center bg-[oklch(0.8_0.2_150/0.16)]"
+                  className={`absolute inset-0 flex items-center justify-center ${needsRetake ? 'bg-[oklch(0.85_0.15_80/0.14)]' : 'bg-[oklch(0.8_0.2_150/0.16)]'}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                 >
                   <m.span
-                    className="flex h-14 w-14 items-center justify-center rounded-full bg-[oklch(0.8_0.2_150)] text-[oklch(0.2_0.05_150)] shadow-[0_0_40px_oklch(0.8_0.2_150/0.6)]"
+                    className={`flex h-14 w-14 items-center justify-center rounded-full ${
+                      needsRetake
+                        ? 'bg-[oklch(0.85_0.15_80)] text-[oklch(0.25_0.05_70)]'
+                        : 'bg-[oklch(0.8_0.2_150)] text-[oklch(0.2_0.05_150)] shadow-[0_0_40px_oklch(0.8_0.2_150/0.6)]'
+                    }`}
                     initial={{ scale: 0.5 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 380, damping: 16 }}
                   >
-                    <Icon name="check" size={30} strokeWidth={2.5} />
+                    <Icon name={needsRetake ? 'camera' : 'check'} size={28} strokeWidth={2.5} />
                   </m.span>
                 </m.div>
               ) : null}
             </div>
           </div>
 
-          <div>
+          <div className="min-w-0">
             <ol aria-label={t('analysis.progressLabel')} className="relative flex flex-col gap-1">
               {DISPLAY_STAGES.map((stage, i) => {
                 const s = summary?.[i];
                 const state:
-                  'waiting' | 'running' | 'done' | 'warn' | 'skipped' | 'not-timed' | 'failed' =
+                  'waiting' | 'pulse' | 'done' | 'warn' | 'skipped' | 'not-timed' | 'failed' =
                   failed
-                    ? i <= active
-                      ? i === active
-                        ? 'failed'
-                        : 'done'
-                      : 'waiting'
+                    ? 'waiting'
                     : s
                       ? s.status
-                      : i < active
-                        ? 'done'
-                        : i === active
-                          ? 'running'
-                          : 'waiting';
+                      : !reduced && i === pulse
+                        ? 'pulse'
+                        : 'waiting';
                 return (
                   <li
                     key={stage}
@@ -214,7 +294,7 @@ function OverlayBody({
                     ) : null}
                     <StageDot state={state} />
                     <span
-                      className={`flex-1 text-sm font-semibold ${state === 'waiting' ? 'text-fg-subtle' : 'text-fg'}`}
+                      className={`flex-1 text-sm font-semibold ${s ? 'text-fg' : 'text-fg-muted'}`}
                     >
                       {t(`analysis.stages.${stage}`)}
                     </span>
@@ -225,29 +305,48 @@ function OverlayBody({
                           : s.status === 'skipped'
                             ? t('analysis.stageSkipped')
                             : t('analysis.notMeasured')
-                        : state === 'running'
-                          ? t('analysis.stageRunning')
-                          : state === 'done'
-                            ? t('analysis.stageDone')
-                            : state === 'failed'
-                              ? t('analysis.stageFailed')
-                              : ''}
+                        : ''}
                     </span>
                   </li>
                 );
               })}
             </ol>
+            {!done && !failed ? (
+              <p className="mt-3 flex items-center gap-2 border-t border-line pt-3 text-xs text-fg-subtle">
+                <Icon name="clock" size={14} />
+                {t('analysis.waitingNote')}
+              </p>
+            ) : null}
             <p className="sr-only" aria-live="polite">
               {failed
                 ? t('analysis.failed')
                 : done
-                  ? t('analysis.done')
-                  : t(`analysis.stages.${DISPLAY_STAGES[active]!}`)}
+                  ? needsRetake
+                    ? `${t('analysis.done')}. ${t('analysis.retakeNeeded', { count: retakeSites.length })}`
+                    : t('analysis.done')
+                  : t('analysis.waiting')}
             </p>
             {result ? (
               <p className="mt-3 border-t border-line pt-3 text-sm text-fg-muted tabular">
                 {t('analysis.totalTime', { value: formatDuration(result.processing.duration_ms) })}
               </p>
+            ) : null}
+            {needsRetake ? (
+              <div
+                className="mt-3 flex items-start gap-2.5 rounded-xl border border-warn/60 bg-risk-moderate-bg p-3 text-sm"
+                data-testid="analysis-retake"
+              >
+                <Icon name="camera" size={18} className="mt-0.5 shrink-0 text-warn" />
+                <span>
+                  <span className="font-semibold">
+                    {t('analysis.retakeNeeded', { count: retakeSites.length })}
+                  </span>
+                  <span className="block text-fg-muted">
+                    {retakeSites.map((s) => t(`sites.${s}`)).join(', ')} ·{' '}
+                    {t('analysis.retakeNeededBody')}
+                  </span>
+                </span>
+              </div>
             ) : null}
             <div className="mt-5 flex justify-end gap-3">
               {failed ? (
@@ -296,9 +395,9 @@ function StageDot({ state }: { state: string }) {
         <Icon name="x" size={14} strokeWidth={2.6} />
       </span>
     );
-  if (state === 'running')
+  if (state === 'pulse')
     return (
-      <span className={`${base} border-violet bg-violet-soft`}>
+      <span className={`${base} border-violet/70`}>
         <span className="h-2.5 w-2.5 animate-ping rounded-full bg-violet" />
       </span>
     );

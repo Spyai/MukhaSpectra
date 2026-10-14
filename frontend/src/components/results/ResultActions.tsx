@@ -52,14 +52,17 @@ export function ResultActions({
   reportUrl,
   onReanalyse,
   reanalysing,
+  demoteReanalyse = false,
 }: {
   reportUrl: string;
   onReanalyse: () => void;
   reanalysing: boolean;
+  /** INCONCLUSIVE because of bad photos: retaking is the next step, not re-analysing. */
+  demoteReanalyse?: boolean;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <a
         href={reportUrl}
         target="_blank"
@@ -73,15 +76,26 @@ export function ResultActions({
       </a>
       <button
         type="button"
-        className="btn btn-secondary"
+        className={`btn ${demoteReanalyse ? 'btn-ghost' : 'btn-secondary'}`}
         onClick={onReanalyse}
         disabled={reanalysing}
-        title={t('results.actions.reanalyseHint')}
+        title={
+          demoteReanalyse
+            ? t('results.actions.reanalyseDemoted')
+            : t('results.actions.reanalyseHint')
+        }
+        aria-describedby={demoteReanalyse ? 'reanalyse-demoted' : undefined}
         data-testid="reanalyse"
+        data-demoted={demoteReanalyse}
       >
         <Icon name="refresh" size={18} className={reanalysing ? 'animate-spin' : ''} />
         {t('results.actions.reanalyse')}
       </button>
+      {demoteReanalyse ? (
+        <span id="reanalyse-demoted" className="basis-full text-xs text-fg-subtle lg:text-right">
+          {t('results.actions.reanalyseDemoted')}
+        </span>
+      ) : null}
     </div>
   );
 }

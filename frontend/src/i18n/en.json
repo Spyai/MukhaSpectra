@@ -68,12 +68,15 @@
     "points": "{{value}} pts",
     "version": "v{{version}}",
     "latest": "latest",
-    "years": "{{count}} y",
+    "years": "{{count}} y",
     "ms": "{{value}} ms",
     "seconds": "{{value}} s",
     "remove": "Remove",
     "show": "Show",
-    "hide": "Hide"
+    "hide": "Hide",
+    "copy": "Copy",
+    "copied": "Copied",
+    "notAsked": "Not asked"
   },
   "errors": {
     "network": "Could not reach the analysis server. Check that it is running, then try again.",
@@ -151,7 +154,8 @@
       "selected": "Selected: {{site}}",
       "referenceSuggested": "Reference site suggested: {{site}} ({{pairing}}). Its photos let the analysis compare the glow with the same person's healthy tissue.",
       "noPair": "This site has no paired site. The analysis will use an in-image reference.",
-      "useReference": "Add reference photos from {{site}}"
+      "useReference": "Add reference photos from {{site}}",
+      "caption": "No site chosen yet. Tap one on the map."
     },
     "pairing": {
       "contralateral": "same site, other side",
@@ -182,9 +186,9 @@
       "lesionSeen": "Lesion seen by eye at this site",
       "appearance": "What did it look like?",
       "note": "Short note",
-      "notePlaceholder": "Where it is, size, how long the patient has noticed it…",
-      "diascopy": "Glass-slide press on the dark area",
-      "diascopyHint": "If the glow comes back under gentle pressure, the darkness was most likely blood or inflammation."
+      "notePlaceholder": "Where it is, its size, how long the person has noticed it. Do not write names or phone numbers.",
+      "diascopy": "Glass-slide press on a dark area",
+      "diascopyHint": "Press a clean glass slide gently on any dark patch under violet light. If the glow comes back, the darkness was most likely blood or inflammation."
     },
     "appearance": {
       "white_patch": "White patch",
@@ -200,7 +204,7 @@
       "fvl_resolves": "Glow came back"
     },
     "risk": {
-      "title": "Patient and risk factors",
+      "title": "Person and risk factors",
       "age": "Age",
       "ageUnit": "years",
       "sex": "Sex",
@@ -211,8 +215,8 @@
       "smokingHint": "bidi, cigarette, chutta",
       "areca": "Areca nut",
       "arecaHint": "supari, paan without tobacco",
-      "alcohol": "Alcohol daily",
-      "symptoms": "Reported by the patient",
+      "alcohol": "Alcohol",
+      "symptoms": "The person has noticed",
       "ulcer": "Ulcer not healing for more than 2 weeks",
       "whitePatch": "White patch",
       "redPatch": "Red patch",
@@ -224,7 +228,35 @@
       "denture": "Ill-fitting denture",
       "provenance": "Data source",
       "campName": "Camp or clinic",
-      "workerId": "Health worker ID"
+      "workerId": "Health worker ID",
+      "habitsHint": "Leave “Not asked” for anything you did not ask about.",
+      "habitStatus": {
+        "unknown": "Not asked",
+        "current": "Current",
+        "former": "Former",
+        "never": "Never"
+      },
+      "products": "Which products?",
+      "years": "For how many years",
+      "perDay": {
+        "smokeless": "Times a day",
+        "smoking": "Sticks a day",
+        "areca": "Times a day"
+      },
+      "alcoholFrequency": {
+        "unknown": "Not asked",
+        "never": "Never",
+        "occasional": "Occasional",
+        "weekly": "Weekly",
+        "daily": "Daily"
+      },
+      "pain": "Pain in the mouth",
+      "bleeding": "Bleeding in the mouth",
+      "burning": "Burning with spicy food",
+      "burningHint": "Can be an early sign of submucous fibrosis",
+      "history": "Past history",
+      "priorLesion": "Previous oral lesion",
+      "priorCancer": "Previous oral cancer"
     },
     "sex": {
       "female": "Female",
@@ -259,6 +291,20 @@
       "age": "Enter an age between 0 and 120, or leave it empty.",
       "imageType": "This does not look like a photo. Use JPG, PNG, HEIC, TIFF or DNG.",
       "spectrumType": "Use a CSV or JSON file from the probe."
+    },
+    "product": {
+      "gutka": "Gutka",
+      "khaini": "Khaini",
+      "zarda": "Zarda",
+      "mawa": "Mawa",
+      "mishri": "Mishri",
+      "paan_with_tobacco": "Paan with tobacco",
+      "snuff": "Snuff",
+      "bidi": "Bidi",
+      "cigarette": "Cigarette",
+      "chutta_reverse": "Chutta (reverse smoking)",
+      "hookah": "Hookah",
+      "other": "Other"
     }
   },
   "analysis": {
@@ -267,7 +313,7 @@
     "titleReanalyse": "Re-analysing",
     "subtitle": "Each capture is checked, aligned and compared before any risk level is given.",
     "done": "Analysis complete",
-    "doneBody": "Measured stage timings are shown. Opening the results…",
+    "doneBody": "Stage timings below were measured by the server.",
     "viewResults": "View results",
     "failed": "Analysis did not complete",
     "back": "Back",
@@ -288,7 +334,15 @@
       "report": "Report"
     },
     "progressLabel": "Analysis progress",
-    "thumbnailAlt": "White-light photo being analysed"
+    "thumbnailAlt": "White-light photo being analysed",
+    "doneBodyAuto": "Stage timings below were measured by the server. Opening the results…",
+    "waiting": "Working…",
+    "waitingNote": "Each step is confirmed only when the server answers.",
+    "retakeNeeded_one": "{{count}} site needs a retake",
+    "retakeNeeded_other": "{{count}} sites need a retake",
+    "retakeNeededBody": "Open the results to see exactly what to retake.",
+    "thumbnailArtifactAlt": "White-light photo of {{site}}",
+    "placeholderThumb": "Synthetic demo captures"
   },
   "results": {
     "pageTitle": "Screening result",
@@ -303,7 +357,7 @@
     "reviewed": "Reviewed by clinician",
     "action": "Recommended action",
     "timeline": "Act within",
-    "timelineNow": "Now",
+    "timelineNow": "Before the person leaves",
     "timelineDays_one": "{{count}} day",
     "timelineDays_other": "{{count}} days",
     "urgency": {
@@ -338,7 +392,12 @@
       "sumNote": "Bars add up, left to right, to the total score.",
       "chartLabel": "Contribution of each factor to the score",
       "factorAria": "{{label}}: {{points}} points ({{source}})",
-      "lesionScore": "Finding score {{value}}"
+      "lesionScore": "Finding score {{value}}",
+      "groupFinding": "Finding {{id}} · {{site}}",
+      "groupRiskFactors": "Risk factors",
+      "groupOther": "Other",
+      "onlyTopFinding": "Only the highest-scoring finding ({{id}}) counts towards this total. Other findings are scored on their own under Suspicious findings: {{others}}.",
+      "subtotal": "Subtotal {{value}}"
     },
     "source": {
       "autofluorescence": "Autofluorescence",
@@ -359,7 +418,8 @@
       "reference": "Reference",
       "notExamined": "Not captured",
       "siteAria": "{{site}}: {{status}}",
-      "legend": "Legend"
+      "legend": "Legend",
+      "captionResults": "Tap a site to inspect it."
     },
     "viewer": {
       "wipe": "Compare",
@@ -388,13 +448,23 @@
       "threshold": "Glow-loss threshold {{value}}",
       "loadingTerrain": "Loading 3D view…",
       "terrainLabel": "3D terrain of glow loss. Height is how much glow is lost compared with the reference.",
-      "terrainHint": "Drag to rotate, pinch or scroll to zoom. Peaks above the plane are below the glow-loss threshold.",
+      "terrainHint": "Drag to rotate, pinch or scroll to zoom. Anything rising through the violet plane has lost more glow than the threshold.",
       "terrainUnavailable": "3D view is not available on this device. The heatmap shows the same data.",
       "noGrid": "No glow grid was produced for this site.",
       "lossLegendLow": "Glow kept",
       "lossLegendHigh": "Glow lost",
       "registration": "Alignment: {{method}}, confidence {{value}}",
-      "orientation": "Images are shown in the white-light frame."
+      "orientation": "Images are shown in the white-light frame.",
+      "heatmapLegend": "Heatmap colour",
+      "registrationMethod": {
+        "ecc_affine": "intensity matching (shift, rotate, scale)",
+        "ecc_homography": "intensity matching (perspective)",
+        "orb_homography": "feature matching (perspective)",
+        "identity": "none needed"
+      },
+      "topOfPhoto": "Top of photo",
+      "closeCard": "Close region details",
+      "pinHint": "Select a marker to keep its details open."
     },
     "refType": {
       "contralateral": "same site, other side",
@@ -418,9 +488,15 @@
         "wl_model": "White-light model",
         "spectral": "Probe"
       },
-      "showFactors": "Show reasons",
-      "hideFactors": "Hide reasons",
-      "atSite": "at {{site}}"
+      "hideFactors": "Hide the bars",
+      "atSite": "at {{site}}",
+      "notAnalysed_one": "{{count}} site could not be analysed — see the retake prompts.",
+      "notAnalysed_other": "{{count}} sites could not be analysed — see the retake prompts.",
+      "topReasons": "Main reasons",
+      "showFactors_one": "Show the {{count}} reason as bars",
+      "showFactors_other": "Show all {{count}} reasons as bars",
+      "moreReasons_one": "+{{count}} more",
+      "moreReasons_other": "+{{count}} more"
     },
     "spectral": {
       "intro": "Diffuse reflectance from the contact probe. More blood deepens the 540–580 nm haemoglobin dip.",
@@ -531,7 +607,8 @@
       "reanalyse": "Re-analyse",
       "reanalyseHint": "Creates a new version. Earlier versions are never overwritten.",
       "versionSwitcher": "Result versions",
-      "versionOption": "Version {{version}}"
+      "versionOption": "Version {{version}}",
+      "reanalyseDemoted": "Re-analysing the same photos will not fix quality problems."
     },
     "patientFactors": "Risk factors",
     "factor": {
@@ -548,7 +625,38 @@
         "occasional": "occasional",
         "weekly": "weekly",
         "daily": "daily"
-      }
+      },
+      "yearsShort": "{{count}} y",
+      "perDayShort": "{{count}}/day"
+    },
+    "idHint": "Write this ID on the person’s referral slip",
+    "copyId": "Copy ID",
+    "copiedId": "ID copied",
+    "timelineNext": "Next screening",
+    "timelineWhen": "When",
+    "timelineMonths_one": "in {{count}} month",
+    "timelineMonths_other": "in {{count}} months",
+    "retake": {
+      "title_one": "{{count}} site could not be analysed",
+      "title_other": "{{count}} sites could not be analysed",
+      "body": "Retake these photos before the person leaves, following the prompts below.",
+      "bodyInconclusive": "No risk level can be given until these photos are retaken. Re-analysing the same photos will not fix quality problems.",
+      "button": "Retake photos for {{site}}",
+      "label": "Retake needed"
+    },
+    "jump": {
+      "label": "Jump to section",
+      "why": "Why",
+      "map": "Map",
+      "viewer": "Viewer",
+      "lesions": "Findings",
+      "spectral": "Probe",
+      "qc": "QC",
+      "versions": "Versions"
+    },
+    "card": {
+      "expand": "Show {{title}}",
+      "collapse": "Hide {{title}}"
     }
   },
   "qc": {
@@ -610,5 +718,21 @@
       "risk": "Risk level",
       "versions": "Versions"
     }
+  },
+  "sitesShort": {
+    "upper_lip_mucosa": "Upper lip",
+    "lower_lip_mucosa": "Lower lip",
+    "buccal_mucosa_left": "Left\ncheek",
+    "buccal_mucosa_right": "Right\ncheek",
+    "tongue_dorsum": "Tongue top",
+    "lateral_tongue_left": "Left tongue side",
+    "lateral_tongue_right": "Right tongue side",
+    "ventral_tongue_floor_of_mouth": "Under tongue",
+    "hard_palate": "Hard palate",
+    "soft_palate": "Soft palate",
+    "upper_gingiva": "Upper gum",
+    "lower_gingiva": "Lower gum",
+    "retromolar_left": "Left retromolar",
+    "retromolar_right": "Right retromolar"
   }
 }

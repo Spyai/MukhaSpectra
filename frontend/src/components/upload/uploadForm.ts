@@ -1,9 +1,13 @@
 import type {
+  AlcoholUse,
+  ArecaNutUse,
   DataProvenance,
   Diascopy,
   OralSite,
   RiskFactors,
   Sex,
+  SmokelessTobaccoUse,
+  SmokingUse,
   UploadManifest,
   UploadRequest,
   VisualAppearance,
@@ -11,6 +15,46 @@ import type {
 import { isImageFile, isSpectrumFile } from './fileTypes';
 
 export type FileSlot = 'wl' | 'af' | 'dark' | 'refWl' | 'refAf' | 'spectrum';
+
+/** "unknown" = the health worker did not ask. It is never sent as "no". */
+export type HabitStatus = 'unknown' | 'current' | 'former' | 'never';
+export type AlcoholAnswer = 'unknown' | NonNullable<AlcoholUse['frequency']>;
+export type SmokelessProduct = NonNullable<SmokelessTobaccoUse['types']>[number];
+export type SmokingProduct = NonNullable<SmokingUse['types']>[number];
+
+export const HABIT_STATUSES: HabitStatus[] = ['unknown', 'current', 'former', 'never'];
+export const ALCOHOL_ANSWERS: AlcoholAnswer[] = [
+  'unknown',
+  'never',
+  'occasional',
+  'weekly',
+  'daily',
+];
+export const SMOKELESS_PRODUCTS: SmokelessProduct[] = [
+  'gutka',
+  'khaini',
+  'zarda',
+  'mawa',
+  'mishri',
+  'paan_with_tobacco',
+  'snuff',
+  'other',
+];
+export const SMOKING_PRODUCTS: SmokingProduct[] = [
+  'bidi',
+  'cigarette',
+  'chutta_reverse',
+  'hookah',
+  'other',
+];
+
+export interface HabitAnswer<P extends string = never> {
+  status: HabitStatus;
+  products: P[];
+  /** Free numeric text from the form; empty = not asked. */
+  years: string;
+  perDay: string;
+}
 
 export interface UploadFormState {
   site: OralSite | null;
@@ -23,16 +67,21 @@ export interface UploadFormState {
   diascopy: Diascopy;
   age: string;
   sex: Sex;
-  smokeless: boolean;
-  smoking: boolean;
-  areca: boolean;
-  alcoholDaily: boolean;
+  smokeless: HabitAnswer<SmokelessProduct>;
+  smoking: HabitAnswer<SmokingProduct>;
+  areca: HabitAnswer;
+  alcohol: AlcoholAnswer;
   ulcer: boolean;
   whitePatch: boolean;
   redPatch: boolean;
   lump: boolean;
+  pain: boolean;
+  bleeding: boolean;
+  burning: boolean;
   trismus: boolean;
   neckLump: boolean;
+  priorLesion: boolean;
+  priorCancer: boolean;
   sharpTooth: boolean;
   denture: boolean;
   consent: boolean;
@@ -42,6 +91,8 @@ export interface UploadFormState {
   campName: string;
   workerId: string;
 }
+
+const emptyHabit = { status: 'unknown' as const, products: [], years: '', perDay: '' };
 
 export const initialUploadForm: UploadFormState = {
   site: null,
@@ -54,16 +105,21 @@ export const initialUploadForm: UploadFormState = {
   diascopy: 'not_done',
   age: '',
   sex: 'undisclosed',
-  smokeless: false,
-  smoking: false,
-  areca: false,
-  alcoholDaily: false,
+  smokeless: emptyHabit,
+  smoking: emptyHabit,
+  areca: emptyHabit,
+  alcohol: 'unknown',
   ulcer: false,
   whitePatch: false,
   redPatch: false,
   lump: false,
+  pain: false,
+  bleeding: false,
+  burning: false,
   trismus: false,
   neckLump: false,
+  priorLesion: false,
+  priorCancer: false,
   sharpTooth: false,
   denture: false,
   consent: false,
@@ -111,33 +167,67 @@ export function filesLookSynthetic(files: Partial<Record<FileSlot, File>>): bool
   return Object.values(files).some((f) => f && /synthetic/i.test(f.name));
 }
 
-export function buildRiskFactors(form: UploadFormState): RiskFactors {
+/** Number typed by the health worker, or null when left empty (= not asked). */
+function optionalNumber(text: string): number | null {
+  const s = text.trim();
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function habit(a: HabitAnswer<string>) {
+  const used = a.status === 'current' || a.status === 'former';
   return {
-    smokeless_tobacco: {
-      uses: form.smokeless,
-      former: false,
-      types: [],
-      years: null,
-      per_day: null,
-    },
-    smoking: { uses: form.smoking, former: false, types: [], years: null, per_day: null },
-    areca_nut: { uses: form.areca, former: false, years: null, per_day: null },
-    alcohol: { uses: form.alcoholDaily, frequency: form.alcoholDaily ? 'daily' : 'never' },
-    prior_oral_lesion: false,
-    prior_oral_cancer: false,
-    symptoms: {
-      non_healing_ulcer_over_2_weeks: form.ulcer,
-      white_patch: form.whitePatch,
-      red_patch: form.redPatch,
-      lump: form.lump,
-      pain: false,
-      difficulty_opening_mouth: form.trismus,
-      bleeding: false,
-      burning_sensation: false,
-      neck_lump: form.neckLump,
-    },
-    irritants: { sharp_tooth: form.sharpTooth, ill_fitting_denture: form.denture },
+    uses: a.status === 'current',
+    former: a.status === 'former',
+    years: used ? optionalNumber(a.years) : null,
+    per_day: used ? optionalNumber(a.perDay) : null,
   };
+}
+
+/**
+ * Risk factors exactly as answered. A habit or alcohol question left on "Not asked" is OMITTED
+ * from the manifest instead of being recorded as "no"; years / per day left empty are sent as
+ * null. Symptom and history chips are shown to every person, so an unticked chip means "no".
+ */
+export function buildRiskFactors(form: UploadFormState): RiskFactors {
+  const rf: RiskFactors = {};
+  if (form.smokeless.status !== 'unknown') {
+    const v: SmokelessTobaccoUse = {
+      ...habit(form.smokeless),
+      types: form.smokeless.status === 'never' ? [] : form.smokeless.products,
+    };
+    rf.smokeless_tobacco = v;
+  }
+  if (form.smoking.status !== 'unknown') {
+    const v: SmokingUse = {
+      ...habit(form.smoking),
+      types: form.smoking.status === 'never' ? [] : form.smoking.products,
+    };
+    rf.smoking = v;
+  }
+  if (form.areca.status !== 'unknown') {
+    const v: ArecaNutUse = habit(form.areca);
+    rf.areca_nut = v;
+  }
+  if (form.alcohol !== 'unknown') {
+    rf.alcohol = { uses: form.alcohol !== 'never', frequency: form.alcohol };
+  }
+  rf.prior_oral_lesion = form.priorLesion;
+  rf.prior_oral_cancer = form.priorCancer;
+  rf.symptoms = {
+    non_healing_ulcer_over_2_weeks: form.ulcer,
+    white_patch: form.whitePatch,
+    red_patch: form.redPatch,
+    lump: form.lump,
+    pain: form.pain,
+    difficulty_opening_mouth: form.trismus,
+    bleeding: form.bleeding,
+    burning_sensation: form.burning,
+    neck_lump: form.neckLump,
+  };
+  rf.irritants = { sharp_tooth: form.sharpTooth, ill_fitting_denture: form.denture };
+  return rf;
 }
 
 /** Manifest + multipart files exactly as POST /api/v1/screenings expects (architecture §6). */

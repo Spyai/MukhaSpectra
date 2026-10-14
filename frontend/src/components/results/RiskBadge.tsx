@@ -2,6 +2,7 @@ import { m } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import type { RiskLevel } from '../../api/types';
 import { RISK_STYLE } from '../../lib/risk';
+import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
 
 /**
  * Level glyph that never relies on colour: ascending bars (1/2/3 lit) for LOW/MODERATE/HIGH and
@@ -99,11 +100,12 @@ const SEGMENTS = [arc(-135, -49), arc(-41, 41), arc(49, 135)];
  */
 export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: number }) {
   const { t } = useTranslation();
+  const reduced = usePrefersReducedMotion();
   const style = RISK_STYLE[level];
   const label = t(`risk.levelLong.${level}`);
   return (
     <div
-      className="flex items-center gap-4"
+      className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-4"
       data-testid="risk-badge"
       data-level={level}
       role="img"
@@ -156,7 +158,7 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
                     stroke={style.color}
                     strokeWidth="7"
                     strokeLinecap="round"
-                    initial={{ pathLength: 0, opacity: 0 }}
+                    initial={reduced ? false : { pathLength: 0, opacity: 0 }}
                     animate={{ pathLength: 1, opacity: 1 }}
                     transition={{
                       duration: 0.38,
@@ -179,10 +181,10 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
           <RiskGlyph level={level} size={Math.round(size * 0.36)} />
         </m.div>
       </div>
-      <div className="min-w-0">
+      <div className="max-w-full min-w-0">
         <div className="eyebrow">{t('risk.eyebrow')}</div>
         <m.div
-          className="text-4xl leading-tight font-extrabold tracking-tight sm:text-5xl"
+          className="text-3xl leading-tight font-extrabold tracking-tight break-words sm:text-5xl"
           style={{ color: style.color }}
           initial={{ opacity: 0, x: -8 }}
           animate={{ opacity: 1, x: 0 }}

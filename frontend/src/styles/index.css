@@ -72,8 +72,8 @@
   --risk-low-bg: oklch(0.8 0.11 188 / 0.13);
   --risk-moderate: oklch(0.85 0.15 80);
   --risk-moderate-bg: oklch(0.85 0.15 80 / 0.13);
-  --risk-high: oklch(0.73 0.18 18);
-  --risk-high-bg: oklch(0.73 0.18 18 / 0.15);
+  --risk-high: oklch(0.76 0.17 18);
+  --risk-high-bg: oklch(0.76 0.17 18 / 0.15);
   --risk-inconclusive: oklch(0.8 0.025 260);
   --risk-inconclusive-bg: oklch(0.8 0.025 260 / 0.1);
   --danger: oklch(0.73 0.18 22);
@@ -86,9 +86,10 @@
 }
 
 @theme inline {
+  /* Phase 2: self-host Noto Sans Devanagari / Kannada (Inter has no Indic glyphs). */
   --font-sans:
-    'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Noto Sans', sans-serif;
+    'Inter Variable', 'Inter', 'Noto Sans Devanagari', 'Noto Sans Kannada', ui-sans-serif,
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
@@ -130,6 +131,15 @@
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+    /* Keep focused / scrolled-to content clear of the sticky banner + header and bottom bars
+       (WCAG 2.2, 2.4.11 focus not obscured). */
+    scroll-padding-top: 6.5rem;
+    scroll-padding-bottom: 6rem;
+  }
+  @media (max-width: 639px) {
+    html {
+      scroll-padding-bottom: 8rem;
+    }
   }
   body {
     background: var(--bg);
@@ -260,6 +270,8 @@
   }
   .range {
     accent-color: var(--violet);
+    min-height: 1.5rem;
+    cursor: pointer;
   }
   .synthetic-stripes {
     background-image: repeating-linear-gradient(
@@ -291,4 +303,11 @@
 
 @utility tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* Pseudonymous IDs: slashed zero so 0 and O never mix on a referral slip; no extra tracking. */
+@utility id-text {
+  font-variant-numeric: slashed-zero;
+  font-feature-settings: 'cv11', 'ss01', 'zero';
+  letter-spacing: 0;
 }

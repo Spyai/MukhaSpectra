@@ -4,6 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { Icon, type IconName } from '../ui/Icon';
 import { IMAGE_ACCEPT, PREVIEWABLE, SPECTRUM_ACCEPT } from './fileTypes';
 
+/** Keep the start and the informative end of long file names ("…tongue_right_wl.jpg"). */
+export function middleTruncate(name: string, max = 44): string {
+  if (name.length <= max) return name;
+  const tail = Math.ceil(max * 0.55);
+  const head = max - tail - 1;
+  return `${name.slice(0, head)}…${name.slice(-tail)}`;
+}
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} kB`;
@@ -74,7 +82,7 @@ export function DropZone({
         : 'from-transparent';
 
   return (
-    <div>
+    <div className="min-w-0">
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <label htmlFor={id} className="text-sm font-semibold text-fg">
           {label}
@@ -128,7 +136,7 @@ export function DropZone({
         />
         {file ? (
           <m.div
-            className={`flex items-center gap-3 p-3 ${compact ? '' : 'sm:p-4'}`}
+            className={`flex min-w-0 items-start gap-3 p-3 ${compact ? '' : 'sm:p-4'}`}
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
@@ -145,30 +153,41 @@ export function DropZone({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold" title={file.name}>
-                {file.name}
+              {hint ? (
+                <span id={hintId} className="sr-only">
+                  {hint}
+                </span>
+              ) : null}
+              <p
+                className="line-clamp-2 text-sm leading-snug font-semibold break-all"
+                title={file.name}
+                data-testid={`filename-${id}`}
+              >
+                {middleTruncate(file.name)}
               </p>
-              <p className="text-xs text-fg-subtle tabular">
+              <p className="mt-0.5 text-xs text-fg-subtle tabular">
                 {formatBytes(file.size)}
                 {kind === 'image' && !preview ? ` · ${t('upload.captures.noPreview')}` : ''}
               </p>
-            </div>
-            <div className="flex shrink-0 gap-1">
-              <button
-                type="button"
-                className="btn btn-ghost min-h-10 px-2.5 text-xs"
-                onClick={() => input.current?.click()}
-              >
-                {t('upload.captures.replace')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost min-h-10 w-10 !p-0"
-                onClick={() => onFile(undefined)}
-                aria-label={`${t('common.remove')}: ${label}`}
-              >
-                <Icon name="x" size={16} />
-              </button>
+              <div className="mt-1 -ml-2 flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  className="btn btn-ghost min-h-9 px-2 py-1 text-xs"
+                  onClick={() => input.current?.click()}
+                >
+                  <Icon name="refresh" size={14} />
+                  {t('upload.captures.replace')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost min-h-9 px-2 py-1 text-xs"
+                  onClick={() => onFile(undefined)}
+                  aria-label={`${t('common.remove')}: ${label}`}
+                >
+                  <Icon name="x" size={14} />
+                  {t('common.remove')}
+                </button>
+              </div>
             </div>
           </m.div>
         ) : (
