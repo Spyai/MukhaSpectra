@@ -1,0 +1,2980 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.mukhaspectra.in/screening_result/v1.json",
+  "title": "MukhaSpectra ScreeningResult",
+  "x-schema-version": "1.0.0",
+  "$defs": {
+    "AFAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "skipped_qc_failed",
+            "insufficient_mucosa",
+            "no_reference"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/AFReference"
+        },
+        "fvl_threshold": {
+          "description": "Relative-AF threshold below which tissue is FVL.",
+          "title": "Fvl Threshold",
+          "type": "number"
+        },
+        "min_region_area_px": {
+          "title": "Min Region Area Px",
+          "type": "integer"
+        },
+        "site_medians": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AFSiteMedians"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fvl_area_fraction": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Fvl Area Fraction",
+          "type": "number"
+        },
+        "porphyrin_red_fraction": {
+          "default": 0.0,
+          "description": "Fraction of mucosa with red (porphyrin) fluorescence.",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Porphyrin Red Fraction",
+          "type": "number"
+        },
+        "regions": {
+          "items": {
+            "$ref": "#/$defs/FVLRegion"
+          },
+          "title": "Regions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "reference",
+        "fvl_threshold",
+        "min_region_area_px"
+      ],
+      "title": "AFAnalysis",
+      "type": "object"
+    },
+    "AFReference": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ReferenceType"
+        },
+        "reference_site": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OralSite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reference_green": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Median exposure-normalised green fluorescence of the reference.",
+          "title": "Reference Green"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "AFReference",
+      "type": "object"
+    },
+    "AFSiteMedians": {
+      "additionalProperties": false,
+      "properties": {
+        "green": {
+          "title": "Green",
+          "type": "number"
+        },
+        "gr_ratio": {
+          "title": "Gr Ratio",
+          "type": "number"
+        },
+        "af_index": {
+          "title": "Af Index",
+          "type": "number"
+        },
+        "relative_af": {
+          "title": "Relative Af",
+          "type": "number"
+        }
+      },
+      "required": [
+        "green",
+        "gr_ratio",
+        "af_index",
+        "relative_af"
+      ],
+      "title": "AFSiteMedians",
+      "type": "object"
+    },
+    "ActionCode": {
+      "enum": [
+        "routine_rescreen_and_cessation",
+        "remove_irritants_reexamine_2_weeks",
+        "urgent_referral_biopsy",
+        "retake_or_clinical_exam"
+      ],
+      "title": "ActionCode",
+      "type": "string"
+    },
+    "AlcoholUse": {
+      "additionalProperties": false,
+      "properties": {
+        "uses": {
+          "default": false,
+          "title": "Uses",
+          "type": "boolean"
+        },
+        "frequency": {
+          "default": "never",
+          "enum": [
+            "never",
+            "occasional",
+            "weekly",
+            "daily"
+          ],
+          "title": "Frequency",
+          "type": "string"
+        }
+      },
+      "title": "AlcoholUse",
+      "type": "object"
+    },
+    "ArecaNutUse": {
+      "additionalProperties": false,
+      "description": "Areca nut without tobacco (supari, paan without tobacco). Linked to submucous fibrosis.",
+      "properties": {
+        "uses": {
+          "default": false,
+          "title": "Uses",
+          "type": "boolean"
+        },
+        "former": {
+          "default": false,
+          "title": "Former",
+          "type": "boolean"
+        },
+        "years": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Years"
+        },
+        "per_day": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Per Day"
+        }
+      },
+      "title": "ArecaNutUse",
+      "type": "object"
+    },
+    "CalibrationInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CalibrationStatus"
+        },
+        "calibration_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Id"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "CalibrationInfo",
+      "type": "object"
+    },
+    "CalibrationStatus": {
+      "enum": [
+        "calibrated",
+        "uncalibrated",
+        "expired",
+        "partial"
+      ],
+      "title": "CalibrationStatus",
+      "type": "string"
+    },
+    "CaptureKind": {
+      "enum": [
+        "white_light",
+        "autofluorescence",
+        "dark_frame",
+        "spectral"
+      ],
+      "title": "CaptureKind",
+      "type": "string"
+    },
+    "CaptureMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "capture_id": {
+          "title": "Capture Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/CaptureKind"
+        },
+        "oral_site": {
+          "$ref": "#/$defs/OralSite"
+        },
+        "source_adapter": {
+          "$ref": "#/$defs/SourceAdapter"
+        },
+        "device_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Device Id"
+        },
+        "firmware_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Firmware Version"
+        },
+        "led_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LedMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exposure_time_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exposure Time Ms"
+        },
+        "iso": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Iso"
+        },
+        "white_balance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "e.g. 'locked:5000K', 'auto'.",
+          "title": "White Balance"
+        },
+        "focus": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus"
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captured At"
+        },
+        "calibration_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Id"
+        },
+        "width_px": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width Px"
+        },
+        "height_px": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height Px"
+        },
+        "file_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Name"
+        },
+        "file_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "File Sha256"
+        },
+        "mime_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mime Type"
+        },
+        "synthetic": {
+          "default": false,
+          "title": "Synthetic",
+          "type": "boolean"
+        },
+        "extra": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Extra",
+          "type": "object"
+        }
+      },
+      "required": [
+        "capture_id",
+        "kind",
+        "oral_site",
+        "source_adapter"
+      ],
+      "title": "CaptureMetadata",
+      "type": "object"
+    },
+    "CaptureRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/CaptureMetadata"
+        },
+        "qc": {
+          "$ref": "#/$defs/QCResult"
+        },
+        "artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Artifact key of the stored image.",
+          "title": "Artifact"
+        }
+      },
+      "required": [
+        "metadata",
+        "qc"
+      ],
+      "title": "CaptureRecord",
+      "type": "object"
+    },
+    "ClinicianReview": {
+      "additionalProperties": false,
+      "properties": {
+        "reviewer_name": {
+          "title": "Reviewer Name",
+          "type": "string"
+        },
+        "reviewer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer Id"
+        },
+        "agreed": {
+          "title": "Agreed",
+          "type": "boolean"
+        },
+        "modified_risk_level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiskLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "signed_at": {
+          "format": "date-time",
+          "title": "Signed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reviewer_name",
+        "agreed",
+        "signed_at"
+      ],
+      "title": "ClinicianReview",
+      "type": "object"
+    },
+    "ConfigRef": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of the exact config file used.",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "sha256"
+      ],
+      "title": "ConfigRef",
+      "type": "object"
+    },
+    "ConfounderFlag": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ConfounderType"
+        },
+        "overlap_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Overlap Fraction",
+          "type": "number"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "overlap_fraction",
+        "note"
+      ],
+      "title": "ConfounderFlag",
+      "type": "object"
+    },
+    "ConfounderType": {
+      "enum": [
+        "porphyrin_red",
+        "pigmentation",
+        "blood",
+        "glare"
+      ],
+      "title": "ConfounderType",
+      "type": "string"
+    },
+    "ConsentInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "consent_recorded": {
+          "title": "Consent Recorded",
+          "type": "boolean"
+        },
+        "method": {
+          "default": "none",
+          "enum": [
+            "checkbox",
+            "signature",
+            "thumbprint",
+            "none"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "language": {
+          "$ref": "#/$defs/Language",
+          "default": "en"
+        },
+        "research_use_opt_in": {
+          "default": false,
+          "description": "Separate opt-in to use de-identified data to improve the tool.",
+          "title": "Research Use Opt In",
+          "type": "boolean"
+        },
+        "consent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consent Id"
+        },
+        "recorded_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recorded At"
+        }
+      },
+      "required": [
+        "consent_recorded"
+      ],
+      "title": "ConsentInfo",
+      "type": "object"
+    },
+    "ContributingFactor": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "Stable machine code, e.g. 'af.fvl_present'.",
+          "title": "Code",
+          "type": "string"
+        },
+        "label": {
+          "description": "Human-readable reason.",
+          "title": "Label",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/FactorSource"
+        },
+        "points": {
+          "description": "Contribution to the rule score; may be negative.",
+          "title": "Points",
+          "type": "number"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "code",
+        "label",
+        "source",
+        "points"
+      ],
+      "title": "ContributingFactor",
+      "type": "object"
+    },
+    "DataProvenance": {
+      "enum": [
+        "real",
+        "synthetic",
+        "phantom",
+        "ex_vivo",
+        "volunteer",
+        "mixed"
+      ],
+      "title": "DataProvenance",
+      "type": "string"
+    },
+    "Diascopy": {
+      "description": "Pressing a glass slide on a dark (FVL) area. If fluorescence returns, the darkness was\nmost likely blood/inflammation rather than a tissue change.",
+      "enum": [
+        "not_done",
+        "fvl_persists",
+        "fvl_resolves"
+      ],
+      "title": "Diascopy",
+      "type": "string"
+    },
+    "FVLRegion": {
+      "additionalProperties": false,
+      "properties": {
+        "region_id": {
+          "title": "Region Id",
+          "type": "string"
+        },
+        "area_px": {
+          "minimum": 0,
+          "title": "Area Px",
+          "type": "integer"
+        },
+        "area_mm2": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area Mm2"
+        },
+        "area_fraction_of_mucosa": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Area Fraction Of Mucosa",
+          "type": "number"
+        },
+        "centroid": {
+          "$ref": "#/$defs/NormPoint"
+        },
+        "bbox": {
+          "$ref": "#/$defs/NormBox"
+        },
+        "mean_relative_af": {
+          "minimum": 0,
+          "title": "Mean Relative Af",
+          "type": "number"
+        },
+        "min_relative_af": {
+          "description": "5th percentile (robust minimum).",
+          "minimum": 0,
+          "title": "Min Relative Af",
+          "type": "number"
+        },
+        "contrast_vs_surround": {
+          "description": "Mean relative AF of a ring around the region / region mean. >1 = darker.",
+          "title": "Contrast Vs Surround",
+          "type": "number"
+        },
+        "border_irregularity": {
+          "description": "1 - circularity (4*pi*A/P^2).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Border Irregularity",
+          "type": "number"
+        },
+        "solidity": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Solidity",
+          "type": "number"
+        },
+        "confounders": {
+          "items": {
+            "$ref": "#/$defs/ConfounderFlag"
+          },
+          "title": "Confounders",
+          "type": "array"
+        }
+      },
+      "required": [
+        "region_id",
+        "area_px",
+        "area_fraction_of_mucosa",
+        "centroid",
+        "bbox",
+        "mean_relative_af",
+        "min_relative_af",
+        "contrast_vs_surround",
+        "border_irregularity",
+        "solidity"
+      ],
+      "title": "FVLRegion",
+      "type": "object"
+    },
+    "FactorSource": {
+      "enum": [
+        "autofluorescence",
+        "wl_model",
+        "spectral",
+        "clinical_visual",
+        "clinical_history",
+        "symptom",
+        "site",
+        "qc",
+        "override"
+      ],
+      "title": "FactorSource",
+      "type": "string"
+    },
+    "Irritants": {
+      "additionalProperties": false,
+      "properties": {
+        "sharp_tooth": {
+          "default": false,
+          "title": "Sharp Tooth",
+          "type": "boolean"
+        },
+        "ill_fitting_denture": {
+          "default": false,
+          "title": "Ill Fitting Denture",
+          "type": "boolean"
+        }
+      },
+      "title": "Irritants",
+      "type": "object"
+    },
+    "Language": {
+      "enum": [
+        "en",
+        "hi",
+        "kn"
+      ],
+      "title": "Language",
+      "type": "string"
+    },
+    "LedMode": {
+      "enum": [
+        "OFF",
+        "WHITE",
+        "VIOLET"
+      ],
+      "title": "LedMode",
+      "type": "string"
+    },
+    "LesionAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "lesion_id": {
+          "title": "Lesion Id",
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/OralSite"
+        },
+        "origins": {
+          "items": {
+            "$ref": "#/$defs/LesionOrigin"
+          },
+          "title": "Origins",
+          "type": "array"
+        },
+        "region_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Region Ids",
+          "type": "array"
+        },
+        "spectral_reading_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Spectral Reading Ids",
+          "type": "array"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormPoint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "risk_level": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "score": {
+          "description": "Rule score. Always read together with the factors.",
+          "title": "Score",
+          "type": "number"
+        },
+        "contributing_factors": {
+          "items": {
+            "$ref": "#/$defs/ContributingFactor"
+          },
+          "title": "Contributing Factors",
+          "type": "array"
+        },
+        "confounders": {
+          "items": {
+            "$ref": "#/$defs/ConfounderFlag"
+          },
+          "title": "Confounders",
+          "type": "array"
+        },
+        "recommended_action": {
+          "$ref": "#/$defs/RecommendedAction"
+        },
+        "summary": {
+          "description": "One plain-language sentence.",
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "lesion_id",
+        "site",
+        "origins",
+        "risk_level",
+        "score",
+        "contributing_factors",
+        "recommended_action",
+        "summary"
+      ],
+      "title": "LesionAssessment",
+      "type": "object"
+    },
+    "LesionOrigin": {
+      "enum": [
+        "af_fvl",
+        "visual",
+        "wl_model",
+        "spectral"
+      ],
+      "title": "LesionOrigin",
+      "type": "string"
+    },
+    "Limitation": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "Limitation",
+      "type": "object"
+    },
+    "ModelComponent": {
+      "enum": [
+        "segmenter",
+        "wl_lesion_classifier",
+        "spectral_classifier",
+        "fusion"
+      ],
+      "title": "ModelComponent",
+      "type": "string"
+    },
+    "ModelInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "$ref": "#/$defs/ModelComponent"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ModelStatus"
+        },
+        "validated": {
+          "default": false,
+          "description": "True only after a documented clinical validation. Never set by code.",
+          "title": "Validated",
+          "type": "boolean"
+        },
+        "model_card": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path or URI of the model card.",
+          "title": "Model Card"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "component",
+        "name",
+        "version",
+        "status"
+      ],
+      "title": "ModelInfo",
+      "type": "object"
+    },
+    "ModelStatus": {
+      "enum": [
+        "available",
+        "model_unavailable",
+        "placeholder",
+        "baseline_rules"
+      ],
+      "title": "ModelStatus",
+      "type": "string"
+    },
+    "NormBox": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Y",
+          "type": "number"
+        },
+        "w": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "W",
+          "type": "number"
+        },
+        "h": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "H",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "title": "NormBox",
+      "type": "object"
+    },
+    "NormPoint": {
+      "additionalProperties": false,
+      "description": "Point in normalised image coordinates of the white-light frame (0..1, origin top-left).",
+      "properties": {
+        "x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "NormPoint",
+      "type": "object"
+    },
+    "Notices": {
+      "additionalProperties": false,
+      "properties": {
+        "prototype_banner": {
+          "default": "Research prototype — not for clinical use",
+          "title": "Prototype Banner",
+          "type": "string"
+        },
+        "disclaimer": {
+          "default": "Screening aid — not a diagnosis. MukhaSpectra flags suspicious findings and assigns a risk level to support triage. Final diagnosis requires examination by a clinician and histopathology.",
+          "title": "Disclaimer",
+          "type": "string"
+        },
+        "synthetic_notice": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Synthetic Notice"
+        }
+      },
+      "title": "Notices",
+      "type": "object"
+    },
+    "OralSite": {
+      "enum": [
+        "upper_lip_mucosa",
+        "lower_lip_mucosa",
+        "buccal_mucosa_left",
+        "buccal_mucosa_right",
+        "tongue_dorsum",
+        "lateral_tongue_left",
+        "lateral_tongue_right",
+        "ventral_tongue_floor_of_mouth",
+        "hard_palate",
+        "soft_palate",
+        "upper_gingiva",
+        "lower_gingiva",
+        "retromolar_left",
+        "retromolar_right"
+      ],
+      "title": "OralSite",
+      "type": "string"
+    },
+    "PatientInfo": {
+      "additionalProperties": false,
+      "description": "Minimised clinical view of the patient. Name and contact details live in a separate PII\nstore keyed by ``pseudonymous_id`` and are joined only when a report is rendered.",
+      "properties": {
+        "pseudonymous_id": {
+          "title": "Pseudonymous Id",
+          "type": "string"
+        },
+        "age_years": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age Years"
+        },
+        "sex": {
+          "$ref": "#/$defs/Sex",
+          "default": "undisclosed"
+        }
+      },
+      "required": [
+        "pseudonymous_id"
+      ],
+      "title": "PatientInfo",
+      "type": "object"
+    },
+    "ProcessingInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "working_max_side_px": {
+          "title": "Working Max Side Px",
+          "type": "integer"
+        },
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "number"
+        },
+        "stages": {
+          "items": {
+            "$ref": "#/$defs/StageTiming"
+          },
+          "title": "Stages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "working_max_side_px",
+        "duration_ms"
+      ],
+      "title": "ProcessingInfo",
+      "type": "object"
+    },
+    "QCIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "description": "Stable machine code, e.g. 'blur', 'glare', 'af_signal_low'.",
+          "title": "Code",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/QCSeverity"
+        },
+        "message": {
+          "description": "Plain-language retake prompt in English.",
+          "title": "Message",
+          "type": "string"
+        },
+        "message_key": {
+          "description": "i18n key for the retake prompt, e.g. 'qc.blur'.",
+          "title": "Message Key",
+          "type": "string"
+        },
+        "metric": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metric"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "message_key"
+      ],
+      "title": "QCIssue",
+      "type": "object"
+    },
+    "QCResult": {
+      "additionalProperties": false,
+      "properties": {
+        "passed": {
+          "description": "False if any issue has severity 'error'.",
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "score": {
+          "description": "0..1 overall capture quality (1 = no concerns).",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/QCIssue"
+          },
+          "title": "Issues",
+          "type": "array"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Metrics",
+          "type": "object"
+        }
+      },
+      "required": [
+        "passed",
+        "score"
+      ],
+      "title": "QCResult",
+      "type": "object"
+    },
+    "QCSeverity": {
+      "enum": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "title": "QCSeverity",
+      "type": "string"
+    },
+    "QCSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "passed_all": {
+          "title": "Passed All",
+          "type": "boolean"
+        },
+        "sites_failed": {
+          "items": {
+            "$ref": "#/$defs/OralSite"
+          },
+          "title": "Sites Failed",
+          "type": "array"
+        },
+        "captures_failed": {
+          "default": 0,
+          "title": "Captures Failed",
+          "type": "integer"
+        },
+        "retakes_recommended": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Retakes Recommended",
+          "type": "array"
+        },
+        "issues": {
+          "items": {
+            "$ref": "#/$defs/QCIssue"
+          },
+          "title": "Issues",
+          "type": "array"
+        }
+      },
+      "required": [
+        "passed_all"
+      ],
+      "title": "QCSummary",
+      "type": "object"
+    },
+    "RecommendedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ActionCode"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "timeline_days": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeline Days"
+        },
+        "referral_urgency": {
+          "$ref": "#/$defs/ReferralUrgency"
+        }
+      },
+      "required": [
+        "code",
+        "summary",
+        "referral_urgency"
+      ],
+      "title": "RecommendedAction",
+      "type": "object"
+    },
+    "ReferenceType": {
+      "enum": [
+        "contralateral",
+        "analogous_site",
+        "in_image_auto",
+        "none"
+      ],
+      "title": "ReferenceType",
+      "type": "string"
+    },
+    "ReferralUrgency": {
+      "enum": [
+        "none",
+        "reexamine",
+        "urgent",
+        "retake"
+      ],
+      "title": "ReferralUrgency",
+      "type": "string"
+    },
+    "RegistrationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "ecc_affine",
+            "ecc_homography",
+            "orb_homography",
+            "identity"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "warp_matrix": {
+          "description": "3x3 matrix mapping AF pixel coordinates into the WL frame (working res).",
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Warp Matrix",
+          "type": "array"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "method",
+        "confidence",
+        "passed",
+        "warp_matrix"
+      ],
+      "title": "RegistrationSummary",
+      "type": "object"
+    },
+    "RiskFactors": {
+      "additionalProperties": false,
+      "properties": {
+        "smokeless_tobacco": {
+          "$ref": "#/$defs/SmokelessTobaccoUse"
+        },
+        "smoking": {
+          "$ref": "#/$defs/SmokingUse"
+        },
+        "areca_nut": {
+          "$ref": "#/$defs/ArecaNutUse"
+        },
+        "alcohol": {
+          "$ref": "#/$defs/AlcoholUse"
+        },
+        "prior_oral_lesion": {
+          "default": false,
+          "title": "Prior Oral Lesion",
+          "type": "boolean"
+        },
+        "prior_oral_cancer": {
+          "default": false,
+          "title": "Prior Oral Cancer",
+          "type": "boolean"
+        },
+        "symptoms": {
+          "$ref": "#/$defs/Symptoms"
+        },
+        "irritants": {
+          "$ref": "#/$defs/Irritants"
+        }
+      },
+      "title": "RiskFactors",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "LOW",
+        "MODERATE",
+        "HIGH",
+        "INCONCLUSIVE"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    },
+    "ScoreThresholds": {
+      "additionalProperties": false,
+      "properties": {
+        "moderate": {
+          "title": "Moderate",
+          "type": "number"
+        },
+        "high": {
+          "title": "High",
+          "type": "number"
+        }
+      },
+      "required": [
+        "moderate",
+        "high"
+      ],
+      "title": "ScoreThresholds",
+      "type": "object"
+    },
+    "ScreeningContext": {
+      "additionalProperties": false,
+      "properties": {
+        "screening_site_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Camp or clinic name.",
+          "title": "Screening Site Name"
+        },
+        "camp_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camp Id"
+        },
+        "health_worker_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health Worker Id"
+        },
+        "health_worker_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health Worker Name"
+        },
+        "device_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Device Ids",
+          "type": "array"
+        },
+        "firmware_versions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Firmware Versions",
+          "type": "array"
+        },
+        "captured_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captured At"
+        },
+        "language": {
+          "$ref": "#/$defs/Language",
+          "default": "en"
+        }
+      },
+      "title": "ScreeningContext",
+      "type": "object"
+    },
+    "SegmentationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "low_confidence",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "mucosa_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Mucosa Fraction",
+          "type": "number"
+        },
+        "teeth_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Teeth Fraction",
+          "type": "number"
+        },
+        "specular_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Specular Fraction",
+          "type": "number"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "method",
+        "version",
+        "status",
+        "mucosa_fraction",
+        "teeth_fraction",
+        "specular_fraction",
+        "confidence"
+      ],
+      "title": "SegmentationSummary",
+      "type": "object"
+    },
+    "Sex": {
+      "enum": [
+        "female",
+        "male",
+        "other",
+        "undisclosed"
+      ],
+      "title": "Sex",
+      "type": "string"
+    },
+    "SiteArtifacts": {
+      "additionalProperties": false,
+      "description": "Artifact keys (relative paths in the result's artifact store).",
+      "properties": {
+        "wl_image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wl Image"
+        },
+        "af_image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Af Image"
+        },
+        "af_registered": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Af Registered"
+        },
+        "heatmap_overlay": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heatmap Overlay"
+        },
+        "relative_af_map": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Relative Af Map"
+        },
+        "relative_af_grid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Downsampled relative-AF grid (JSON) for 3D/interactive views.",
+          "title": "Relative Af Grid"
+        },
+        "mucosa_mask": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mucosa Mask"
+        },
+        "wl_saliency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wl Saliency"
+        }
+      },
+      "title": "SiteArtifacts",
+      "type": "object"
+    },
+    "SiteResult": {
+      "additionalProperties": false,
+      "properties": {
+        "site": {
+          "$ref": "#/$defs/OralSite"
+        },
+        "site_label": {
+          "title": "Site Label",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/SiteRole",
+          "default": "examined"
+        },
+        "paired_site": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OralSite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pairing": {
+          "anyOf": [
+            {
+              "enum": [
+                "contralateral",
+                "analogous"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pairing"
+        },
+        "visual_flag": {
+          "$ref": "#/$defs/VisualFlag"
+        },
+        "diascopy": {
+          "$ref": "#/$defs/Diascopy",
+          "default": "not_done"
+        },
+        "captures": {
+          "items": {
+            "$ref": "#/$defs/CaptureRecord"
+          },
+          "title": "Captures",
+          "type": "array"
+        },
+        "qc": {
+          "$ref": "#/$defs/QCResult"
+        },
+        "analysis_status": {
+          "enum": [
+            "analysed",
+            "inconclusive_qc_failed",
+            "not_analysed"
+          ],
+          "title": "Analysis Status",
+          "type": "string"
+        },
+        "calibration": {
+          "$ref": "#/$defs/CalibrationInfo"
+        },
+        "registration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegistrationSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "segmentation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SegmentationSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "af": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AFAnalysis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "wl": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WLAnalysis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "spectral_reading_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Spectral Reading Ids",
+          "type": "array"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/SiteArtifacts"
+        },
+        "working_resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkingResolution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "px_per_mm": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "At working resolution, if known.",
+          "title": "Px Per Mm"
+        },
+        "site_risk_level": {
+          "$ref": "#/$defs/RiskLevel"
+        }
+      },
+      "required": [
+        "site",
+        "site_label",
+        "qc",
+        "analysis_status",
+        "calibration",
+        "site_risk_level"
+      ],
+      "title": "SiteResult",
+      "type": "object"
+    },
+    "SiteRole": {
+      "enum": [
+        "examined",
+        "reference_only"
+      ],
+      "title": "SiteRole",
+      "type": "string"
+    },
+    "SmokelessTobaccoUse": {
+      "additionalProperties": false,
+      "properties": {
+        "uses": {
+          "default": false,
+          "title": "Uses",
+          "type": "boolean"
+        },
+        "former": {
+          "default": false,
+          "title": "Former",
+          "type": "boolean"
+        },
+        "types": {
+          "items": {
+            "enum": [
+              "gutka",
+              "khaini",
+              "zarda",
+              "paan_with_tobacco",
+              "mawa",
+              "mishri",
+              "snuff",
+              "other"
+            ],
+            "type": "string"
+          },
+          "title": "Types",
+          "type": "array"
+        },
+        "years": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Years"
+        },
+        "per_day": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Per Day"
+        }
+      },
+      "title": "SmokelessTobaccoUse",
+      "type": "object"
+    },
+    "SmokingUse": {
+      "additionalProperties": false,
+      "properties": {
+        "uses": {
+          "default": false,
+          "title": "Uses",
+          "type": "boolean"
+        },
+        "former": {
+          "default": false,
+          "title": "Former",
+          "type": "boolean"
+        },
+        "types": {
+          "items": {
+            "enum": [
+              "bidi",
+              "cigarette",
+              "hookah",
+              "chutta_reverse",
+              "other"
+            ],
+            "type": "string"
+          },
+          "title": "Types",
+          "type": "array"
+        },
+        "years": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Years"
+        },
+        "per_day": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Per Day"
+        }
+      },
+      "title": "SmokingUse",
+      "type": "object"
+    },
+    "SourceAdapter": {
+      "enum": [
+        "upload",
+        "phone_camera",
+        "scout_ble",
+        "dedicated_camera",
+        "confirm_probe",
+        "mock_device",
+        "synthetic"
+      ],
+      "title": "SourceAdapter",
+      "type": "string"
+    },
+    "SpectralClassifierOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "placeholder",
+            "model_unavailable",
+            "skipped_qc_failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "suspicion_score": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Heuristic 0..1 score. Not a calibrated probability.",
+          "title": "Suspicion Score"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "enum": [
+                "not_suspicious",
+                "indeterminate",
+                "suspicious"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelInfo"
+        }
+      },
+      "required": [
+        "status",
+        "method",
+        "model"
+      ],
+      "title": "SpectralClassifierOutput",
+      "type": "object"
+    },
+    "SpectralFeatures": {
+      "additionalProperties": false,
+      "properties": {
+        "ratio_555_630": {
+          "title": "Ratio 555 630",
+          "type": "number"
+        },
+        "ratio_590_680": {
+          "title": "Ratio 590 680",
+          "type": "number"
+        },
+        "ratio_515_630": {
+          "title": "Ratio 515 630",
+          "type": "number"
+        },
+        "ratio_415_555": {
+          "title": "Ratio 415 555",
+          "type": "number"
+        },
+        "hb_absorption_proxy": {
+          "description": "Depth of the 540-580 nm haemoglobin dip relative to a 515->630 nm baseline.",
+          "title": "Hb Absorption Proxy",
+          "type": "number"
+        },
+        "slope_480_555": {
+          "description": "Log-reflectance slope per 100 nm.",
+          "title": "Slope 480 555",
+          "type": "number"
+        },
+        "slope_590_680": {
+          "description": "Log-reflectance slope per 100 nm.",
+          "title": "Slope 590 680",
+          "type": "number"
+        }
+      },
+      "required": [
+        "ratio_555_630",
+        "ratio_590_680",
+        "ratio_515_630",
+        "ratio_415_555",
+        "hb_absorption_proxy",
+        "slope_480_555",
+        "slope_590_680"
+      ],
+      "title": "SpectralFeatures",
+      "type": "object"
+    },
+    "SpectralReadingResult": {
+      "additionalProperties": false,
+      "properties": {
+        "reading_id": {
+          "title": "Reading Id",
+          "type": "string"
+        },
+        "site": {
+          "$ref": "#/$defs/OralSite"
+        },
+        "role": {
+          "enum": [
+            "lesion",
+            "reference"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "lesion_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Region/lesion this reading targets.",
+          "title": "Lesion Ref"
+        },
+        "capture": {
+          "$ref": "#/$defs/CaptureMetadata"
+        },
+        "n_readings": {
+          "minimum": 0,
+          "title": "N Readings",
+          "type": "integer"
+        },
+        "signal_type": {
+          "description": "'reflectance' when calibrated (S-D)/(W-D); otherwise dark-subtracted signal normalised to its own spectral sum.",
+          "enum": [
+            "reflectance",
+            "relative_signal"
+          ],
+          "title": "Signal Type",
+          "type": "string"
+        },
+        "calibration": {
+          "$ref": "#/$defs/CalibrationInfo"
+        },
+        "values": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Mean per AS7341 channel.",
+          "title": "Values",
+          "type": "object"
+        },
+        "values_std": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "Std-dev across the N readings.",
+          "title": "Values Std",
+          "type": "object"
+        },
+        "qc": {
+          "$ref": "#/$defs/QCResult"
+        },
+        "features": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpectralFeatures"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reference_reading_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Reading Id"
+        },
+        "delta_vs_reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpectralFeatures"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Lesion features minus reference features."
+        },
+        "classifier": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpectralClassifierOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "reading_id",
+        "site",
+        "role",
+        "capture",
+        "n_readings",
+        "signal_type",
+        "calibration",
+        "values",
+        "values_std",
+        "qc"
+      ],
+      "title": "SpectralReadingResult",
+      "type": "object"
+    },
+    "StageTiming": {
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "number"
+        },
+        "status": {
+          "default": "ok",
+          "enum": [
+            "ok",
+            "skipped",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OralSite"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "stage",
+        "duration_ms"
+      ],
+      "title": "StageTiming",
+      "type": "object"
+    },
+    "Symptoms": {
+      "additionalProperties": false,
+      "properties": {
+        "non_healing_ulcer_over_2_weeks": {
+          "default": false,
+          "title": "Non Healing Ulcer Over 2 Weeks",
+          "type": "boolean"
+        },
+        "white_patch": {
+          "default": false,
+          "title": "White Patch",
+          "type": "boolean"
+        },
+        "red_patch": {
+          "default": false,
+          "title": "Red Patch",
+          "type": "boolean"
+        },
+        "lump": {
+          "default": false,
+          "title": "Lump",
+          "type": "boolean"
+        },
+        "pain": {
+          "default": false,
+          "title": "Pain",
+          "type": "boolean"
+        },
+        "difficulty_opening_mouth": {
+          "default": false,
+          "title": "Difficulty Opening Mouth",
+          "type": "boolean"
+        },
+        "bleeding": {
+          "default": false,
+          "title": "Bleeding",
+          "type": "boolean"
+        },
+        "burning_sensation": {
+          "default": false,
+          "title": "Burning Sensation",
+          "type": "boolean"
+        },
+        "neck_lump": {
+          "default": false,
+          "title": "Neck Lump",
+          "type": "boolean"
+        }
+      },
+      "title": "Symptoms",
+      "type": "object"
+    },
+    "TriageResult": {
+      "additionalProperties": false,
+      "properties": {
+        "overall_risk_level": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "thresholds": {
+          "$ref": "#/$defs/ScoreThresholds"
+        },
+        "contributing_factors": {
+          "items": {
+            "$ref": "#/$defs/ContributingFactor"
+          },
+          "title": "Contributing Factors",
+          "type": "array"
+        },
+        "overrides_applied": {
+          "description": "Clinical red-flag floors. The device can never lower these.",
+          "items": {
+            "$ref": "#/$defs/ContributingFactor"
+          },
+          "title": "Overrides Applied",
+          "type": "array"
+        },
+        "recommended_action": {
+          "$ref": "#/$defs/RecommendedAction"
+        },
+        "highest_risk_lesion_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Highest Risk Lesion Id"
+        },
+        "rule_config": {
+          "$ref": "#/$defs/ConfigRef"
+        },
+        "explanation": {
+          "description": "Plain-language explanation of the level.",
+          "title": "Explanation",
+          "type": "string"
+        },
+        "requires_clinician_review": {
+          "default": true,
+          "title": "Requires Clinician Review",
+          "type": "boolean"
+        },
+        "review_status": {
+          "default": "pending_review",
+          "enum": [
+            "pending_review",
+            "reviewed"
+          ],
+          "title": "Review Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "overall_risk_level",
+        "thresholds",
+        "contributing_factors",
+        "recommended_action",
+        "rule_config",
+        "explanation"
+      ],
+      "title": "TriageResult",
+      "type": "object"
+    },
+    "VersionInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "software": {
+          "title": "Software",
+          "type": "string"
+        },
+        "pipeline": {
+          "title": "Pipeline",
+          "type": "string"
+        },
+        "schema_version": {
+          "default": "1.0.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "rule_config": {
+          "$ref": "#/$defs/ConfigRef"
+        },
+        "qc_config": {
+          "$ref": "#/$defs/ConfigRef"
+        },
+        "analysis_config": {
+          "$ref": "#/$defs/ConfigRef"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelInfo"
+          },
+          "title": "Models",
+          "type": "array"
+        }
+      },
+      "required": [
+        "software",
+        "pipeline",
+        "rule_config",
+        "qc_config",
+        "analysis_config",
+        "models"
+      ],
+      "title": "VersionInfo",
+      "type": "object"
+    },
+    "VisualAppearance": {
+      "enum": [
+        "white_patch",
+        "red_patch",
+        "mixed_red_white",
+        "ulcer",
+        "growth",
+        "other"
+      ],
+      "title": "VisualAppearance",
+      "type": "string"
+    },
+    "VisualFlag": {
+      "additionalProperties": false,
+      "description": "What the health worker saw with their own eyes at this site.",
+      "properties": {
+        "lesion_seen": {
+          "default": false,
+          "title": "Lesion Seen",
+          "type": "boolean"
+        },
+        "appearance": {
+          "items": {
+            "$ref": "#/$defs/VisualAppearance"
+          },
+          "title": "Appearance",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "title": "VisualFlag",
+      "type": "object"
+    },
+    "WLAnalysis": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "model_unavailable",
+            "skipped_qc_failed",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelInfo"
+        },
+        "predictions": {
+          "items": {
+            "$ref": "#/$defs/WLPrediction"
+          },
+          "title": "Predictions",
+          "type": "array"
+        },
+        "top_label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WLLabel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "saliency_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Clinician-only explainability map (artifact key).",
+          "title": "Saliency Artifact"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        }
+      },
+      "required": [
+        "status",
+        "model"
+      ],
+      "title": "WLAnalysis",
+      "type": "object"
+    },
+    "WLLabel": {
+      "enum": [
+        "normal",
+        "white_patch",
+        "red_patch",
+        "ulcer_mass",
+        "other"
+      ],
+      "title": "WLLabel",
+      "type": "string"
+    },
+    "WLPrediction": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/WLLabel"
+        },
+        "probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Probability",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "probability"
+      ],
+      "title": "WLPrediction",
+      "type": "object"
+    },
+    "WorkingResolution": {
+      "additionalProperties": false,
+      "properties": {
+        "width_px": {
+          "title": "Width Px",
+          "type": "integer"
+        },
+        "height_px": {
+          "title": "Height Px",
+          "type": "integer"
+        },
+        "scale_from_original": {
+          "description": "working width / original width",
+          "title": "Scale From Original",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width_px",
+        "height_px",
+        "scale_from_original"
+      ],
+      "title": "WorkingResolution",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Everything known about one screening, one analysis version.",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "result_id": {
+      "title": "Result Id",
+      "type": "string"
+    },
+    "screening_id": {
+      "title": "Screening Id",
+      "type": "string"
+    },
+    "result_version": {
+      "description": "Re-analysis creates a new version.",
+      "minimum": 1,
+      "title": "Result Version",
+      "type": "integer"
+    },
+    "supersedes_result_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Supersedes Result Id"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "data_provenance": {
+      "$ref": "#/$defs/DataProvenance"
+    },
+    "synthetic": {
+      "description": "True if any input is synthetic.",
+      "title": "Synthetic",
+      "type": "boolean"
+    },
+    "notices": {
+      "$ref": "#/$defs/Notices"
+    },
+    "versions": {
+      "$ref": "#/$defs/VersionInfo"
+    },
+    "context": {
+      "$ref": "#/$defs/ScreeningContext"
+    },
+    "patient": {
+      "$ref": "#/$defs/PatientInfo"
+    },
+    "consent": {
+      "$ref": "#/$defs/ConsentInfo"
+    },
+    "risk_factors": {
+      "$ref": "#/$defs/RiskFactors"
+    },
+    "sites": {
+      "items": {
+        "$ref": "#/$defs/SiteResult"
+      },
+      "title": "Sites",
+      "type": "array"
+    },
+    "spectral_readings": {
+      "items": {
+        "$ref": "#/$defs/SpectralReadingResult"
+      },
+      "title": "Spectral Readings",
+      "type": "array"
+    },
+    "lesions": {
+      "items": {
+        "$ref": "#/$defs/LesionAssessment"
+      },
+      "title": "Lesions",
+      "type": "array"
+    },
+    "triage": {
+      "$ref": "#/$defs/TriageResult"
+    },
+    "qc_summary": {
+      "$ref": "#/$defs/QCSummary"
+    },
+    "calibration_status": {
+      "$ref": "#/$defs/CalibrationStatus"
+    },
+    "limitations": {
+      "items": {
+        "$ref": "#/$defs/Limitation"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "processing": {
+      "$ref": "#/$defs/ProcessingInfo"
+    },
+    "review": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClinicianReview"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "result_id",
+    "screening_id",
+    "result_version",
+    "created_at",
+    "data_provenance",
+    "synthetic",
+    "versions",
+    "context",
+    "patient",
+    "consent",
+    "risk_factors",
+    "sites",
+    "triage",
+    "qc_summary",
+    "calibration_status",
+    "processing"
+  ],
+  "type": "object"
+}

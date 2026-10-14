@@ -1,0 +1,75 @@
+# MukhaSpectra analysis parameters, v1
+# Baseline values chosen from the autofluorescence literature and tuned on synthetic data.
+# Not clinically validated. Changing any value changes the sha256 recorded in every result.
+name: mukhaspectra-analysis
+version: 1.0.0
+status: baseline_unvalidated
+
+working_max_side_px: 1024
+
+registration:
+  method_order: [ecc_affine, orb_homography]
+  ecc_max_iterations: 200
+  ecc_epsilon: 1.0e-5
+  ecc_pyramid_levels: 3
+  ecc_gaussian_sigma: 2.0
+  orb_features: 3000
+  orb_ratio_test: 0.75
+  ransac_reproj_threshold: 4.0
+  max_translation_fraction: 0.15     # reject warps that move the image more than this
+  max_scale_change: 0.15
+
+segmentation:
+  method: classical_hsv_lab
+  version: 1.0.0
+  mucosa_hue_ranges: [[0, 22], [160, 180]]   # OpenCV hue 0-180: pinks and reds
+  mucosa_saturation_min: 0.18
+  mucosa_value_min: 0.18
+  teeth_saturation_max: 0.22
+  teeth_value_min: 0.62
+  background_value_max: 0.12
+  specular_value_min: 0.96
+  specular_saturation_max: 0.20
+  fill_holes_max_fraction: 0.10      # white patches enclosed by mucosa are kept as mucosa
+  min_component_fraction: 0.01
+  morphology_kernel_px: 7
+
+af:
+  smoothing_sigma_px: 3.0
+  fvl_relative_threshold: 0.75       # relative AF below this = fluorescence visualisation loss
+  min_region_area_fraction: 0.002    # of the mucosa area
+  min_region_area_px: 150
+  morphology_open_px: 5
+  morphology_close_px: 9
+  surround_ring_px: 15
+  reference_percentile_low: 25       # in-image reference uses mucosa between these percentiles
+  reference_percentile_high: 90      #   of green, so FVL and glare do not drag it down
+  relative_af_grid_size: 96          # downsampled grid for the 3D / interactive view
+  heatmap_alpha_max: 0.75
+
+confounders:
+  porphyrin_red_over_green_min: 0.85  # AF red / green; red porphyrin fluorescence from plaque
+  porphyrin_red_min: 0.10             # 0-1 absolute red level so dark noise is not flagged
+  pigmentation_lab_l_max: 45          # WL L* (0-100): dark brown/black
+  pigmentation_hue_range: [5, 30]     # OpenCV hue: browns
+  blood_lab_a_min: 35                 # WL a*: deep red
+  blood_lab_l_max: 45
+  flag_overlap_min: 0.15              # report a confounder when it covers >= this of a region
+
+wl_classifier:
+  input_size: 224
+  labels: [normal, white_patch, red_patch, ulcer_mass, other]
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  saliency_patch_fraction: 0.125
+  saliency_stride_fraction: 0.0625
+
+spectral:
+  channels_used_for_features: [F1_415, F2_445, F3_480, F4_515, F5_555, F6_590, F7_630, F8_680]
+  classifier:
+    method: rules_v1
+    # Heuristic thresholds on (lesion - reference) deltas. Not trained, not validated.
+    hb_proxy_delta_suspicious: 0.06
+    hb_proxy_delta_indeterminate: 0.03
+    ratio_555_630_delta_suspicious: -0.10
+    ratio_555_630_delta_indeterminate: -0.05

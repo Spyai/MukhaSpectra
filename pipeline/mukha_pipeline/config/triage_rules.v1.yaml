@@ -1,0 +1,219 @@
+# MukhaSpectra rule-based triage, v1
+#
+# STATUS: baseline heuristic. NOT trained. NOT clinically validated.
+# Every point value and threshold below is a starting assumption written down so that clinicians
+# can inspect it, argue with it and tune it. Changing anything here changes the sha256 recorded
+# in every result, so reports stay traceable to the exact rules that produced them.
+#
+# Design principles
+#  1. Never one unexplained number: every point added or removed becomes a contributing factor.
+#  2. The device can raise concern but never lower a clinical red flag (see `overrides`).
+#  3. LOW is only allowed when every examined site produced usable images. Otherwise the result is
+#     INCONCLUSIVE and the worker is told to retake or refer. False reassurance is the worst
+#     failure this system can have.
+#  4. Habits (tobacco, areca nut, alcohol) change counselling, not triage, unless a lesion exists.
+
+name: mukhaspectra-triage-rules
+version: 1.0.0
+status: baseline_heuristic_unvalidated
+
+levels:
+  moderate_min_score: 3.0
+  high_min_score: 6.0
+
+lesion:
+  af:
+    # Applied per FVL region, only when the site's AF analysis status is "ok".
+    fvl_present: 1.5
+    depth:
+      # Points per 0.1 that the region's mean relative AF sits below the FVL threshold.
+      points_per_0_1: 0.75
+      max: 2.0
+    area_fraction_of_mucosa:      # used when the mm scale is unknown
+      - {min: 0.05, points: 0.5}
+      - {min: 0.15, points: 1.0}
+    area_mm2:                     # used instead of the fraction when px_per_mm is known
+      - {min: 10.0, points: 0.5}
+      - {min: 50.0, points: 1.0}
+    border_irregularity: {min: 0.35, points: 0.5}
+    contrast_vs_surround: {min: 1.4, points: 0.5}
+    multipliers:
+      reference:
+        contralateral: 1.0
+        analogous_site: 0.9
+        in_image_auto: 0.75
+        none: 0.5
+      diascopy:
+        not_done: 1.0
+        fvl_persists: 1.2
+        fvl_resolves: 0.3       # fluorescence returned under pressure: likely vascular/inflammatory
+    confounder_discount:
+      # AF points are multiplied by (1 - discount * overlap_fraction) for each confounder,
+      # and the combined multiplier never goes below `min_multiplier`.
+      porphyrin_red: 0.6
+      pigmentation: 0.6
+      blood: 0.6
+      glare: 0.5
+      min_multiplier: 0.2
+
+  wl_model:
+    # Ignored when the classifier status is not "ok" (e.g. model_unavailable).
+    min_probability: 0.5
+    points:
+      normal: 0.0
+      white_patch: 1.5
+      red_patch: 3.0
+      ulcer_mass: 3.0
+      other: 0.5
+
+  spectral:
+    # Deltas are lesion minus the same patient's reference reading.
+    hb_absorption_proxy_delta:
+      - {min: 0.03, points: 0.5}
+      - {min: 0.06, points: 1.0}
+    ratio_555_630_delta:
+      # A lower 555/630 ratio means more absorption in the haemoglobin band.
+      - {max: -0.05, points: 0.5}
+      - {max: -0.10, points: 1.0}
+    # Without a reference reading the absolute features are hard to interpret.
+    no_reference_multiplier: 0.5
+
+  clinical_visual:
+    # The health worker's own observation at the site.
+    points:
+      white_patch: 2.0
+      red_patch: 4.0
+      mixed_red_white: 4.0
+      ulcer: 3.0
+      growth: 4.0
+      other: 1.0
+
+  site:
+    # Common sites for oral potentially malignant disorders and cancer in Indian tobacco/areca
+    # users (gingivobuccal complex, lateral/ventral tongue, floor of mouth, retromolar trigone).
+    high_risk_sites:
+      - buccal_mucosa_left
+      - buccal_mucosa_right
+      - lateral_tongue_left
+      - lateral_tongue_right
+      - ventral_tongue_floor_of_mouth
+      - retromolar_left
+      - retromolar_right
+      - lower_gingiva
+    high_risk_multiplier: 1.15
+    af_low_specificity:
+      # FVL at these sites is frequently inflammatory (gingivitis) or due to keratin/coating.
+      sites: [upper_gingiva, lower_gingiva, tongue_dorsum, hard_palate]
+      af_multiplier: 0.6
+
+patient:
+  # Added to the highest lesion score only when at least one lesion exists.
+  risk_factor_points:
+    smokeless_tobacco: 1.0
+    smoking: 0.5
+    areca_nut: 0.75
+    alcohol_daily: 0.5
+    prior_oral_lesion: 0.75
+    prior_oral_cancer: 1.5
+    age_40_plus: 0.5
+  risk_factor_cap: 2.5
+  # Former users count at this fraction of the current-use points.
+  former_use_fraction: 0.5
+
+# Floors from clinical red flags. Evaluated after scoring; the overall level is the maximum of the
+# scored level and every floor that applies. Condition keys:
+#   symptom: <Symptoms field>              patient-reported symptom is true
+#   visual_appearance: [..]                any examined site's visual flag has one of these
+#   history: prior_oral_cancer|prior_oral_lesion
+#   any_lesion: true                       at least one lesion assessment exists
+# All keys in one `when` must hold.
+overrides:
+  - code: symptom.non_healing_ulcer
+    label: "Non-healing ulcer for more than 2 weeks"
+    when: {symptom: non_healing_ulcer_over_2_weeks}
+    floor: HIGH
+  - code: visual.red_patch
+    label: "Red or mixed red-white patch seen by the health worker"
+    when: {visual_appearance: [red_patch, mixed_red_white]}
+    floor: HIGH
+  - code: visual.growth
+    label: "Growth or mass seen by the health worker"
+    when: {visual_appearance: [growth]}
+    floor: HIGH
+  - code: symptom.neck_lump
+    label: "Lump in the neck"
+    when: {symptom: neck_lump}
+    floor: HIGH
+  - code: symptom.lump_with_lesion
+    label: "Patient reports a lump and a lesion is present"
+    when: {symptom: lump, any_lesion: true}
+    floor: HIGH
+  - code: history.prior_cancer_with_lesion
+    label: "Previous oral cancer and a lesion is present"
+    when: {history: prior_oral_cancer, any_lesion: true}
+    floor: HIGH
+  - code: visual.white_patch
+    label: "White patch seen by the health worker"
+    when: {visual_appearance: [white_patch]}
+    floor: MODERATE
+  - code: visual.ulcer
+    label: "Ulcer seen by the health worker"
+    when: {visual_appearance: [ulcer]}
+    floor: MODERATE
+  - code: symptom.trismus
+    label: "Difficulty opening the mouth (possible oral submucous fibrosis)"
+    when: {symptom: difficulty_opening_mouth}
+    floor: MODERATE
+  - code: symptom.red_or_white_patch_reported
+    label: "Patient reports a red or white patch"
+    when: {symptom: red_patch}
+    floor: MODERATE
+  - code: symptom.white_patch_reported
+    label: "Patient reports a white patch"
+    when: {symptom: white_patch}
+    floor: MODERATE
+  - code: symptom.bleeding
+    label: "Unexplained bleeding in the mouth"
+    when: {symptom: bleeding}
+    floor: MODERATE
+
+inconclusive:
+  # LOW requires every examined site to have passed QC and been analysed.
+  low_requires_all_examined_sites_analysed: true
+  min_sites_analysed: 1
+
+actions:
+  LOW:
+    code: routine_rescreen_and_cessation
+    summary: "No high-risk features found by this screen. This does not rule out disease."
+    steps:
+      - "Routine re-screening in 12 months, or sooner if any symptom appears."
+      - "Tobacco and areca-nut cessation counselling."
+    timeline_days: 365
+    referral_urgency: none
+  MODERATE:
+    code: remove_irritants_reexamine_2_weeks
+    summary: "Suspicious finding. Remove irritants and re-examine in 2 weeks."
+    steps:
+      - "Remove local irritants (sharp tooth, ill-fitting denture) and stop tobacco and areca nut."
+      - "Re-examine the same site in 2 weeks."
+      - "If the lesion is still present at re-examination, refer for clinical examination."
+    timeline_days: 14
+    referral_urgency: reexamine
+  HIGH:
+    code: urgent_referral_biopsy
+    summary: "Urgent referral for specialist examination and biopsy."
+    steps:
+      - "Refer urgently to an oral medicine / head-and-neck specialist."
+      - "Specialist examination and biopsy as soon as possible, within 2 weeks."
+      - "Tobacco and areca-nut cessation counselling."
+    timeline_days: 14
+    referral_urgency: urgent
+  INCONCLUSIVE:
+    code: retake_or_clinical_exam
+    summary: "Images could not be analysed reliably. Retake, or refer for clinical examination."
+    steps:
+      - "Retake the failed captures now, following the on-screen prompts."
+      - "If a lesion is visible or a retake is not possible, refer for clinical examination."
+    timeline_days: 0
+    referral_urgency: retake
