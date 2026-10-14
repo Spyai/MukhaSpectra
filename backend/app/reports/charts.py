@@ -90,8 +90,8 @@ def spectral_plot_svg(
         "ytick.color": MUTED,
     }
     with matplotlib.rc_context(rc):
-        fig = Figure(figsize=(4.3, 2.45), dpi=100)
-        ax = fig.add_axes((0.125, 0.25, 0.85, 0.69))
+        fig = Figure(figsize=(4.3, 2.05), dpi=100)
+        ax = fig.add_axes((0.125, 0.28, 0.85, 0.665))
         ax.axvspan(540, 580, color="#f4e4e4", zorder=0, lw=0)
         ax.text(560, 0.985, "Hb band", transform=ax.get_xaxis_transform(), ha="center",
                 va="top", fontsize=6.5, color="#9b4f4f")
@@ -134,11 +134,11 @@ def spectral_plot_svg(
         ax.grid(axis="y", color=GRID, lw=0.6)
         ax.set_axisbelow(True)
         if ax.get_legend_handles_labels()[0]:
-            ax.legend(loc="upper left", fontsize=6.6, frameon=False, handlelength=2.2,
+            ax.legend(loc="lower right", fontsize=6.6, frameon=False, handlelength=2.2,
                       borderaxespad=0.2)
 
         # Decorative visible-spectrum strip directly under the x axis.
-        strip = fig.add_axes((0.125, 0.225, 0.85, 0.022))
+        strip = fig.add_axes((0.125, 0.254, 0.85, 0.025))
         lo_nm, hi_nm = ax.get_xlim()
         steps = 120
         colors = [

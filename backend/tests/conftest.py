@@ -17,6 +17,12 @@ from app.services import Services
 from app.settings import Settings
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "real_pipeline: end-to-end test against the real pipeline (skips if missing)"
+    )
+
+
 @pytest.fixture
 def api_settings(tmp_path: Path) -> Settings:
     return Settings(

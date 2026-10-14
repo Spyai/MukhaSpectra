@@ -20,7 +20,12 @@ from app.settings import get_settings
 
 config = context.config
 
-if config.config_file_name is not None and config.attributes.get("connection") is None:
+_configure_logging = config.attributes.get("configure_logger", True)
+if (
+    config.config_file_name is not None
+    and config.attributes.get("connection") is None
+    and _configure_logging
+):
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata

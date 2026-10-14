@@ -291,9 +291,9 @@ def _wl_view(site: SiteResult | None, reader: ArtifactReader) -> WLView:
     if wl is None:
         return WLView(
             "White-light classifier: not run for this site — not used in triage",
-            False, [], L.DASH, None, None,
+            False, [], "", None, None,
         )  # fmt: skip
-    model_text = f"{wl.model.name} {wl.model.version} · {L.model_status_text(wl.model)}"
+    model_text = f"{wl.model.name} {wl.model.version}"
     if wl.status == "ok" and wl.model.status not in (
         ModelStatus.MODEL_UNAVAILABLE,
         ModelStatus.PLACEHOLDER,
@@ -315,8 +315,10 @@ def _wl_view(site: SiteResult | None, reader: ArtifactReader) -> WLView:
             saliency=saliency,
         )
     if wl.status == "model_unavailable" or wl.model.status == ModelStatus.MODEL_UNAVAILABLE:
-        text = "White-light classifier: not available — not used in triage"
-    elif wl.status == "skipped_qc_failed":
+        # Name and note add nothing when there are no weights; keep the line short.
+        return WLView("White-light classifier: not available — not used in triage", False, [],
+                      "", None, None)
+    if wl.status == "skipped_qc_failed":
         text = "White-light classifier: skipped because the capture failed QC — not used"
     elif wl.status == "error":
         text = "White-light classifier: error while running — not used in triage"
@@ -368,13 +370,17 @@ def _spectral_view(
         msgs = "; ".join(i.message for i in reading.qc.issues if i.severity == QCSeverity.ERROR)
         qc_text = f"Reading failed QC{': ' + msgs if msgs else ''}"
     cal = reading.calibration.status
-    calibration_text = (
-        "Calibrated against the white reference standard"
-        if cal == CalibrationStatus.CALIBRATED
-        else f"{L.CALIBRATION_TEXT.get(cal, str(cal))} — plotted as relative signal"
-        if reading.signal_type != "reflectance"
-        else L.CALIBRATION_TEXT.get(cal, str(cal))
-    )
+    if reading.signal_type == "reflectance":
+        calibration_text = (
+            "reflectance, calibrated on the white standard"
+            if cal == CalibrationStatus.CALIBRATED
+            else f"reflectance ({L.CALIBRATION_TEXT.get(cal, str(cal)).lower()})"
+        )
+    else:
+        calibration_text = (
+            f"relative signal ({L.CALIBRATION_TEXT.get(cal, str(cal)).lower()}; "
+            "not reflectance)"
+        )
     return SpectralView(
         reading_id=reading.reading_id,
         plot_uri=svg_data_uri(spectral_plot_svg(reading, reference)),
@@ -414,21 +420,21 @@ def _lesion_view(
 
     arts = site.artifacts if site is not None else None
     af_key = None
-    af_note = "405 nm excitation"
+    af_note = "405 nm"
     af_in_wl_frame = False
     if arts is not None:
         if arts.af_registered:
             af_key, af_in_wl_frame = arts.af_registered, True
-            af_note = "405 nm excitation, registered to white light"
+            af_note = "405 nm, registered to WL"
         elif arts.af_image:
             af_key = arts.af_image
-            af_note = "405 nm excitation (unregistered)"
+            af_note = "405 nm, unregistered"
     panels = [
         ImagePanel("White light", "As captured", embed_artifact(
             reader, arts.wl_image if arts else None, boxes=boxes)),
         ImagePanel("Autofluorescence", af_note, embed_artifact(
             reader, af_key, boxes=boxes if af_in_wl_frame else None)),
-        ImagePanel("AF-loss heatmap", "Overlay on white light", embed_artifact(
+        ImagePanel("AF-loss heatmap", "on white light", embed_artifact(
             reader, arts.heatmap_overlay if arts else None, boxes=boxes)),
     ]  # fmt: skip
 

@@ -169,13 +169,13 @@ PROVENANCE_TEXT: dict[str, str] = {
 }
 
 SPECTRAL_FEATURE_TEXT: dict[str, str] = {
-    "hb_absorption_proxy": "Hb absorption proxy (540–580 nm dip)",
-    "ratio_555_630": "Ratio 555 / 630 nm",
-    "ratio_590_680": "Ratio 590 / 680 nm",
-    "ratio_515_630": "Ratio 515 / 630 nm",
-    "ratio_415_555": "Ratio 415 / 555 nm",
-    "slope_480_555": "Slope 480→555 nm (log, /100 nm)",
-    "slope_590_680": "Slope 590→680 nm (log, /100 nm)",
+    "hb_absorption_proxy": "Hb dip (540–580 nm)",
+    "ratio_555_630": "555 / 630 nm ratio",
+    "ratio_590_680": "590 / 680 nm ratio",
+    "ratio_515_630": "515 / 630 nm ratio",
+    "ratio_415_555": "415 / 555 nm ratio",
+    "slope_480_555": "Slope 480→555 nm",
+    "slope_590_680": "Slope 590→680 nm",
 }
 
 _SMOKELESS_TEXT = {

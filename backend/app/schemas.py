@@ -93,7 +93,7 @@ class UploadManifest(_Strict):
             seen.add(entry.site)
         if not any(entry.role == SiteRole.EXAMINED for entry in self.sites):
             raise ValueError("At least one site must have role 'examined'.")
-        for name in self.file_fields():
+        for name, _location in self.file_fields():
             if name == "manifest":
                 raise ValueError("'manifest' cannot be used as a file field name.")
         return self

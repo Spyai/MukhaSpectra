@@ -6,14 +6,12 @@
 
 {%- macro factor_table(rows, override_tag) -%}
 <table class="compact factor-table">
-  <thead><tr><th>Reason</th><th style="width:30mm">Source</th><th class="num" style="width:14mm">Points</th></tr></thead>
+  <thead><tr><th>Reason</th><th style="width:44mm">Source</th><th class="num" style="width:13mm">Points</th></tr></thead>
   <tbody>
   {%- for f in rows %}
     <tr class="{{ 'override' if f.is_override else '' }}">
-      <td>{{ f.label }}
-        {%- if f.detail %}<span class="detail">{{ f.detail }}</span>{% endif %}
-        {%- if f.is_override %}<br><span class="tag">{{ override_tag }}</span>{% endif %}</td>
-      <td>{{ f.source }}</td>
+      <td>{{ f.label }}{% if f.detail %} <span class="detail-inline">· {{ f.detail }}</span>{% endif %}</td>
+      <td>{% if f.is_override %}<span class="tag">{{ override_tag }}</span>{% else %}{{ f.source }}{% endif %}</td>
       <td class="num pts{{ ' floor' if f.is_override else (' neg' if f.negative else '') }}">{{ f.points }}</td>
     </tr>
   {%- else %}
@@ -32,6 +30,14 @@
   {%- endif %}
   <figcaption><b>{{ p.title }}</b> <span>· {{ p.note }}</span></figcaption>
 </figure>
+{%- endmacro -%}
+{%- macro wl_line(wl) -%}
+<div class="model-line">
+  <b>{{ wl.status_text }}</b>{% if wl.model_text %} <span class="muted">· {{ wl.model_text }}</span>{% endif %}
+  {%- if wl.available and wl.predictions %}<br>{% for label, p in wl.predictions %}{{ label }} {{ p }}{% if not loop.last %} · {% endif %}{% endfor %} <span class="muted">(uncalibrated model scores)</span>{% endif %}
+  {%- if wl.note %}<br><span class="muted">{{ wl.note }}</span>{% endif %}
+  {%- if wl.saliency %}<br><img src="{{ wl.saliency.data_uri }}" alt="White-light saliency map (clinician only)" style="height:22mm; margin-top:1mm"> <span class="muted small">Saliency map — explainability aid for clinicians only.</span>{% endif %}
+</div>
 {%- endmacro -%}
 <!doctype html>
 <html lang="en">
@@ -177,7 +183,7 @@
   {%- if not lesions %}
   <div class="card soft">No suspicious finding was flagged at the examined sites by this screen. This does not rule out disease: follow the recommended action above, and re-screen if any symptom appears.</div>
   {%- else %}
-  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }}, ordered by risk level.{% if compact_lesions %} Details for the top {{ max_detailed }}; the rest are listed in the table below.{% endif %} Relative AF = green fluorescence ÷ the patient's own healthy reference (1.00 = same as reference; lower = loss).</div>
+  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }} by risk level{% if compact_lesions %}; details for the top {{ max_detailed }}, the rest in the table below{% endif %}. <b>Relative AF</b> = green fluorescence ÷ the patient's own healthy reference (1.00 = same; lower = loss). <b>Contrast</b> = surrounding ÷ region AF (above 1 = darker). <b>Border irregularity</b> 0 smooth – 1 irregular. Brackets mark the flagged region.</div>
   {%- endif %}
 
   {%- for l in lesions %}
@@ -199,40 +205,40 @@
     <div class="measure-wrap">
       {%- if l.regions %}
       <table class="compact measure">
+        <colgroup><col style="width:33mm"><col style="width:21mm"><col style="width:12.5mm"><col style="width:12.5mm"><col style="width:13.5mm"><col style="width:12.5mm"><col style="width:37mm"><col></colgroup>
         <thead><tr>
           <th>Region · location</th><th class="num">Area</th><th class="num">Mean rel. AF</th><th class="num">Min rel. AF</th>
-          <th class="num">Contrast</th><th class="num">Border irreg.</th><th>Reference used</th><th>Confounder flags</th>
+          <th class="num">Contrast</th><th class="num">Border irreg.</th><th>Reference used{% if l.fvl_threshold %} · threshold{% endif %}</th><th>Confounder flags</th>
         </tr></thead>
         <tbody>
         {%- for g in l.regions %}
           <tr>
-            <td><b>{{ g.region_id }}</b> · {{ g.site }}<span class="detail">{{ g.position }}</span></td>
+            <td><b>{{ g.region_id }}</b> · {{ g.position }}<span class="detail">{{ g.site }}</span></td>
             <td class="num">{{ g.area }}{% if g.area_note %}<span class="detail">{{ g.area_note }}</span>{% endif %}</td>
             <td class="num">{{ g.mean_rel }}</td>
             <td class="num">{{ g.min_rel }}</td>
             <td class="num">{{ g.contrast }}</td>
             <td class="num">{{ g.border }}</td>
-            <td class="small">{{ g.reference }}</td>
+            <td>{{ g.reference }}{% if l.fvl_threshold %}<span class="detail">AF loss below {{ l.fvl_threshold }}</span>{% endif %}</td>
             <td>{% for c in g.confounders %}<span class="chip-warn">{{ c }}</span>{% else %}<span class="muted">None</span>{% endfor %}</td>
           </tr>
         {%- endfor %}
         </tbody>
       </table>
-      <div class="cap">{% if l.marks_drawn %}Corner brackets on the images mark the flagged region. {% endif %}{% if l.fvl_threshold %}AF-loss threshold: relative AF below {{ l.fvl_threshold }}. {% endif %}Contrast = surrounding ÷ region AF (above 1 = darker than surroundings). Border irregularity 0 = smooth, 1 = very irregular.</div>
       {%- else %}
       <div class="note-line">{{ l.region_note }}</div>
       {%- endif %}
       {%- if l.confounder_notes %}
       <div class="confounders"><b>Confounders:</b> {% for n in l.confounder_notes %}{{ n }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
       {%- endif %}
-      <div class="obs">{% if l.visual %}<b>Visual:</b> {{ l.visual }} · {% endif %}<b>Diascopy:</b> {{ l.diascopy }}</div>
+      <div class="obs">{% if l.visual %}<b>Visual:</b> {{ l.visual }} · {% endif %}<b>Diascopy:</b> {{ l.diascopy }}{% if not l.wl.available %} · <b>{{ l.wl.status_text }}</b>{% endif %}</div>
     </div>
 
     {%- for s in l.spectral %}
     <div class="spectral">
       <div>
         <img class="plot" src="{{ s.plot_uri }}" alt="Spectral plot, lesion versus reference">
-        <div class="meta">Confirm probe reading <span class="mono">{{ s.reading_id }}</span> · {{ s.signal_text }} · {{ s.calibration_text }}{% if s.reference_site %} · reference: {{ s.reference_site }}{% endif %}. Bands show ± 1 standard deviation across repeats.</div>
+        <div class="meta">Probe reading {{ s.reading_id }} · {{ s.calibration_text }}{% if s.reference_site %} · reference: {{ s.reference_site }}{% endif %} · bands ± 1 SD · slopes in log signal per 100 nm</div>
       </div>
       <div>
         {%- if s.features %}
@@ -255,12 +261,7 @@
       </div>
     </div>
     {%- endfor %}
-
-    <div class="model-line">
-      <b>{{ l.wl.status_text }}</b>{% if l.wl.model_text and l.wl.model_text != '—' %} <span class="muted">· {{ l.wl.model_text }}</span>{% endif %}
-      {%- if l.wl.available and l.wl.predictions %}<br>{% for label, p in l.wl.predictions %}{{ label }} {{ p }}{% if not loop.last %} · {% endif %}{% endfor %} <span class="muted">(uncalibrated model scores)</span>{% endif %}
-      {%- if l.wl.note %}<br><span class="muted">{{ l.wl.note }}</span>{% endif %}
-    </div>
+    {%- if l.wl.available %}{{ wl_line(l.wl) }}{% endif %}
 
     <div class="factors">
       <h3>Contributing factors — finding {{ l.number }} <span class="muted small">(lesion rule score {{ l.score }}; Moderate ≥ {{ triage.moderate }}, High ≥ {{ triage.high }})</span></h3>

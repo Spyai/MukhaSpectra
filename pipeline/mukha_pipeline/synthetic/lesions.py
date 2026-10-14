@@ -165,13 +165,14 @@ def _paint_white_patch(
     shape = p.rho.shape
     s = p.scale_px
     thick = 0.5 + 0.5 * np.tanh(1.3 * fbm(rng, shape, 0.45 * s, 3))
-    ridged = 1.0 - np.abs(fbm(rng, shape, 0.28 * s, 3))
-    fissure = smoothstep(0.82, 0.96, ridged) * (0.6 + 0.4 * spec.irregularity)
+    ridged = 1.0 - np.abs(fbm(rng, shape, 0.4 * s, 2))
+    # Fissures: soft pink cracks dividing the plaque into irregular plates.
+    fissure = blur(smoothstep(0.80, 0.95, ridged), 1.2) * (0.6 + 0.4 * spec.irregularity)
     grain = fbm(rng, shape, 2.5, 2)
     plaque = np.empty((*shape, 3), np.float32)
     plaque[:] = (0.90, 0.86, 0.83)
     plaque *= ((0.95 + 0.07 * thick) * (1.0 + 0.04 * grain))[..., None]
-    col = lerp_rgb(plaque, (0.70, 0.50, 0.50), 0.85 * fissure)
+    col = lerp_rgb(plaque, (0.80, 0.58, 0.57), 0.8 * fissure)
     col *= (1.0 + _emboss(p.alpha * (0.7 + 0.3 * thick), s, 0.15))[..., None]
     feather = 0.55 + 0.45 * smoothstep(1.0, 0.72, p.rho)  # plaque thins towards its border
     opacity = p.alpha * (0.45 + 0.45 * spec.intensity) * (0.55 + 0.45 * thick) * feather
@@ -184,11 +185,11 @@ def _red_base(
     """Velvety, finely granular erythroplakia colour with a few punctate vessels."""
     s = p.scale_px
     low = 0.5 + 0.5 * np.tanh(fbm(rng, shape, 0.5 * s, 3))
-    gran = fbm(rng, shape, 1.8, 2)
+    gran = fbm(rng, shape, 2.5, 2)
     red = np.empty((*shape, 3), np.float32)
-    red[:] = (0.74, 0.21, 0.24)
-    col = lerp_rgb(red, (0.80, 0.30, 0.31), 0.5 * low)
-    col *= ((1.0 + 0.12 * gran) * (0.93 + 0.07 * np.clip(p.rho, 0.0, 1.0)))[..., None]
+    red[:] = (0.76, 0.25, 0.27)
+    col = lerp_rgb(red, (0.82, 0.33, 0.33), 0.5 * low)
+    col *= ((1.0 + 0.07 * gran) * (0.93 + 0.07 * np.clip(p.rho, 0.0, 1.0)))[..., None]
     n_dots = int(np.count_nonzero(p.mask) / 260)
     if n_dots:
         ys, xs = np.nonzero(p.mask)
@@ -210,14 +211,14 @@ def _paint_mixed(
 ) -> np.ndarray:
     shape = p.rho.shape
     col = _red_base(shape, p, spec, rng)
-    specks = smoothstep(0.9, 1.7, fbm(rng, shape, 4.5, 2))
-    zones = 0.75 * smoothstep(0.9, 1.7, fbm(rng, shape, 0.5 * p.scale_px, 2))
+    specks = blur(smoothstep(1.0, 1.8, fbm(rng, shape, 7.0, 2)), 0.8)
+    zones = 0.5 * smoothstep(1.0, 1.8, fbm(rng, shape, 0.5 * p.scale_px, 2))
     white_amt = np.maximum(specks, zones) * (0.45 + 0.45 * spec.intensity)
     white = np.empty((*shape, 3), np.float32)
-    white[:] = (0.90, 0.85, 0.80)
+    white[:] = (0.93, 0.88, 0.84)
     white *= (1.0 + 0.04 * fbm(rng, shape, 2.0, 2))[..., None]
     col = lerp_rgb(col, white, 0.85 * white_amt)
-    col *= (1.0 + _emboss(white_amt, 6.0, 0.5))[..., None]
+    col *= (1.0 + np.maximum(_emboss(white_amt, 6.0, 0.5), 0.0))[..., None]
     return lerp_rgb(tissue, col, p.alpha * (0.5 + 0.4 * spec.intensity))
 
 
@@ -235,15 +236,15 @@ def _paint_ulcer(
     out *= (1.0 + _emboss(ring, p.scale_px, 0.10))[..., None]
     mottle = 0.5 + 0.5 * np.tanh(fbm(rng, shape, 0.3 * p.scale_px, 3))
     fibrin = np.empty((*shape, 3), np.float32)
-    fibrin[:] = (0.83, 0.76, 0.58)
-    fibrin = lerp_rgb(fibrin, (0.72, 0.70, 0.63), 0.6 * mottle)
+    fibrin[:] = (0.86, 0.80, 0.64)
+    fibrin = lerp_rgb(fibrin, (0.78, 0.75, 0.68), 0.55 * mottle)
     fibrin *= (1.0 + 0.04 * fbm(rng, shape, 2.0, 2))[..., None]
     granulation = smoothstep(1.0, 1.8, fbm(rng, shape, 2.5, 2))
-    fibrin = lerp_rgb(fibrin, (0.75, 0.30, 0.30), 0.6 * granulation)
+    fibrin = lerp_rgb(fibrin, (0.75, 0.32, 0.32), 0.35 * granulation)
     floor = 1.0 - smoothstep(0.55, 0.72, rho)
     out = lerp_rgb(out, fibrin, floor * (0.75 + 0.25 * k))
     crater_edge = np.exp(-(((rho - 0.68) / 0.05) ** 2)).astype(np.float32)
-    return lerp_rgb(out, (0.55, 0.30, 0.28), 0.3 * crater_edge)
+    return lerp_rgb(out, (0.58, 0.32, 0.30), 0.2 * crater_edge)
 
 
 _PAINTERS = {

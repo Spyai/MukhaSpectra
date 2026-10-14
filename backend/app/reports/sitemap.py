@@ -66,7 +66,7 @@ def _orientation(width: float) -> str:
         + _arrow(16, y - 3.2, -1)
         + f'<text x="22" y="{y}" fill="{INK}" font-weight="600">Patient\'s right</text>'
         + f'<text x="{width / 2}" y="{y}" fill="{MUTED}" text-anchor="middle" '
-        'font-style="italic" font-size="8.5">viewed facing the patient</text>'
+        'font-size="8.5">(viewed facing the patient)</text>'
         + f'<text x="{width - 22}" y="{y}" fill="{INK}" font-weight="600" '
         "text-anchor=\"end\">Patient's left</text>"
         + _arrow(width - 16, y - 3.2, 1)

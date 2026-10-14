@@ -24,9 +24,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 def default_analyze(inp: ScreeningInput, *, classifier: Any = None) -> AnalysisOutput:
+    from app import __version__
     from mukha_pipeline.orchestrator import analyze_screening
 
-    return analyze_screening(inp, classifier=classifier)
+    return analyze_screening(inp, classifier=classifier, software_version=__version__)
 
 
 def default_upload_adapter() -> Any:
@@ -76,9 +77,11 @@ def default_load_classifier(model_dir: Path | None, cfg: dict[str, Any]) -> Any:
 
 
 def default_spectral_classifier_info() -> Any:
+    from mukha_pipeline.config import PipelineConfig
     from mukha_pipeline.spectral import RuleBasedSpectralClassifier
 
-    return RuleBasedSpectralClassifier().info
+    cfg = PipelineConfig.default().analysis.data.get("spectral", {})
+    return RuleBasedSpectralClassifier(cfg).info
 
 
 def default_input_error_types() -> tuple[type[BaseException], ...]:
