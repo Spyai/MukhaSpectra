@@ -1,52 +1,11 @@
 import { AnimatePresence, m } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ScreeningResult, StageTiming } from '../../api/types';
+import type { ScreeningResult } from '../../api/types';
+import { DISPLAY_STAGES, summariseStages } from '../../lib/stages';
 import { formatDuration } from '../../lib/format';
 import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
 import { Icon } from '../ui/Icon';
-
-export const DISPLAY_STAGES = ['quality', 'align', 'tissue', 'af', 'spectral', 'triage', 'report'] as const;
-export type DisplayStage = (typeof DISPLAY_STAGES)[number];
-
-const STAGE_PATTERNS: Array<[DisplayStage, RegExp]> = [
-  ['quality', /qc|quality|decode|calib|dark/i],
-  ['align', /regist|align|warp/i],
-  ['tissue', /segment|mucosa|tissue|mask/i],
-  ['spectral', /spectr|probe/i],
-  ['af', /(^|_)af|fluor|fvl|confound|heatmap|overlay|artifact|grid/i],
-  ['triage', /triage|fusion|rule|lesion/i],
-  ['report', /report|pdf|render/i],
-];
-
-export interface StageSummary {
-  stage: DisplayStage;
-  durationMs: number | null;
-  status: 'done' | 'warn' | 'skipped' | 'not-timed';
-}
-
-/** Aggregate real pipeline stage timings (per site) into the seven display stages. */
-export function summariseStages(stages: StageTiming[]): StageSummary[] {
-  const buckets = new Map<DisplayStage, StageTiming[]>();
-  for (const s of stages) {
-    const hit = STAGE_PATTERNS.find(([, re]) => re.test(s.stage));
-    if (!hit) continue;
-    const list = buckets.get(hit[0]) ?? [];
-    list.push(s);
-    buckets.set(hit[0], list);
-  }
-  return DISPLAY_STAGES.map((stage) => {
-    const list = buckets.get(stage);
-    if (!list || list.length === 0) return { stage, durationMs: null, status: 'not-timed' as const };
-    const durationMs = list.reduce((a, b) => a + b.duration_ms, 0);
-    const status = list.some((s) => s.status === 'failed')
-      ? ('warn' as const)
-      : list.every((s) => s.status === 'skipped')
-        ? ('skipped' as const)
-        : ('done' as const);
-    return { stage, durationMs, status };
-  });
-}
 
 // Expected relative pacing while we wait (purely cosmetic; never shown as numbers).
 const PACE_MS = [500, 650, 450, 700, 350, 300];
@@ -116,9 +75,16 @@ function OverlayBody({
     return () => clearTimeout(timer);
   }, [done, onContinue, autoContinueMs]);
 
-  const summary = useMemo(() => (result ? summariseStages(result.processing.stages ?? []) : null), [result]);
+  const summary = useMemo(
+    () => (result ? summariseStages(result.processing.stages ?? []) : null),
+    [result],
+  );
   const title =
-    mode === 'demo' ? t('analysis.titleDemo') : mode === 'reanalyse' ? t('analysis.titleReanalyse') : t('analysis.title');
+    mode === 'demo'
+      ? t('analysis.titleDemo')
+      : mode === 'reanalyse'
+        ? t('analysis.titleReanalyse')
+        : t('analysis.title');
 
   return (
     <m.div
@@ -144,7 +110,12 @@ function OverlayBody({
       >
         <div className="grid gap-6 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div>
-            <h2 id="analysis-title" ref={titleRef} tabIndex={-1} className="text-xl font-bold tracking-tight outline-none">
+            <h2
+              id="analysis-title"
+              ref={titleRef}
+              tabIndex={-1}
+              className="text-xl font-bold tracking-tight outline-none"
+            >
               {failed ? t('analysis.failed') : done ? t('analysis.done') : title}
             </h2>
             <p className="mt-1 text-sm text-fg-muted">
@@ -152,7 +123,11 @@ function OverlayBody({
             </p>
             <div className="relative mt-5 aspect-[4/3] overflow-hidden rounded-xl border border-line bg-image-well">
               {thumbnailUrl ? (
-                <img src={thumbnailUrl} alt={t('analysis.thumbnailAlt')} className="h-full w-full object-cover" />
+                <img
+                  src={thumbnailUrl}
+                  alt={t('analysis.thumbnailAlt')}
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <div
                   aria-hidden="true"
@@ -166,14 +141,22 @@ function OverlayBody({
                     className="absolute inset-y-0 left-0 bg-[oklch(0.8_0.2_150/0.22)] mix-blend-screen"
                     initial={{ width: '0%' }}
                     animate={reduced ? { width: '50%' } : { width: ['0%', '100%'] }}
-                    transition={reduced ? { duration: 0 } : { duration: 1.9, repeat: Infinity, ease: 'linear' }}
+                    transition={
+                      reduced
+                        ? { duration: 0 }
+                        : { duration: 1.9, repeat: Infinity, ease: 'linear' }
+                    }
                   />
                   <m.div
                     aria-hidden="true"
                     className="scan-line absolute inset-y-0 w-10 -translate-x-1/2"
                     initial={{ left: '0%' }}
                     animate={reduced ? { left: '50%' } : { left: ['0%', '100%'] }}
-                    transition={reduced ? { duration: 0 } : { duration: 1.9, repeat: Infinity, ease: 'linear' }}
+                    transition={
+                      reduced
+                        ? { duration: 0 }
+                        : { duration: 1.9, repeat: Infinity, ease: 'linear' }
+                    }
                   />
                 </>
               ) : null}
@@ -201,26 +184,38 @@ function OverlayBody({
             <ol aria-label={t('analysis.progressLabel')} className="relative flex flex-col gap-1">
               {DISPLAY_STAGES.map((stage, i) => {
                 const s = summary?.[i];
-                const state: 'waiting' | 'running' | 'done' | 'warn' | 'skipped' | 'not-timed' | 'failed' = failed
-                  ? i <= active
-                    ? i === active
-                      ? 'failed'
-                      : 'done'
-                    : 'waiting'
-                  : s
-                    ? s.status
-                    : i < active
-                      ? 'done'
-                      : i === active
-                        ? 'running'
-                        : 'waiting';
+                const state:
+                  'waiting' | 'running' | 'done' | 'warn' | 'skipped' | 'not-timed' | 'failed' =
+                  failed
+                    ? i <= active
+                      ? i === active
+                        ? 'failed'
+                        : 'done'
+                      : 'waiting'
+                    : s
+                      ? s.status
+                      : i < active
+                        ? 'done'
+                        : i === active
+                          ? 'running'
+                          : 'waiting';
                 return (
-                  <li key={stage} className="relative flex items-center gap-3 rounded-xl px-2 py-2" data-testid={`stage-${stage}`} data-state={state}>
+                  <li
+                    key={stage}
+                    className="relative flex items-center gap-3 rounded-xl px-2 py-2"
+                    data-testid={`stage-${stage}`}
+                    data-state={state}
+                  >
                     {i < DISPLAY_STAGES.length - 1 ? (
-                      <span aria-hidden="true" className="absolute top-10 left-[1.4rem] h-[calc(100%-1.5rem)] w-px bg-line" />
+                      <span
+                        aria-hidden="true"
+                        className="absolute top-10 left-[1.4rem] h-[calc(100%-1.5rem)] w-px bg-line"
+                      />
                     ) : null}
                     <StageDot state={state} />
-                    <span className={`flex-1 text-sm font-semibold ${state === 'waiting' ? 'text-fg-subtle' : 'text-fg'}`}>
+                    <span
+                      className={`flex-1 text-sm font-semibold ${state === 'waiting' ? 'text-fg-subtle' : 'text-fg'}`}
+                    >
                       {t(`analysis.stages.${stage}`)}
                     </span>
                     <span className="text-xs text-fg-subtle tabular">
@@ -262,7 +257,12 @@ function OverlayBody({
                 </button>
               ) : null}
               {done ? (
-                <button ref={continueRef} type="button" className="btn btn-primary" onClick={onContinue}>
+                <button
+                  ref={continueRef}
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={onContinue}
+                >
                   {t('analysis.viewResults')}
                   <Icon name="arrowRight" size={18} />
                 </button>
@@ -276,7 +276,8 @@ function OverlayBody({
 }
 
 function StageDot({ state }: { state: string }) {
-  const base = 'relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2';
+  const base =
+    'relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2';
   if (state === 'done')
     return (
       <span className={`${base} border-glow bg-glow-soft text-glow-text`}>

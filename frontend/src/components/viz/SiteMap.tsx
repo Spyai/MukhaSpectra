@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { OralSite, RiskLevel, SiteCatalogue, SiteCatalogueEntry } from '../../api/types';
 import { RISK_STYLE } from '../../lib/risk';
+import { nextSiteInDirection, type Dir } from '../../lib/siteNav';
 
 export interface SiteStatus {
   level?: RiskLevel;
@@ -19,33 +20,6 @@ export interface SiteMapProps {
   statuses?: Partial<Record<OralSite, SiteStatus>>;
   label: string;
   className?: string;
-}
-
-type Dir = 'left' | 'right' | 'up' | 'down';
-
-/** Spatial arrow-key navigation: nearest site in the pressed direction. */
-export function nextSiteInDirection(
-  sites: SiteCatalogueEntry[],
-  current: SiteCatalogueEntry,
-  dir: Dir,
-): SiteCatalogueEntry | undefined {
-  const { cx, cy } = current.shape;
-  let best: SiteCatalogueEntry | undefined;
-  let bestScore = Infinity;
-  for (const s of sites) {
-    if (s.site === current.site) continue;
-    const dx = s.shape.cx - cx;
-    const dy = s.shape.cy - cy;
-    const primary = dir === 'left' ? -dx : dir === 'right' ? dx : dir === 'up' ? -dy : dy;
-    const ortho = dir === 'left' || dir === 'right' ? Math.abs(dy) : Math.abs(dx);
-    if (primary <= 2) continue;
-    const score = primary + ortho * 1.6;
-    if (score < bestScore) {
-      bestScore = score;
-      best = s;
-    }
-  }
-  return best;
 }
 
 const KEY_DIR: Record<string, Dir> = {
@@ -131,11 +105,30 @@ export function SiteMap({
           </filter>
         </defs>
         {/* Oral cavity silhouette for orientation */}
-        <ellipse cx={200} cy={165} rx={196} ry={158} fill="url(#sm-cavity)" stroke="var(--line)" strokeWidth={1.5} />
-        <text x={14} y={312} className="fill-fg-subtle text-[11px] font-semibold" aria-hidden="true">
+        <ellipse
+          cx={200}
+          cy={165}
+          rx={196}
+          ry={158}
+          fill="url(#sm-cavity)"
+          stroke="var(--line)"
+          strokeWidth={1.5}
+        />
+        <text
+          x={14}
+          y={312}
+          className="fill-fg-subtle text-[11px] font-semibold"
+          aria-hidden="true"
+        >
           {t('results.map.patientRight')}
         </text>
-        <text x={386} y={312} textAnchor="end" className="fill-fg-subtle text-[11px] font-semibold" aria-hidden="true">
+        <text
+          x={386}
+          y={312}
+          textAnchor="end"
+          className="fill-fg-subtle text-[11px] font-semibold"
+          aria-hidden="true"
+        >
           {t('results.map.patientLeft')}
         </text>
 
@@ -226,7 +219,15 @@ export function SiteMap({
                 }
               />
               {mode === 'results' && isSelected ? (
-                <ellipse cx={cx} cy={cy} rx={rx + 3.5} ry={ry + 3.5} fill="none" stroke="var(--fg)" strokeWidth={2} />
+                <ellipse
+                  cx={cx}
+                  cy={cy}
+                  rx={rx + 3.5}
+                  ry={ry + 3.5}
+                  fill="none"
+                  stroke="var(--fg)"
+                  strokeWidth={2}
+                />
               ) : null}
               {/* keyboard focus ring */}
               <ellipse
@@ -241,7 +242,13 @@ export function SiteMap({
               />
               {glyphLevel ? (
                 <g
-                  transform={`translate(${cx - 7} ${showLabel ? cy - ry + (ry > 30 ? 10 : 2) - 2 : cy - 7})`}
+                  transform={
+                    showLabel && ry >= 20
+                      ? `translate(${cx - 7} ${cy - ry + 8})`
+                      : showLabel
+                        ? `translate(${cx - rx + 8} ${cy - 7})`
+                        : `translate(${cx - 7} ${cy - 7})`
+                  }
                   style={{ color: RISK_STYLE[glyphLevel].color }}
                   aria-hidden="true"
                 >
@@ -251,7 +258,7 @@ export function SiteMap({
               {showLabel ? (
                 <text
                   x={cx}
-                  y={glyphLevel ? cy + (ry > 30 ? 8 : 5) : cy + 4}
+                  y={glyphLevel && ry >= 20 ? cy + 8 : cy + 4}
                   textAnchor="middle"
                   aria-hidden="true"
                   className={`pointer-events-none text-[10.5px] font-semibold ${
@@ -273,7 +280,15 @@ function GlyphMini({ level }: { level: RiskLevel }) {
   if (level === 'INCONCLUSIVE') {
     return (
       <g>
-        <circle cx="7" cy="7" r="6" fill="var(--surface)" stroke="currentColor" strokeWidth="1.4" strokeDasharray="2 1.6" />
+        <circle
+          cx="7"
+          cy="7"
+          r="6"
+          fill="var(--surface)"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeDasharray="2 1.6"
+        />
         <text x="7" y="10.2" textAnchor="middle" fontSize="9" fontWeight="800" fill="currentColor">
           ?
         </text>

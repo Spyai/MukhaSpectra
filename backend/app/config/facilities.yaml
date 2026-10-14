@@ -1,10 +1,14 @@
 # Referral facilities printed on the clinician report (section "Referral").
 #
 # EXAMPLES ONLY. Every entry below is a placeholder (example: true) and the report labels it
-# "Example facility — configure facilities.yaml". Before any deployment replace them with real,
-# verified facilities, nearest first, and set example: false. Do not invent phone numbers.
+# "Example facility — configure facilities.yaml". Reports of non-synthetic results never print
+# example entries: they show "Referral facility not configured" instead. Before any deployment
+# replace them with real, verified facilities, first choice first, and set example: false.
+# Do not invent phone numbers.
 #
-# Keys: name, address (required); phone, hours, notes (optional); example (bool).
+# Keys: name, address (required); phone, hours, notes (optional); example (bool);
+# levels (optional list of LOW / MODERATE / HIGH / INCONCLUSIVE: the risk levels the facility is
+# listed for, empty = every level); capabilities (optional short tags printed with the entry).
 
 facilities:
   - name: "Example District Hospital — Dental / Oral Medicine OPD"
@@ -12,6 +16,7 @@ facilities:
     phone: "+91-XXXXX-XXXXX"
     hours: "Mon–Sat, 09:00–13:00"
     notes: "Bring this report. Ask for the oral medicine or ENT outpatient desk."
+    capabilities: ["oral medicine", "ENT"]
     example: true
 
   - name: "Example Government Dental College — Oral Medicine & Radiology"
@@ -19,6 +24,8 @@ facilities:
     phone: "+91-XXXXX-XXXXX"
     hours: "Mon–Sat, 09:00–16:00"
     notes: "Specialist examination and biopsy services."
+    levels: [MODERATE, HIGH, INCONCLUSIVE]
+    capabilities: ["specialist examination", "biopsy"]
     example: true
 
   - name: "Example Regional Cancer Centre — Head & Neck Clinic"
@@ -26,4 +33,6 @@ facilities:
     phone: "+91-XXXXX-XXXXX"
     hours: "Mon–Fri, 08:30–14:00"
     notes: "For urgent referrals from the screening camp."
+    levels: [HIGH]
+    capabilities: ["head and neck", "biopsy"]
     example: true

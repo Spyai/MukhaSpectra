@@ -12,7 +12,15 @@ export function RiskGlyph({ level, size = 20 }: { level: RiskLevel; size?: numbe
   if (level === 'INCONCLUSIVE') {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeDasharray="3 2.6" />
+        <circle
+          cx="12"
+          cy="12"
+          r="9.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeDasharray="3 2.6"
+        />
         <path
           d="M9.4 9.4a2.7 2.7 0 1 1 3.9 2.4c-.8.4-1.3 1-1.3 1.9v.5"
           fill="none"
@@ -109,7 +117,13 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
           animate={{ opacity: 0.22 }}
           transition={{ duration: 0.6, delay: 0.25 }}
         />
-        <svg viewBox="0 0 120 120" width={size} height={size} className="relative" aria-hidden="true">
+        <svg
+          viewBox="0 0 120 120"
+          width={size}
+          height={size}
+          className="relative"
+          aria-hidden="true"
+        >
           {style.dashed ? (
             <m.circle
               cx={C}
@@ -128,7 +142,13 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
           ) : (
             SEGMENTS.map((d, i) => (
               <g key={d}>
-                <path d={d} fill="none" stroke="var(--line)" strokeWidth="7" strokeLinecap="round" />
+                <path
+                  d={d}
+                  fill="none"
+                  stroke="var(--line)"
+                  strokeWidth="7"
+                  strokeLinecap="round"
+                />
                 {i < style.steps ? (
                   <m.path
                     d={d}
@@ -138,7 +158,11 @@ export function RiskBadge({ level, size = 132 }: { level: RiskLevel; size?: numb
                     strokeLinecap="round"
                     initial={{ pathLength: 0, opacity: 0 }}
                     animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 0.38, delay: 0.12 + i * 0.16, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{
+                      duration: 0.38,
+                      delay: 0.12 + i * 0.16,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
                   />
                 ) : null}
               </g>

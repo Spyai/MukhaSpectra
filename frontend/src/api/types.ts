@@ -74,6 +74,7 @@ export interface ScreeningSummary {
   sex?: Sex;
   latest_version?: number;
   sites?: OralSite[];
+  site_count?: number;
 }
 
 /** Relative-AF grid artifact (`relative_af_grid`, JSON). `null` = outside tissue. */

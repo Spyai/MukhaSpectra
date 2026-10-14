@@ -15,7 +15,14 @@ export function LogoMark({ size = 28 }: { size?: number }) {
       </defs>
       <path d="M2 2 L15 13 L11 17 Z" fill="url(#lm-beam)" />
       <circle cx="19" cy="19" r="10" fill="url(#lm-glow)" />
-      <ellipse cx="22" cy="21.5" rx="3.6" ry="2.6" fill="oklch(0.25 0.04 160)" transform="rotate(-20 22 21.5)" />
+      <ellipse
+        cx="22"
+        cy="21.5"
+        rx="3.6"
+        ry="2.6"
+        fill="oklch(0.25 0.04 160)"
+        transform="rotate(-20 22 21.5)"
+      />
     </svg>
   );
 }

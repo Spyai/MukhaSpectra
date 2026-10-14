@@ -2,7 +2,10 @@
 
 export function formatPoints(points: number, digits = 2): string {
   const v = Math.round(points * 10 ** digits) / 10 ** digits;
-  const s = Math.abs(v).toFixed(digits).replace(/\.?0+$/, '') || '0';
+  const s =
+    Math.abs(v)
+      .toFixed(digits)
+      .replace(/\.?0+$/, '') || '0';
   if (v > 0) return `+${s}`;
   if (v < 0) return `−${s}`;
   return '0';

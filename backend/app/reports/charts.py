@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import io
 import math
+import threading
 from xml.sax.saxutils import escape
 
+from app.reports.labels import RISK_COLORS, num, site_name
 from mukha_pipeline.schema.models import (
     AS7341_SPECTRAL_CHANNELS,
     AS7341_WAVELENGTH_NM,
@@ -16,7 +18,8 @@ from mukha_pipeline.schema.models import (
     SpectralReadingResult,
 )
 
-from app.reports.labels import RISK_COLORS, num, site_name
+# rc_context swaps matplotlib's global rcParams; serialise plots across API worker threads.
+_MPL_LOCK = threading.Lock()
 
 LESION_COLOR = "#a21caf"  # magenta: distinct from every risk colour
 REFERENCE_COLOR = "#2563eb"  # blue: matches "reference only" on the site map
@@ -89,12 +92,20 @@ def spectral_plot_svg(
         "xtick.color": MUTED,
         "ytick.color": MUTED,
     }
-    with matplotlib.rc_context(rc):
-        fig = Figure(figsize=(4.3, 2.05), dpi=100)
-        ax = fig.add_axes((0.125, 0.28, 0.85, 0.665))
+    with _MPL_LOCK, matplotlib.rc_context(rc):
+        fig = Figure(figsize=(4.3, 2.1), dpi=100)
+        ax = fig.add_axes((0.13, 0.29, 0.845, 0.665))
         ax.axvspan(540, 580, color="#f4e4e4", zorder=0, lw=0)
-        ax.text(560, 0.985, "Hb band", transform=ax.get_xaxis_transform(), ha="center",
-                va="top", fontsize=6.5, color="#9b4f4f")
+        ax.text(
+            560,
+            0.02,
+            "Hb band",
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="bottom",
+            fontsize=7.2,
+            color="#9b4f4f",
+        )
 
         all_lo: list[float] = []
         all_hi: list[float] = []
@@ -111,41 +122,63 @@ def spectral_plot_svg(
             all_hi += hi
             ax.fill_between(xs, lo, hi, color=color, alpha=0.16, lw=0, zorder=2)
             label = f"{role} — {site_name(reading.site)} (n={reading.n_readings})"
-            ax.plot(xs, ys, color=color, lw=1.7, marker="o", ms=3.2, zorder=3, label=label,
-                    linestyle="--" if role == "Reference" else "-")
+            ax.plot(
+                xs,
+                ys,
+                color=color,
+                lw=1.7,
+                marker="o",
+                ms=3.2,
+                zorder=3,
+                label=label,
+                linestyle="--" if role == "Reference" else "-",
+            )
 
         if all_lo:
             span = max(all_hi) - min(all_lo)
             pad = max(span * 0.12, 1e-3)
-            ax.set_ylim(max(0.0, min(all_lo) - pad) if min(all_lo) >= 0 else min(all_lo) - pad,
-                        max(all_hi) + pad * 1.6)
+            ax.set_ylim(
+                max(0.0, min(all_lo) - pad) if min(all_lo) >= 0 else min(all_lo) - pad,
+                max(all_hi) + pad * 1.6,
+            )
         else:
-            ax.text(0.5, 0.5, "No usable channel values", transform=ax.transAxes,
-                    ha="center", va="center", color=MUTED)
+            ax.text(
+                0.5,
+                0.5,
+                "No usable channel values",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+                color=MUTED,
+            )
 
         ax.set_xlim(402, 693)
         ax.set_xticks([AS7341_WAVELENGTH_NM[c] for c in AS7341_SPECTRAL_CHANNELS])
-        ax.tick_params(axis="x", pad=7, length=2.5, labelsize=6.8)
-        ax.tick_params(axis="y", length=2.5, labelsize=6.8)
-        ax.set_xlabel("Wavelength (nm)", fontsize=7.2, labelpad=2)
-        ax.set_ylabel(spectral_y_label(lesion.signal_type), fontsize=7.2)
+        ax.tick_params(axis="x", pad=7, length=2.5, labelsize=7.8)
+        ax.tick_params(axis="y", length=2.5, labelsize=7.8)
+        ax.set_xlabel("Wavelength (nm)", fontsize=8, labelpad=2)
+        ax.set_ylabel(spectral_y_label(lesion.signal_type), fontsize=8)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
         ax.grid(axis="y", color=GRID, lw=0.6)
         ax.set_axisbelow(True)
         if ax.get_legend_handles_labels()[0]:
-            ax.legend(loc="lower right", fontsize=6.6, frameon=False, handlelength=2.2,
-                      borderaxespad=0.2)
+            ax.legend(
+                loc="best",
+                fontsize=7.4,
+                frameon=True,
+                framealpha=0.85,
+                edgecolor="none",
+                handlelength=2.2,
+                borderaxespad=0.3,
+            )
 
         # Decorative visible-spectrum strip directly under the x axis.
-        strip = fig.add_axes((0.125, 0.254, 0.85, 0.025))
+        strip = fig.add_axes((0.13, 0.264, 0.845, 0.025))
         lo_nm, hi_nm = ax.get_xlim()
         steps = 120
-        colors = [
-            _wavelength_rgb(lo_nm + (hi_nm - lo_nm) * i / (steps - 1)) for i in range(steps)
-        ]
-        strip.imshow([colors], aspect="auto", extent=(lo_nm, hi_nm, 0, 1),
-                     interpolation="bilinear")
+        colors = [_wavelength_rgb(lo_nm + (hi_nm - lo_nm) * i / (steps - 1)) for i in range(steps)]
+        strip.imshow([colors], aspect="auto", extent=(lo_nm, hi_nm, 0, 1), interpolation="bilinear")
         strip.set_axis_off()
 
         buf = io.StringIO()
@@ -160,11 +193,16 @@ def spectral_plot_svg(
 
 def risk_icon_svg(level: RiskLevel | str, color: str, size: float = 16) -> str:
     """Icon that encodes the level by shape, not colour: 1/2/3 filled bars, or "?"."""
-    level = RiskLevel(level)
     head = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
         f'viewBox="0 0 16 16" class="risk-icon" aria-hidden="true">'
     )
+    return head + risk_icon_shapes(level, color) + "</svg>"
+
+
+def risk_icon_shapes(level: RiskLevel | str, color: str) -> str:
+    """The icon's SVG shapes on a 16 x 16 canvas (for embedding in a larger SVG)."""
+    level = RiskLevel(level)
     if level == RiskLevel.INCONCLUSIVE:
         body = (
             f'<circle cx="8" cy="8" r="6.6" fill="none" stroke="{color}" stroke-width="1.6"/>'
@@ -183,7 +221,7 @@ def risk_icon_svg(level: RiskLevel | str, color: str, size: float = 16) -> str:
                 f'fill="{color}" opacity="{opacity}"/>'
             )
         body = "".join(bars)
-    return head + body + "</svg>"
+    return body
 
 
 def score_gauge_svg(
@@ -196,9 +234,9 @@ def score_gauge_svg(
 ) -> str:
     """Horizontal gauge: rule score against the MODERATE and HIGH thresholds."""
     level = RiskLevel(level)
-    h = 44.0
+    h = 41.0
     left, right = 6.0, width - 6.0
-    top, bar_h = 18.0, 9.0
+    top, bar_h = 18.0, 7.0
     vmax = max(high * 1.6, high + 3.0, (score or 0.0) * 1.12)
 
     def x_of(v: float) -> float:
@@ -219,24 +257,32 @@ def score_gauge_svg(
             f'<rect x="{x_of(a):.1f}" y="{top}" width="{x_of(b) - x_of(a):.1f}" '
             f'height="{bar_h}" fill="{c["tint"]}" stroke="{c["strong"]}" stroke-width="0.6"/>'
         )
-    for v, label in ((moderate, "Moderate"), (high, "High")):
-        x = x_of(v)
+    font = 9.0
+    labels = [f"Moderate ≥ {num(moderate, 1)}", f"High ≥ {num(high, 1)}"]
+    xs = [x_of(moderate), x_of(high)]
+    half = [len(t) * font * 0.28 for t in labels]  # ~ half the rendered width
+    text_x = list(xs)
+    overlap = (half[0] + half[1] + 4) - (xs[1] - xs[0])
+    if overlap > 0:  # thresholds close together: push the two labels apart
+        text_x = [xs[0] - overlap / 2, xs[1] + overlap / 2]
+    text_x = [max(left + half[0], text_x[0]), min(right - half[1], text_x[1])]
+    for x, tx, label in zip(xs, text_x, labels, strict=True):
         parts.append(
             f'<line x1="{x:.1f}" y1="{top - 2}" x2="{x:.1f}" y2="{top + bar_h + 2}" '
             f'stroke="{INK}" stroke-width="0.9"/>'
-            f'<text x="{x:.1f}" y="{top + bar_h + 12}" text-anchor="middle" font-size="7.4" '
-            f'fill="{MUTED}">{label} ≥ {num(v, 1)}</text>'
+            f'<text x="{tx:.1f}" y="{top + bar_h + 12}" text-anchor="middle" '
+            f'font-size="{font:g}" fill="{MUTED}">{label}</text>'
         )
     if score is not None and math.isfinite(score):
         x = x_of(score)
         c = RISK_COLORS[level]["strong"] if level in RISK_COLORS else INK
         anchor = "end" if x > width * 0.8 else ("start" if x < width * 0.2 else "middle")
         parts.append(
-            f'<path d="M{x - 4.5:.1f},{top - 9} L{x + 4.5:.1f},{top - 9} L{x:.1f},{top - 2} Z" '
+            f'<path d="M{x - 4:.1f},{top - 7.5} L{x + 4:.1f},{top - 7.5} L{x:.1f},{top - 1.5} Z" '
             f'fill="{c}"/>'
             f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top + bar_h}" stroke="{c}" '
             'stroke-width="2.2"/>'
-            f'<text x="{x:.1f}" y="{top - 11}" text-anchor="{anchor}" font-size="8" '
+            f'<text x="{x:.1f}" y="{top - 9}" text-anchor="{anchor}" font-size="9.5" '
             f'font-weight="700" fill="{c}">{escape("Score " + num(score, 1))}</text>'
         )
     parts.append("</svg>")

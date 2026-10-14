@@ -8,12 +8,12 @@ export function SyntheticRibbon({ notice }: { notice?: string | null }) {
       data-testid="synthetic-ribbon"
       role="note"
       aria-label={t('synthetic.ribbon')}
-      className="synthetic-stripes flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold shadow-card sm:px-4"
+      className="synthetic-stripes flex flex-col items-start gap-x-3 gap-y-1.5 rounded-2xl px-3 py-2.5 text-sm font-semibold shadow-card sm:flex-row sm:items-center sm:px-4"
     >
       <span className="rounded-md bg-synthetic-ink px-2 py-0.5 text-xs font-bold tracking-widest text-synthetic">
         {t('synthetic.ribbon')}
       </span>
-      <span className="min-w-0 flex-1 rounded-md bg-synthetic px-1.5 py-0.5 leading-snug">
+      <span className="min-w-0 flex-1 rounded-md bg-synthetic px-1.5 py-0.5 text-[13px] leading-snug sm:text-sm">
         {notice ?? t('synthetic.defaultNotice')}
       </span>
     </div>
@@ -24,8 +24,11 @@ export function SyntheticRibbon({ notice }: { notice?: string | null }) {
 export function SyntheticCorner() {
   const { t } = useTranslation();
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute top-0 right-0 z-10 h-28 w-28 overflow-hidden">
-      <div className="synthetic-stripes absolute top-6 -right-10 w-44 rotate-45 py-1 text-center text-[10px] font-extrabold tracking-[0.18em] shadow-card">
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute top-0 right-0 z-10 h-36 w-36 overflow-hidden"
+    >
+      <div className="synthetic-stripes absolute top-[38px] -right-[50px] w-[200px] rotate-45 py-1 text-center text-[10px] font-extrabold tracking-[0.18em] shadow-card">
         {t('synthetic.ribbon')}
       </div>
     </div>

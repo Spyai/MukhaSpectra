@@ -1,39 +1,11 @@
 import { m } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ContributingFactor, FactorSource, RiskLevel, ScoreThresholds } from '../../api/types';
-import { formatPoints, round } from '../../lib/format';
+import type { ContributingFactor, RiskLevel, ScoreThresholds } from '../../api/types';
+import { SOURCE_ICON, waterfall } from '../../lib/factors';
+import { formatPoints } from '../../lib/format';
 import { RISK_STYLE } from '../../lib/risk';
-import { Icon, type IconName } from '../ui/Icon';
-
-export const SOURCE_ICON: Record<FactorSource, IconName> = {
-  autofluorescence: 'glow',
-  wl_model: 'camera',
-  spectral: 'wave',
-  clinical_visual: 'eye',
-  clinical_history: 'clipboard',
-  symptom: 'pulse',
-  site: 'pin',
-  qc: 'shield',
-  override: 'lock',
-};
-
-export interface WaterfallRow {
-  factor: ContributingFactor;
-  start: number;
-  end: number;
-}
-
-/** Running sum: each factor's bar starts where the previous one ended. */
-export function waterfall(factors: ContributingFactor[]): { rows: WaterfallRow[]; total: number } {
-  let acc = 0;
-  const rows = factors.map((factor) => {
-    const start = acc;
-    acc = round(acc + factor.points, 6);
-    return { factor, start, end: acc };
-  });
-  return { rows, total: round(acc, 2) };
-}
+import { Icon } from '../ui/Icon';
 
 interface FactorBarsProps {
   factors: ContributingFactor[];
@@ -45,26 +17,38 @@ interface FactorBarsProps {
   id?: string;
 }
 
-export function FactorBars({ factors, thresholds, score, level, compact = false, id }: FactorBarsProps) {
+export function FactorBars({
+  factors,
+  thresholds,
+  score,
+  level,
+  compact = false,
+  id,
+}: FactorBarsProps) {
   const { t } = useTranslation();
   const { rows, total } = waterfall(factors);
   const shownTotal = score ?? total;
   const lows = rows.flatMap((r) => [r.start, r.end]);
   const min = Math.min(0, ...lows);
-  const max = Math.max(
-    shownTotal,
-    ...lows,
-    thresholds ? thresholds.high * 1.12 : 0,
-    1,
-  );
+  const max = Math.max(shownTotal, ...lows, thresholds ? thresholds.high * 1.12 : 0, 1);
   const span = max - min || 1;
   const pct = (v: number) => ((v - min) / span) * 100;
   const levelColor = level ? RISK_STYLE[level].color : 'var(--violet)';
 
   const ticks = thresholds
     ? [
-        { key: 'moderate', value: thresholds.moderate, label: t('results.why.thresholdModerate', { value: thresholds.moderate }), color: 'var(--risk-moderate)' },
-        { key: 'high', value: thresholds.high, label: t('results.why.thresholdHigh', { value: thresholds.high }), color: 'var(--risk-high)' },
+        {
+          key: 'moderate',
+          value: thresholds.moderate,
+          label: t('results.why.thresholdModerate', { value: thresholds.moderate }),
+          color: 'var(--risk-moderate)',
+        },
+        {
+          key: 'high',
+          value: thresholds.high,
+          label: t('results.why.thresholdHigh', { value: thresholds.high }),
+          color: 'var(--risk-high)',
+        },
       ]
     : [];
 
@@ -86,7 +70,10 @@ export function FactorBars({ factors, thresholds, score, level, compact = false,
 
   if (factors.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-line p-4 text-sm text-fg-muted" data-testid="factor-bars-empty">
+      <p
+        className="rounded-xl border border-dashed border-line p-4 text-sm text-fg-muted"
+        data-testid="factor-bars-empty"
+      >
         {t('results.why.noFactors')}
       </p>
     );
@@ -102,7 +89,11 @@ export function FactorBars({ factors, thresholds, score, level, compact = false,
               <span
                 key={tk.key}
                 className="absolute bottom-0 -translate-x-1/2 rounded px-1 text-[11px] leading-tight font-semibold whitespace-nowrap"
-                style={{ left: `${pct(tk.value)}%`, color: tk.color, top: tk.key === 'moderate' ? 0 : undefined }}
+                style={{
+                  left: `${pct(tk.value)}%`,
+                  color: tk.color,
+                  top: tk.key === 'moderate' ? 0 : undefined,
+                }}
               >
                 {tk.label}
               </span>
@@ -122,7 +113,7 @@ export function FactorBars({ factors, thresholds, score, level, compact = false,
               data-points={factor.points}
               className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_4rem] sm:gap-x-4"
             >
-              <div className="flex min-w-0 items-start gap-2">
+              <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-2 sm:col-start-auto sm:row-start-auto">
                 <span
                   className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-2 text-fg-muted"
                   title={t(`results.source.${factor.source}`)}
@@ -147,7 +138,10 @@ export function FactorBars({ factors, thresholds, score, level, compact = false,
                   ) : null}
                 </div>
               </div>
-              <div className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto" aria-hidden="true">
+              <div
+                className="col-span-2 col-start-1 row-start-2 sm:col-span-1 sm:col-start-auto sm:row-start-auto"
+                aria-hidden="true"
+              >
                 {track(
                   <m.div
                     className="absolute inset-y-1 rounded-[5px]"
@@ -159,15 +153,19 @@ export function FactorBars({ factors, thresholds, score, level, compact = false,
                       transformOrigin: positive ? 'left center' : 'right center',
                     }}
                     initial={{ scaleX: 0 }}
-                    whileInView={{ scaleX: 1 }}
-                    viewport={{ once: true, margin: '-20px' }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 30, delay: Math.min(i * 0.045, 0.5) }}
+                    animate={{ scaleX: 1 }}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 260,
+                      damping: 30,
+                      delay: Math.min(i * 0.045, 0.5),
+                    }}
                   />,
                 )}
               </div>
               <span
                 aria-hidden="true"
-                className={`row-start-1 text-right text-sm font-bold tabular sm:row-start-auto ${positive ? 'text-violet-text' : 'text-glow-text'}`}
+                className={`col-start-2 row-start-1 text-right text-sm font-bold tabular sm:col-start-auto sm:row-start-auto ${positive ? 'text-violet-text' : 'text-glow-text'}`}
               >
                 {formatPoints(factor.points)}
               </span>
@@ -180,20 +178,32 @@ export function FactorBars({ factors, thresholds, score, level, compact = false,
         data-testid="factor-total"
         data-total={total}
       >
-        <p className="text-sm font-bold">{compact ? t('results.why.score') : t('results.why.total')}</p>
-        <div className="col-span-2 row-start-2 sm:col-span-1 sm:row-start-auto" aria-hidden="true">
+        <p className="col-start-1 row-start-1 text-sm font-bold sm:col-start-auto sm:row-start-auto">
+          {compact ? t('results.why.score') : t('results.why.total')}
+        </p>
+        <div
+          className="col-span-2 col-start-1 row-start-2 sm:col-span-1 sm:col-start-auto sm:row-start-auto"
+          aria-hidden="true"
+        >
           {track(
             <m.div
               className="absolute inset-y-0.5 rounded-[6px]"
-              style={{ left: `${pct(0)}%`, width: `${Math.max(pct(shownTotal) - pct(0), 0.6)}%`, background: levelColor, transformOrigin: 'left center' }}
+              style={{
+                left: `${pct(0)}%`,
+                width: `${Math.max(pct(shownTotal) - pct(0), 0.6)}%`,
+                background: levelColor,
+                transformOrigin: 'left center',
+              }}
               initial={{ scaleX: 0 }}
-              whileInView={{ scaleX: 1 }}
-              viewport={{ once: true }}
+              animate={{ scaleX: 1 }}
               transition={{ type: 'spring', stiffness: 160, damping: 26, delay: 0.2 }}
             />,
           )}
         </div>
-        <span className="row-start-1 text-right text-lg font-extrabold tabular sm:row-start-auto" style={{ color: levelColor }}>
+        <span
+          className="col-start-2 row-start-1 text-right text-lg font-extrabold tabular sm:col-start-auto sm:row-start-auto"
+          style={{ color: levelColor }}
+        >
           {formatPoints(shownTotal).replace('+', '')}
         </span>
       </div>

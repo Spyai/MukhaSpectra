@@ -7,7 +7,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
-const SPAN = 5.2; // beam travels from -SPAN/2 to +SPAN/2 (beyond the visible surface)
+const SPAN = 6.0; // beam travels from -SPAN/2 to +SPAN/2 (beyond the visible surface)
 const PERIOD = 7.5; // seconds per sweep
 
 const vertex = /* glsl */ `
@@ -36,7 +36,6 @@ const fragment = /* glsl */ `
   uniform float uBeamX;
   uniform float uBeamZ;
   uniform vec2 uFvl;
-  uniform float uDark;
   varying vec3 vWorld;
   varying vec2 vXZ;
 
@@ -69,38 +68,39 @@ const fragment = /* glsl */ `
     float footprint = exp(-(bx * bx + bz * bz) * 1.6);
     float behind = uBeamX - vXZ.x;
     float age = behind >= 0.0 ? behind : behind + ${SPAN.toFixed(2)};
-    float zcover = smoothstep(1.9, 0.9, abs(vXZ.y - uBeamZ));
-    float glow = exp(-age / 1.35) * zcover;
+    float zcover = smoothstep(2.2, 1.2, abs(vXZ.y - uBeamZ));
+    float glow = exp(-age / 1.35) * smoothstep(4.4, 2.6, age) * zcover;
     glow = max(glow, footprint);
 
-    vec3 ink = mix(vec3(0.95, 0.96, 0.99), vec3(0.06, 0.07, 0.12), uDark);
-    vec3 mucosa = mix(vec3(0.86, 0.66, 0.70), vec3(0.17, 0.08, 0.12), uDark) * tex;
-    vec3 col = mucosa * (0.35 + 0.65 * diffuse) * mix(0.9, 0.55, uDark);
+    // Colours are authored in display (sRGB) space; no colour-space conversion below.
+    vec3 ink = vec3(0.027, 0.035, 0.06);
+    vec3 mucosa = vec3(0.30, 0.13, 0.19) * tex;
+    vec3 col = mucosa * (0.25 + 0.75 * diffuse) * 0.55;
 
     // violet excitation reflected where the beam lands
-    col += vec3(0.42, 0.24, 1.0) * footprint * (0.55 + 0.35 * diffuse);
+    col += vec3(0.36, 0.2, 0.95) * footprint * (0.35 + 0.3 * diffuse);
 
-    // green autofluorescence, lost inside the FVL patch
-    float fl = glow * (1.0 - 0.9 * fvl) * tex;
-    col += vec3(0.16, 0.95, 0.42) * fl * 1.05;
-    col += vec3(0.05, 0.3, 0.12) * fl * fl; // bloom-ish core
+    // green autofluorescence, lost inside the FVL patch (which stays dark)
+    float fl = glow * (1.0 - 0.92 * fvl) * tex;
+    col = mix(col, col * 0.35, fvl * glow);
+    col += vec3(0.12, 0.85, 0.36) * fl;
+    col += vec3(0.1, 0.35, 0.12) * fl * fl;
 
     // "look closer" dashed ring revealed by the passing glow
     float ringR = r + 0.12;
-    float ring = smoothstep(0.018, 0.0, abs(dist - ringR));
+    float ring = smoothstep(0.02, 0.0, abs(dist - ringR));
     float dash = step(0.45, fract(ang * 10.0 / 6.28318));
     float reveal = smoothstep(0.08, 0.45, exp(-max(uBeamX - uFvl.x, 0.0) / 1.6) * step(uFvl.x - 0.2, uBeamX));
-    col += vec3(1.0) * ring * dash * reveal * 0.85;
+    col += vec3(0.95) * ring * dash * reveal * 0.8;
 
-    // fade the surface edges into the background
-    float edge = smoothstep(2.15, 1.55, abs(vXZ.x)) * smoothstep(1.3, 0.8, abs(vXZ.y));
+    // fade the surface edges into the background ink
+    float edge = smoothstep(2.7, 1.9, abs(vXZ.x)) * smoothstep(1.95, 1.1, abs(vXZ.y));
     col = mix(ink, col, edge);
     gl_FragColor = vec4(col, 1.0);
-    #include <colorspace_fragment>
   }
 `;
 
-function Tissue({ reduced, dark }: { reduced: boolean; dark: boolean }) {
+function Tissue({ reduced }: { reduced: boolean }) {
   const mat = useRef<THREE.ShaderMaterial>(null);
   const cone = useRef<THREE.Group>(null);
   const uniforms = useMemo(
@@ -109,28 +109,34 @@ function Tissue({ reduced, dark }: { reduced: boolean; dark: boolean }) {
       uBeamX: { value: -0.4 },
       uBeamZ: { value: 0 },
       uFvl: { value: new THREE.Vector2(0.55, 0.12) },
-      uDark: { value: dark ? 1 : 0 },
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  uniforms.uDark.value = dark ? 1 : 0;
 
   useFrame((state) => {
     const t = reduced ? 3.1 : state.clock.elapsedTime;
     const beamX = -SPAN / 2 + ((t % PERIOD) / PERIOD) * SPAN;
     const beamZ = 0.18 * Math.sin(t * 0.5);
-    uniforms.uTime.value = reduced ? 0 : t;
-    uniforms.uBeamX.value = beamX;
-    uniforms.uBeamZ.value = beamZ;
+    // R3F copies `uniforms` into the material's own objects, so update them through the ref.
+    const u = mat.current?.uniforms;
+    if (u) {
+      u.uTime!.value = reduced ? 0 : t;
+      u.uBeamX!.value = beamX;
+      u.uBeamZ!.value = beamZ;
+    }
     if (cone.current) cone.current.position.set(beamX, 0, beamZ);
   });
 
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[4.4, 2.8, 260, 170]} />
-        <shaderMaterial ref={mat} vertexShader={vertex} fragmentShader={fragment} uniforms={uniforms} />
+        <planeGeometry args={[5.8, 4.2, 300, 220]} />
+        <shaderMaterial
+          ref={mat}
+          vertexShader={vertex}
+          fragmentShader={fragment}
+          uniforms={uniforms}
+        />
       </mesh>
       <group ref={cone}>
         {/* light cone: apex at the LED, base on the tissue */}
@@ -139,7 +145,7 @@ function Tissue({ reduced, dark }: { reduced: boolean; dark: boolean }) {
           <meshBasicMaterial
             color="#7b5cff"
             transparent
-            opacity={dark ? 0.13 : 0.18}
+            opacity={0.1}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             side={THREE.DoubleSide}
@@ -150,7 +156,7 @@ function Tissue({ reduced, dark }: { reduced: boolean; dark: boolean }) {
           <meshBasicMaterial
             color="#9d86ff"
             transparent
-            opacity={dark ? 0.16 : 0.2}
+            opacity={0.12}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             side={THREE.DoubleSide}
@@ -165,16 +171,16 @@ function Tissue({ reduced, dark }: { reduced: boolean; dark: boolean }) {
   );
 }
 
-export default function HeroScene({ reduced, dark }: { reduced: boolean; dark: boolean }) {
+export default function HeroScene({ reduced }: { reduced: boolean }) {
   return (
     <Canvas
-      camera={{ position: [0, 2.15, 2.45], fov: 36 }}
+      camera={{ position: [0, 2.05, 2.3], fov: 38 }}
       dpr={[1, 1.75]}
       frameloop={reduced ? 'demand' : 'always'}
       gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
       onCreated={({ camera }) => camera.lookAt(0, -0.05, 0.05)}
     >
-      <Tissue reduced={reduced} dark={dark} />
+      <Tissue reduced={reduced} />
     </Canvas>
   );
 }

@@ -89,12 +89,13 @@ def shading(rng: np.random.Generator) -> np.ndarray:
 
 
 def stamp(img: np.ndarray) -> np.ndarray:
-    """Visible SYNTHETIC stamp: corner label plus a faint diagonal watermark."""
+    """Visible SYNTHETIC stamp: bottom-left label plus a faint diagonal watermark."""
     out = img.copy()
     overlay = out.copy()
-    cv2.rectangle(overlay, (10, 10), (196, 44), (20, 16, 24), -1)
+    # Bottom-left, like the pipeline's own watermark, so UI labels at the top stay clear.
+    cv2.rectangle(overlay, (10, H - 44), (196, H - 10), (20, 16, 24), -1)
     out = cv2.addWeighted(overlay, 0.65, out, 0.35, 0)
-    cv2.putText(out, "SYNTHETIC", (20, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2,
+    cv2.putText(out, "SYNTHETIC", (20, H - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (255, 255, 255), 2,
                 cv2.LINE_AA)
     wm = np.zeros_like(out)
     cv2.putText(wm, "SYNTHETIC", (int(W * 0.12), int(H * 0.62)), cv2.FONT_HERSHEY_DUPLEX, 2.6,

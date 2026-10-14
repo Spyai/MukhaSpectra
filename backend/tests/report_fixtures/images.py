@@ -52,7 +52,9 @@ def lesion_mask(rng: np.random.Generator, les: LesionDraw) -> np.ndarray:
     return np.clip(soft, 0, 1)
 
 
-def white_light(rng: np.random.Generator, lesions: list[LesionDraw], *, blur: float = 0) -> np.ndarray:
+def white_light(
+    rng: np.random.Generator, lesions: list[LesionDraw], *, blur: float = 0
+) -> np.ndarray:
     base = np.array([0.82, 0.49, 0.50], np.float32)
     img = np.ones((H, W, 3), np.float32) * base
     img += _noise(rng, 45)[..., None] * np.array([0.05, 0.05, 0.05], np.float32)
@@ -83,8 +85,16 @@ def white_light(rng: np.random.Generator, lesions: list[LesionDraw], *, blur: fl
     spec = np.zeros((H, W), np.float32)
     for _ in range(4):
         c = (int(rng.uniform(60, W - 60)), int(rng.uniform(50, H - 50)))
-        cv2.ellipse(spec, c, (int(rng.uniform(3, 8)), int(rng.uniform(2, 5))),
-                    float(rng.uniform(0, 180)), 0, 360, 1.0, -1)
+        cv2.ellipse(
+            spec,
+            c,
+            (int(rng.uniform(3, 8)), int(rng.uniform(2, 5))),
+            float(rng.uniform(0, 180)),
+            0,
+            360,
+            1.0,
+            -1,
+        )
     spec = cv2.GaussianBlur(spec, (0, 0), 1.6)
     img = img * (1 - spec[..., None]) + spec[..., None]
     if blur:
@@ -118,32 +128,44 @@ def autofluorescence(
 
 
 def heatmap_overlay(wl: np.ndarray, af: np.ndarray, threshold: float = 0.75) -> np.ndarray:
+    """AF-loss overlay drawn with the pipeline's own renderer (same colour ramp, opacity and
+    "not analysed" desaturation as real results). Only the well-lit tissue centre counts as
+    analysed, so the dark vignetted rim is not painted as loss."""
+    from mukha_pipeline.af.overlay import render_heatmap_overlay
+
     g = cv2.GaussianBlur(af[..., 1], (0, 0), 2.0)
-    mucosa = _vignette() > 0.5
-    ref = float(np.median(g[mucosa]))
-    rel = g / max(ref, 1e-6)
-    loss = np.clip((threshold - rel) / threshold * 2.4, 0, 1)
-    loss[~mucosa] = 0
-    colour = cv2.applyColorMap((loss * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
-    colour = cv2.cvtColor(colour, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    alpha = np.clip(loss * 1.6, 0, 0.72)[..., None]
-    gray = np.repeat(cv2.cvtColor(wl, cv2.COLOR_RGB2GRAY)[..., None], 3, axis=-1)
-    base = 0.55 * wl + 0.45 * gray
-    out = base * (1 - alpha) + colour * alpha
-    contour_mask = ((rel < threshold) & mucosa).astype(np.uint8)
-    contours, _ = cv2.findContours(contour_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = [c for c in contours if cv2.contourArea(c) > 40]
-    out8 = (np.clip(out, 0, 1) * 255).astype(np.uint8)
-    cv2.drawContours(out8, contours, -1, (255, 255, 255), 1, cv2.LINE_AA)
-    return out8.astype(np.float32) / 255.0
+    lit = (_vignette() > 0.62).astype(np.uint8)
+    analysed = cv2.erode(lit, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))) > 0
+    ref = float(np.median(g[analysed]))
+    rel = (g / max(ref, 1e-6)).astype(np.float32)
+    rel[~analysed] = np.nan
+    below = ((rel < threshold) & analysed).astype(np.uint8)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(below, connectivity=8)
+    keep = np.zeros_like(labels)
+    k = 0
+    for i in np.argsort(-stats[:, cv2.CC_STAT_AREA]):
+        if i == 0 or stats[i, cv2.CC_STAT_AREA] < 150:
+            continue
+        k += 1
+        keep[labels == i] = k
+    out = render_heatmap_overlay(wl, rel, keep, threshold, None)
+    return out.astype(np.float32) / 255.0
 
 
 def to_png(img: np.ndarray, *, synthetic: bool) -> bytes:
     u8 = (np.clip(img, 0, 1) * 255).astype(np.uint8).copy()
     if synthetic:
         for color, thick in (((20, 20, 20), 3), ((255, 255, 255), 1)):
-            cv2.putText(u8, "SYNTHETIC", (10, H - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color,
-                        thick, cv2.LINE_AA)
+            cv2.putText(
+                u8,
+                "SYNTHETIC",
+                (10, H - 12),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                thick,
+                cv2.LINE_AA,
+            )
     buf = io.BytesIO()
     Image.fromarray(u8).save(buf, format="PNG", compress_level=1)
     return buf.getvalue()

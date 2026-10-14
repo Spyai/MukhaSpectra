@@ -57,8 +57,7 @@ export default function HomePage() {
               key={h.key}
               className="card flex gap-4 p-5"
               initial={{ opacity: 0, y: 12 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-40px' }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ type: 'spring', stiffness: 220, damping: 28, delay: i * 0.07 }}
             >
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-soft text-violet-text">
@@ -69,14 +68,20 @@ export default function HomePage() {
                   <span className="mr-1.5 text-fg-subtle tabular">{i + 1}.</span>
                   {t(`home.how.${h.key}Title`)}
                 </p>
-                <p className="mt-1 text-sm leading-relaxed text-fg-muted">{t(`home.how.${h.key}Body`)}</p>
+                <p className="mt-1 text-sm leading-relaxed text-fg-muted">
+                  {t(`home.how.${h.key}Body`)}
+                </p>
               </div>
             </m.li>
           ))}
         </ol>
       </section>
 
-      <section id="demos" className="mx-auto max-w-7xl scroll-mt-28 px-4 pt-12 sm:px-6" aria-labelledby="demo-title">
+      <section
+        id="demos"
+        className="mx-auto max-w-7xl scroll-mt-28 px-4 pt-12 sm:px-6"
+        aria-labelledby="demo-title"
+      >
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 id="demo-title" className="text-2xl font-bold tracking-tight">
@@ -95,8 +100,7 @@ export default function HomePage() {
                 key={d.kind}
                 className="card relative flex flex-col overflow-hidden p-5"
                 initial={{ opacity: 0, y: 14 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-40px' }}
+                animate={{ opacity: 1, y: 0 }}
                 transition={{ type: 'spring', stiffness: 220, damping: 28, delay: i * 0.07 }}
                 whileHover={{ y: -3 }}
                 data-testid={`demo-card-${d.kind}`}
@@ -112,7 +116,9 @@ export default function HomePage() {
                   <SyntheticTag />
                 </div>
                 <h3 className="mt-4 text-lg font-bold">{name}</h3>
-                <p className="mt-1 flex-1 text-sm leading-relaxed text-fg-muted">{t(`home.demo.${d.kind}.body`)}</p>
+                <p className="mt-1 flex-1 text-sm leading-relaxed text-fg-muted">
+                  {t(`home.demo.${d.kind}.body`)}
+                </p>
                 <button
                   type="button"
                   className="btn btn-secondary mt-5 w-full"
@@ -129,8 +135,7 @@ export default function HomePage() {
           <m.article
             className="card relative flex flex-col overflow-hidden border-violet/40 bg-[linear-gradient(160deg,var(--violet-soft),transparent_60%)] p-5"
             initial={{ opacity: 0, y: 14 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: '-40px' }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 220, damping: 28, delay: 0.21 }}
             whileHover={{ y: -3 }}
           >
@@ -138,7 +143,9 @@ export default function HomePage() {
               <Icon name="upload" size={20} />
             </span>
             <h3 className="mt-4 text-lg font-bold">{t('home.uploadCard.title')}</h3>
-            <p className="mt-1 flex-1 text-sm leading-relaxed text-fg-muted">{t('home.uploadCard.body')}</p>
+            <p className="mt-1 flex-1 text-sm leading-relaxed text-fg-muted">
+              {t('home.uploadCard.body')}
+            </p>
             <Link to="/upload" className="btn btn-primary mt-5 w-full">
               {t('home.uploadCard.cta')}
               <Icon name="arrowRight" size={18} />
@@ -147,7 +154,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6" aria-labelledby="recent-title">
+      <section
+        className="mx-auto max-w-7xl px-4 pt-12 pb-16 sm:px-6"
+        aria-labelledby="recent-title"
+      >
         <div className="flex items-end justify-between gap-3">
           <h2 id="recent-title" className="text-2xl font-bold tracking-tight">
             {t('home.recentTitle')}

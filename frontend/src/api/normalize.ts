@@ -17,10 +17,12 @@ import type {
 type Json = Record<string, unknown>;
 
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
-const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const num = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 const RISK = new Set(['LOW', 'MODERATE', 'HIGH', 'INCONCLUSIVE']);
-const risk = (v: unknown): RiskLevel | undefined => (typeof v === 'string' && RISK.has(v) ? (v as RiskLevel) : undefined);
+const risk = (v: unknown): RiskLevel | undefined =>
+  typeof v === 'string' && RISK.has(v) ? (v as RiskLevel) : undefined;
 
 export function isScreeningResult(v: unknown): v is ScreeningResult {
   return isObj(v) && typeof v.result_id === 'string' && isObj(v.triage) && Array.isArray(v.sites);
@@ -67,8 +69,12 @@ export function normalizeSiteCatalogue(raw: unknown): SiteCatalogue {
   if (Array.isArray(vb) && vb.length === 4 && vb.every((n) => typeof n === 'number')) {
     viewBox = vb as SiteCatalogue['viewBox'];
   } else if (typeof vb === 'string') {
-    const parts = vb.trim().split(/[\s,]+/).map(Number);
-    if (parts.length === 4 && parts.every(Number.isFinite)) viewBox = parts as SiteCatalogue['viewBox'];
+    const parts = vb
+      .trim()
+      .split(/[\s,]+/)
+      .map(Number);
+    if (parts.length === 4 && parts.every(Number.isFinite))
+      viewBox = parts as SiteCatalogue['viewBox'];
   }
   return { viewBox, sites };
 }
@@ -149,15 +155,21 @@ export function normalizeScreeningList(raw: unknown): ScreeningSummary[] {
         risk(item.overall_risk_level) ?? risk(item.risk_level) ?? latest?.triage.overall_risk_level,
       synthetic: typeof item.synthetic === 'boolean' ? item.synthetic : latest?.synthetic,
       pseudonymous_id:
-        str(item.pseudonymous_id) ?? str(patient?.pseudonymous_id) ?? latest?.patient.pseudonymous_id,
-      age_years: num(item.age_years) ?? num(patient?.age_years) ?? latest?.patient.age_years ?? null,
+        str(item.pseudonymous_id) ??
+        str(patient?.pseudonymous_id) ??
+        latest?.patient.pseudonymous_id,
+      age_years:
+        num(item.age_years) ?? num(patient?.age_years) ?? latest?.patient.age_years ?? null,
       sex: (str(item.sex) ?? str(patient?.sex) ?? latest?.patient.sex) as ScreeningSummary['sex'],
-      latest_version: num(item.latest_version) ?? num(item.result_version) ?? latest?.result_version,
+      latest_version:
+        num(item.latest_version) ??
+        num(item.latest_result_version) ??
+        num(item.result_version) ??
+        latest?.result_version,
       sites: sitesRaw
-        ? sitesRaw
-            .map((s) => (isObj(s) ? s.site : s))
-            .filter(isOralSite)
+        ? sitesRaw.map((s) => (isObj(s) ? s.site : s)).filter(isOralSite)
         : latest?.sites.map((s) => s.site),
+      site_count: num(item.site_count) ?? (sitesRaw ? sitesRaw.length : latest?.sites.length),
     });
   }
   return out.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));

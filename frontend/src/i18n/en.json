@@ -18,7 +18,8 @@
     "footer": "MukhaSpectra · SparkyAI Private Limited · research prototype",
     "notFoundTitle": "Page not found",
     "notFoundBody": "That page does not exist. Go back to the start.",
-    "backHome": "Back to home"
+    "backHome": "Back to home",
+    "versionLine": "Software {{software}} · pipeline {{pipeline}} · schema {{schema}}"
   },
   "banner": {
     "prototype": "Research prototype — not for clinical use",
@@ -541,7 +542,13 @@
       "former": "former",
       "priorLesion": "Previous oral lesion",
       "priorCancer": "Previous oral cancer",
-      "none": "None reported"
+      "none": "None reported",
+      "alcoholFrequency": {
+        "never": "never",
+        "occasional": "occasional",
+        "weekly": "weekly",
+        "daily": "daily"
+      }
     }
   },
   "qc": {

@@ -2,12 +2,18 @@ import { NavLink, Outlet, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef } from 'react';
 import { IS_MOCK } from '../../api/client';
+import { useVersionInfo } from '../../api/queries';
 import { useTheme } from '../../lib/theme';
 import { Icon, type IconName } from '../ui/Icon';
 import { LogoMark } from './Logo';
 import { PrototypeBanner } from './PrototypeBanner';
 
-const NAV: Array<{ to: string; key: 'home' | 'upload' | 'screenings'; icon: IconName; end?: boolean }> = [
+const NAV: Array<{
+  to: string;
+  key: 'home' | 'upload' | 'screenings';
+  icon: IconName;
+  end?: boolean;
+}> = [
   { to: '/', key: 'home', icon: 'glow', end: true },
   { to: '/upload', key: 'upload', icon: 'upload' },
   { to: '/screenings', key: 'screenings', icon: 'history' },
@@ -16,6 +22,7 @@ const NAV: Array<{ to: string; key: 'home' | 'upload' | 'screenings'; icon: Icon
 export function AppShell() {
   const { t } = useTranslation();
   const [theme, toggleTheme] = useTheme();
+  const version = useVersionInfo();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
   const first = useRef(true);
@@ -39,13 +46,19 @@ export function AppShell() {
         {t('app.skipToContent')}
       </a>
       <PrototypeBanner />
-      <header className="sticky top-8 z-30 border-b border-line/70 bg-bg/80 backdrop-blur-xl supports-[backdrop-filter]:bg-bg/65">
+      <header className="sticky top-8 z-30 border-b border-line/70 bg-bg/95 backdrop-blur-xl supports-[backdrop-filter]:bg-bg/85">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6">
-          <NavLink to="/" className="flex items-center gap-2.5 rounded-lg pr-1" aria-label={t('app.name')}>
+          <NavLink
+            to="/"
+            className="flex items-center gap-2.5 rounded-lg pr-1"
+            aria-label={t('app.name')}
+          >
             <LogoMark />
             <span className="flex flex-col leading-none">
               <span className="text-[15px] font-bold tracking-tight">{t('app.name')}</span>
-              <span className="mt-0.5 text-[11px] font-medium text-fg-subtle">{t('app.consoleName')}</span>
+              <span className="mt-0.5 text-[11px] font-medium text-fg-subtle">
+                {t('app.consoleName')}
+              </span>
             </span>
           </NavLink>
           <nav aria-label={t('app.nav.label')} className="ml-4 hidden items-center gap-1 sm:flex">
@@ -56,7 +69,9 @@ export function AppShell() {
                 end={item.end}
                 className={({ isActive }) =>
                   `rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
-                    isActive ? 'bg-violet-soft text-violet-text' : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
+                    isActive
+                      ? 'bg-violet-soft text-violet-text'
+                      : 'text-fg-muted hover:bg-surface-2 hover:text-fg'
                   }`
                 }
               >
@@ -94,6 +109,15 @@ export function AppShell() {
 
       <footer className="mb-16 border-t border-line px-4 py-6 text-center text-xs text-fg-subtle sm:mb-0">
         <p>{t('app.footer')}</p>
+        {version.data?.software ? (
+          <p className="mt-1 tabular" data-testid="app-version">
+            {t('app.versionLine', {
+              software: version.data.software,
+              pipeline: version.data.pipeline ?? '—',
+              schema: version.data.schema_version ?? '—',
+            })}
+          </p>
+        ) : null}
       </footer>
 
       <nav

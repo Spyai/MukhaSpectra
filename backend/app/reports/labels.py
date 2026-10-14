@@ -7,7 +7,7 @@ easy to audit in one place. Nothing here may claim accuracy, sensitivity or spec
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from mukha_pipeline.schema.models import (
     CalibrationStatus,
@@ -271,17 +271,38 @@ def fmt_date(dt: datetime | None) -> str:
     return dt.strftime("%d %b %Y") if dt is not None else DASH
 
 
-def timeline_text(days: int | None) -> str:
+SAME_DAY_TEXT = "Same day (at the screening visit)"
+
+
+def timeline_text(days: int | None, start: datetime | None = None) -> str:
+    """Plain-words timeline; with ``start`` the due date is added ("Within 2 weeks — by …")."""
     if days is None:
         return "No fixed timeline"
     if days == 0:
-        return "Today — before the patient leaves"
+        return SAME_DAY_TEXT
     if days >= 330 and days % 365 < 31:
         n_years = max(1, round(days / 365))
-        return "In 12 months" if n_years == 1 else f"In {n_years * 12} months"
-    if days % 7 == 0 and days >= 14:
-        return f"Within {days // 7} weeks ({days} days)"
-    return f"Within {days} day{'s' if days != 1 else ''}"
+        short = long = "In 12 months" if n_years == 1 else f"In {n_years * 12} months"
+    elif days % 7 == 0 and days >= 14:
+        short = f"Within {days // 7} weeks"
+        long = f"{short} ({days} days)"
+    else:
+        short = long = f"Within {days} day{'s' if days != 1 else ''}"
+    if start is not None:
+        return f"{short} — by {fmt_date(start + timedelta(days=days))}"
+    return long
+
+
+def mask_id(value: str | None, keep: int = 4, mask: str = "X") -> str | None:
+    """Mask an external ID (ABHA / Aadhaar-linked numbers), keeping its last ``keep`` letters
+    or digits and every separator: "91-2345-6789-0123" -> "XX-XXXX-XXXX-0123"."""
+    if not value:
+        return value
+    positions = [i for i, ch in enumerate(value) if ch.isalnum()]
+    n = len(positions)
+    show = keep if n > keep else max(0, n - 2)
+    hidden = set(positions[: n - show])
+    return "".join(mask if i in hidden else ch for i, ch in enumerate(value))
 
 
 # --------------------------------------------------------------------------------------------
@@ -300,7 +321,7 @@ def position_text(point: NormPoint | None) -> str:
     row = "upper" if point.y < 1 / 3 else ("lower" if point.y > 2 / 3 else "middle")
     col = "left" if point.x < 1 / 3 else ("right" if point.x > 2 / 3 else "centre")
     where = "centre" if (row, col) == ("middle", "centre") else f"{row} {col}"
-    return f"{where} of image"
+    return f"In photo: {where}"
 
 
 def model_status_text(model: ModelInfo) -> str:
@@ -324,7 +345,7 @@ def risk_factor_groups(rf: RiskFactors) -> dict[str, list[str]]:
     if st.uses or st.former:
         kinds = [_SMOKELESS_TEXT.get(t, t) for t in st.types] or ["Smokeless tobacco"]
         phrase = " / ".join(kinds)
-        detail = ", ".join(p for p in (years(st.years), _per_day(st.per_day)) if p)
+        detail = _habit_detail(st.years, st.per_day)
         if detail:
             phrase += f" {detail}"
         habits.append(f"former {phrase.lower()}" if (st.former and not st.uses) else phrase)
@@ -333,7 +354,7 @@ def risk_factor_groups(rf: RiskFactors) -> dict[str, list[str]]:
     if sm.uses or sm.former:
         kinds = [_SMOKING_TEXT.get(t, t) for t in sm.types] or ["smoking"]
         phrase = " / ".join(kinds)
-        detail = ", ".join(p for p in (years(sm.years), _per_day(sm.per_day)) if p)
+        detail = _habit_detail(sm.years, sm.per_day)
         if detail:
             phrase += f" {detail}"
         habits.append(f"former {phrase}" if (sm.former and not sm.uses) else phrase)
@@ -341,7 +362,7 @@ def risk_factor_groups(rf: RiskFactors) -> dict[str, list[str]]:
     an = rf.areca_nut
     if an.uses or an.former:
         phrase = "areca nut (supari)"
-        detail = ", ".join(p for p in (years(an.years), _per_day(an.per_day)) if p)
+        detail = _habit_detail(an.years, an.per_day)
         if detail:
             phrase += f" {detail}"
         habits.append(f"former {phrase}" if (an.former and not an.uses) else phrase)
@@ -370,9 +391,10 @@ def risk_factor_groups(rf: RiskFactors) -> dict[str, list[str]]:
 
 
 def risk_factor_summary(rf: RiskFactors) -> str:
-    """One line, e.g. "Gutka 20 y, bidi 15 y, alcohol daily; non-healing ulcer > 2 weeks"."""
+    """One line, e.g. "Gutka 20 y (6/day) · bidi 15 y · alcohol daily; non-healing ulcer > 2
+    weeks" (items joined by " · ", groups by "; ")."""
     groups = risk_factor_groups(rf)
-    parts = [", ".join(items) for items in groups.values() if items]
+    parts = [" · ".join(items) for items in groups.values() if items]
     if not parts:
         return "No risk factors or symptoms reported"
     text = "; ".join(parts)
@@ -383,3 +405,11 @@ def _per_day(value: float | None) -> str:
     if not _finite(value):
         return ""
     return f"{value:g}/day"
+
+
+def _habit_detail(years_used: float | None, per_day: float | None) -> str:
+    """ "20 y (6/day)", "20 y", "(6/day)" or ""."""
+    y, d = years(years_used), _per_day(per_day)
+    if y and d:
+        return f"{y} ({d})"
+    return y or (f"({d})" if d else "")

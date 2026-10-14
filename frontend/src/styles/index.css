@@ -16,7 +16,7 @@
   --surface-2: oklch(0.962 0.008 268);
   --surface-3: oklch(0.93 0.012 268);
   --line: oklch(0.885 0.012 268);
-  --line-strong: oklch(0.78 0.02 268);
+  --line-strong: oklch(0.63 0.025 268);
   --fg: oklch(0.21 0.03 268);
   --fg-muted: oklch(0.4 0.03 268);
   --fg-subtle: oklch(0.49 0.03 268);
@@ -43,7 +43,7 @@
   --ok: oklch(0.47 0.1 160);
   --shadow: 0 1px 2px oklch(0.2 0.03 268 / 0.06), 0 8px 28px -12px oklch(0.2 0.03 268 / 0.18);
   --image-well: oklch(0.17 0.02 268);
-  --synthetic: oklch(0.55 0.17 75);
+  --synthetic: oklch(0.84 0.15 82);
   --synthetic-ink: oklch(0.22 0.04 70);
 }
 
@@ -54,7 +54,7 @@
   --surface-2: oklch(0.225 0.03 268);
   --surface-3: oklch(0.27 0.032 268);
   --line: oklch(0.3 0.03 268);
-  --line-strong: oklch(0.42 0.035 268);
+  --line-strong: oklch(0.53 0.035 268);
   --fg: oklch(0.96 0.008 268);
   --fg-muted: oklch(0.8 0.018 268);
   --fg-subtle: oklch(0.7 0.022 268);
@@ -86,8 +86,9 @@
 }
 
 @theme inline {
-  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    Roboto, 'Noto Sans', sans-serif;
+  --font-sans:
+    'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Noto Sans', sans-serif;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
@@ -245,14 +246,14 @@
     width: 100%;
     min-height: 2.75rem;
     border-radius: 0.75rem;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     background: var(--surface-2);
     color: var(--fg);
     padding: 0.5rem 0.75rem;
     font-size: 1rem;
   }
   .input:hover {
-    border-color: var(--line-strong);
+    border-color: var(--fg-subtle);
   }
   .input[aria-invalid='true'] {
     border-color: var(--danger);

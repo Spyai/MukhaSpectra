@@ -246,14 +246,44 @@ function stages(sites: OralSite[], spectral: boolean, failed: OralSite[] = []): 
     const bad = failed.includes(site);
     out.push({ stage: 'decode', duration_ms: 38 + i * 3, status: 'ok', site });
     out.push({ stage: 'qc', duration_ms: base, status: bad ? 'failed' : 'ok', site });
-    out.push({ stage: 'calibration', duration_ms: 24 + i * 2, status: bad ? 'skipped' : 'ok', site });
-    out.push({ stage: 'registration', duration_ms: bad ? 0 : 412 + i * 37, status: bad ? 'skipped' : 'ok', site });
-    out.push({ stage: 'segmentation', duration_ms: bad ? 0 : 131 + i * 11, status: bad ? 'skipped' : 'ok', site });
-    out.push({ stage: 'af_analysis', duration_ms: bad ? 0 : 286 + i * 23, status: bad ? 'skipped' : 'ok', site });
+    out.push({
+      stage: 'calibration',
+      duration_ms: 24 + i * 2,
+      status: bad ? 'skipped' : 'ok',
+      site,
+    });
+    out.push({
+      stage: 'registration',
+      duration_ms: bad ? 0 : 412 + i * 37,
+      status: bad ? 'skipped' : 'ok',
+      site,
+    });
+    out.push({
+      stage: 'segmentation',
+      duration_ms: bad ? 0 : 131 + i * 11,
+      status: bad ? 'skipped' : 'ok',
+      site,
+    });
+    out.push({
+      stage: 'af_analysis',
+      duration_ms: bad ? 0 : 286 + i * 23,
+      status: bad ? 'skipped' : 'ok',
+      site,
+    });
     out.push({ stage: 'wl_classifier', duration_ms: 1.2, status: 'skipped', site });
-    out.push({ stage: 'artifacts', duration_ms: bad ? 0 : 164 + i * 9, status: bad ? 'skipped' : 'ok', site });
+    out.push({
+      stage: 'artifacts',
+      duration_ms: bad ? 0 : 164 + i * 9,
+      status: bad ? 'skipped' : 'ok',
+      site,
+    });
   });
-  out.push({ stage: 'spectral', duration_ms: spectral ? 46 : 0, status: spectral ? 'ok' : 'skipped', site: null });
+  out.push({
+    stage: 'spectral',
+    duration_ms: spectral ? 46 : 0,
+    status: spectral ? 'ok' : 'skipped',
+    site: null,
+  });
   out.push({ stage: 'triage', duration_ms: 9.4, status: 'ok', site: null });
   return out;
 }
@@ -308,8 +338,22 @@ const highTongueRight: SiteResult = {
   },
   diascopy: 'not_done',
   captures: [
-    capture('lateral_tongue_right', 'white_light', 'cap-ltr-wl', qc(0.93, [issue('glare_minor', 'warning', 'glare_fraction', 0.021, 0.015)]), 'high/lateral_tongue_right/wl.jpg', HIGH_AT),
-    capture('lateral_tongue_right', 'autofluorescence', 'cap-ltr-af', qc(0.96), 'high/lateral_tongue_right/af.jpg', HIGH_AT),
+    capture(
+      'lateral_tongue_right',
+      'white_light',
+      'cap-ltr-wl',
+      qc(0.93, [issue('glare_minor', 'warning', 'glare_fraction', 0.021, 0.015)]),
+      'high/lateral_tongue_right/wl.jpg',
+      HIGH_AT,
+    ),
+    capture(
+      'lateral_tongue_right',
+      'autofluorescence',
+      'cap-ltr-af',
+      qc(0.96),
+      'high/lateral_tongue_right/af.jpg',
+      HIGH_AT,
+    ),
     capture('lateral_tongue_right', 'dark_frame', 'cap-ltr-dark', qc(1), null, HIGH_AT),
   ],
   qc: qc(0.93, [issue('glare_minor', 'warning', 'glare_fraction', 0.021, 0.015)]),
@@ -398,13 +442,33 @@ const highTongueLeft: SiteResult = {
   visual_flag: { lesion_seen: false, appearance: [], description: null },
   diascopy: 'not_done',
   captures: [
-    capture('lateral_tongue_left', 'white_light', 'cap-ltl-wl', qc(0.97), 'high/lateral_tongue_left/wl.jpg', HIGH_AT),
-    capture('lateral_tongue_left', 'autofluorescence', 'cap-ltl-af', qc(0.95), 'high/lateral_tongue_left/af.jpg', HIGH_AT),
+    capture(
+      'lateral_tongue_left',
+      'white_light',
+      'cap-ltl-wl',
+      qc(0.97),
+      'high/lateral_tongue_left/wl.jpg',
+      HIGH_AT,
+    ),
+    capture(
+      'lateral_tongue_left',
+      'autofluorescence',
+      'cap-ltl-af',
+      qc(0.95),
+      'high/lateral_tongue_left/af.jpg',
+      HIGH_AT,
+    ),
   ],
   qc: qc(0.95, [issue('no_dark_frame', 'warning')]),
   analysis_status: 'analysed',
   calibration: CALIBRATED,
-  registration: { method: 'ecc_affine', confidence: 0.94, passed: true, warp_matrix: IDENTITY_WARP, note: null },
+  registration: {
+    method: 'ecc_affine',
+    confidence: 0.94,
+    passed: true,
+    warp_matrix: IDENTITY_WARP,
+    note: null,
+  },
   segmentation: {
     method: 'classical_hsv_lab',
     version: '1.0.0',
@@ -416,7 +480,12 @@ const highTongueLeft: SiteResult = {
   },
   af: {
     status: 'ok',
-    reference: { type: 'in_image_auto', reference_site: null, reference_green: 0.412, note: 'Reference site for the right lateral tongue.' },
+    reference: {
+      type: 'in_image_auto',
+      reference_site: null,
+      reference_green: 0.412,
+      note: 'Reference site for the right lateral tongue.',
+    },
     fvl_threshold: 0.75,
     min_region_area_px: 150,
     site_medians: { green: 0.408, gr_ratio: 4.31, af_index: 0.405, relative_af: 0.99 },
@@ -454,8 +523,22 @@ const highBuccalLeft: SiteResult = {
   },
   diascopy: 'not_done',
   captures: [
-    capture('buccal_mucosa_left', 'white_light', 'cap-bml-wl', qc(0.95), 'high/buccal_mucosa_left/wl.jpg', HIGH_AT),
-    capture('buccal_mucosa_left', 'autofluorescence', 'cap-bml-af', qc(0.92), 'high/buccal_mucosa_left/af.jpg', HIGH_AT),
+    capture(
+      'buccal_mucosa_left',
+      'white_light',
+      'cap-bml-wl',
+      qc(0.95),
+      'high/buccal_mucosa_left/wl.jpg',
+      HIGH_AT,
+    ),
+    capture(
+      'buccal_mucosa_left',
+      'autofluorescence',
+      'cap-bml-af',
+      qc(0.92),
+      'high/buccal_mucosa_left/af.jpg',
+      HIGH_AT,
+    ),
     capture('buccal_mucosa_left', 'dark_frame', 'cap-bml-dark', qc(1), null, HIGH_AT),
   ],
   qc: qc(0.92),
@@ -556,9 +639,30 @@ const highGingiva: SiteResult = {
   visual_flag: { lesion_seen: false, appearance: [], description: null },
   diascopy: 'not_done',
   captures: [
-    capture('lower_gingiva', 'white_light', 'cap-lg-wl', qc(0.2, gingivaWlIssues, { laplacian_var: 11.2 }), 'high/lower_gingiva/wl.jpg', HIGH_AT),
-    capture('lower_gingiva', 'autofluorescence', 'cap-lg-af', qc(0.5, gingivaAfIssues, { green_p90: 0.07 }), 'high/lower_gingiva/af.jpg', HIGH_AT),
-    capture('lower_gingiva', 'dark_frame', 'cap-lg-dark', qc(0.85, [issue('ambient_light_minor', 'warning', 'dark_mean', 0.041, 0.03)]), null, HIGH_AT),
+    capture(
+      'lower_gingiva',
+      'white_light',
+      'cap-lg-wl',
+      qc(0.2, gingivaWlIssues, { laplacian_var: 11.2 }),
+      'high/lower_gingiva/wl.jpg',
+      HIGH_AT,
+    ),
+    capture(
+      'lower_gingiva',
+      'autofluorescence',
+      'cap-lg-af',
+      qc(0.5, gingivaAfIssues, { green_p90: 0.07 }),
+      'high/lower_gingiva/af.jpg',
+      HIGH_AT,
+    ),
+    capture(
+      'lower_gingiva',
+      'dark_frame',
+      'cap-lg-dark',
+      qc(0.85, [issue('ambient_light_minor', 'warning', 'dark_mean', 0.041, 0.03)]),
+      null,
+      HIGH_AT,
+    ),
   ],
   qc: qc(0.12, [...gingivaWlIssues, ...gingivaAfIssues]),
   analysis_status: 'inconclusive_qc_failed',
@@ -617,14 +721,35 @@ const highSpectral: ScreeningResult['spectral_readings'] = [
     capture: SPECTRAL_CAPTURE('lateral_tongue_right', 'cap-sp-l1'),
     n_readings: 5,
     signal_type: 'reflectance',
-    calibration: { status: 'calibrated', calibration_id: 'spcal-sim-0412', expires_at: '2026-10-13T08:00:00Z', note: null },
+    calibration: {
+      status: 'calibrated',
+      calibration_id: 'spcal-sim-0412',
+      expires_at: '2026-10-13T08:00:00Z',
+      note: null,
+    },
     values: {
-      F1_415: 0.162, F2_445: 0.236, F3_480: 0.289, F4_515: 0.318, F5_555: 0.262,
-      F6_590: 0.344, F7_630: 0.497, F8_680: 0.541, CLEAR: 0.402, NIR: 0.588,
+      F1_415: 0.162,
+      F2_445: 0.236,
+      F3_480: 0.289,
+      F4_515: 0.318,
+      F5_555: 0.262,
+      F6_590: 0.344,
+      F7_630: 0.497,
+      F8_680: 0.541,
+      CLEAR: 0.402,
+      NIR: 0.588,
     },
     values_std: {
-      F1_415: 0.011, F2_445: 0.012, F3_480: 0.013, F4_515: 0.012, F5_555: 0.014,
-      F6_590: 0.015, F7_630: 0.016, F8_680: 0.017, CLEAR: 0.012, NIR: 0.019,
+      F1_415: 0.011,
+      F2_445: 0.012,
+      F3_480: 0.013,
+      F4_515: 0.012,
+      F5_555: 0.014,
+      F6_590: 0.015,
+      F7_630: 0.016,
+      F8_680: 0.017,
+      CLEAR: 0.012,
+      NIR: 0.019,
     },
     qc: qc(0.94),
     features: {
@@ -666,14 +791,35 @@ const highSpectral: ScreeningResult['spectral_readings'] = [
     capture: SPECTRAL_CAPTURE('lateral_tongue_left', 'cap-sp-r1'),
     n_readings: 5,
     signal_type: 'reflectance',
-    calibration: { status: 'calibrated', calibration_id: 'spcal-sim-0412', expires_at: '2026-10-13T08:00:00Z', note: null },
+    calibration: {
+      status: 'calibrated',
+      calibration_id: 'spcal-sim-0412',
+      expires_at: '2026-10-13T08:00:00Z',
+      note: null,
+    },
     values: {
-      F1_415: 0.188, F2_445: 0.262, F3_480: 0.311, F4_515: 0.342, F5_555: 0.318,
-      F6_590: 0.392, F7_630: 0.532, F8_680: 0.567, CLEAR: 0.441, NIR: 0.602,
+      F1_415: 0.188,
+      F2_445: 0.262,
+      F3_480: 0.311,
+      F4_515: 0.342,
+      F5_555: 0.318,
+      F6_590: 0.392,
+      F7_630: 0.532,
+      F8_680: 0.567,
+      CLEAR: 0.441,
+      NIR: 0.602,
     },
     values_std: {
-      F1_415: 0.009, F2_445: 0.01, F3_480: 0.011, F4_515: 0.011, F5_555: 0.012,
-      F6_590: 0.012, F7_630: 0.013, F8_680: 0.014, CLEAR: 0.01, NIR: 0.015,
+      F1_415: 0.009,
+      F2_445: 0.01,
+      F3_480: 0.011,
+      F4_515: 0.011,
+      F5_555: 0.012,
+      F6_590: 0.012,
+      F7_630: 0.013,
+      F8_680: 0.014,
+      CLEAR: 0.01,
+      NIR: 0.015,
     },
     qc: qc(0.97),
     features: {
@@ -692,38 +838,118 @@ const highSpectral: ScreeningResult['spectral_readings'] = [
 ];
 
 const HIGH_PATIENT_FACTORS: ContributingFactor[] = [
-  f('patient.smokeless_tobacco', 'Uses smokeless tobacco (gutka) daily', 'clinical_history', 1.0, '20 years, about 6 sachets a day'),
+  f(
+    'patient.smokeless_tobacco',
+    'Uses smokeless tobacco (gutka) daily',
+    'clinical_history',
+    1.0,
+    '20 years, about 6 sachets a day',
+  ),
   f('patient.areca_nut', 'Chews areca nut', 'clinical_history', 0.75),
   f('patient.age_40_plus', 'Age 40 or older', 'clinical_history', 0.5),
   f('patient.smoking_former', 'Former bidi smoker (half points)', 'clinical_history', 0.25),
 ];
 
 const L1_FACTORS: ContributingFactor[] = [
-  f('af.fvl_present', 'Dark area under violet light (glow loss)', 'autofluorescence', 1.5, 'Region r1'),
-  f('af.depth', 'Glow at 46% of the other side — well below the 75% threshold', 'autofluorescence', 2.0, 'Mean relative AF 0.455; 0.75 points per 0.1 below threshold, max 2.0'),
+  f(
+    'af.fvl_present',
+    'Dark area under violet light (glow loss)',
+    'autofluorescence',
+    1.5,
+    'Region r1',
+  ),
+  f(
+    'af.depth',
+    'Glow at 46% of the other side — well below the 75% threshold',
+    'autofluorescence',
+    2.0,
+    'Mean relative AF 0.455; 0.75 points per 0.1 below threshold, max 2.0',
+  ),
   f('af.area', 'Dark area covers 7% of the visible tissue', 'autofluorescence', 0.5),
   f('af.border', 'Irregular border', 'autofluorescence', 0.5, 'Border irregularity 0.42 (≥ 0.35)'),
-  f('af.contrast', 'Clearly darker than the surrounding tissue', 'autofluorescence', 0.5, 'Contrast 2.14 (≥ 1.4)'),
-  f('site.high_risk', 'Common site for oral lesions in tobacco users (glow points ×1.15)', 'site', 0.75),
-  f('spectral.hb_dip', 'Deeper haemoglobin dip than the other side', 'spectral', 0.5, 'Δ 0.047 (≥ 0.03)'),
-  f('spectral.ratio_555_630', 'Lower 555/630 nm ratio than the other side', 'spectral', 0.5, 'Δ −0.071 (≤ −0.05)'),
+  f(
+    'af.contrast',
+    'Clearly darker than the surrounding tissue',
+    'autofluorescence',
+    0.5,
+    'Contrast 2.14 (≥ 1.4)',
+  ),
+  f(
+    'site.high_risk',
+    'Common site for oral lesions in tobacco users (glow points ×1.15)',
+    'site',
+    0.75,
+  ),
+  f(
+    'spectral.hb_dip',
+    'Deeper haemoglobin dip than the other side',
+    'spectral',
+    0.5,
+    'Δ 0.047 (≥ 0.03)',
+  ),
+  f(
+    'spectral.ratio_555_630',
+    'Lower 555/630 nm ratio than the other side',
+    'spectral',
+    0.5,
+    'Δ −0.071 (≤ −0.05)',
+  ),
   f('visual.white_patch', 'White patch seen by the health worker', 'clinical_visual', 2.0),
 ];
 
 const L2_FACTORS: ContributingFactor[] = [
-  f('af.fvl_present', 'Dark area under violet light (glow loss)', 'autofluorescence', 1.5, 'Region r1'),
-  f('af.depth', 'Glow at 65% of reference — below the 75% threshold', 'autofluorescence', 0.75, 'Mean relative AF 0.653'),
+  f(
+    'af.fvl_present',
+    'Dark area under violet light (glow loss)',
+    'autofluorescence',
+    1.5,
+    'Region r1',
+  ),
+  f(
+    'af.depth',
+    'Glow at 65% of reference — below the 75% threshold',
+    'autofluorescence',
+    0.75,
+    'Mean relative AF 0.653',
+  ),
   f('af.area', 'Dark area covers 6% of the visible tissue', 'autofluorescence', 0.5),
-  f('af.contrast', 'Darker than the surrounding tissue', 'autofluorescence', 0.5, 'Contrast 1.46 (≥ 1.4)'),
-  f('af.reference_in_image', 'Reference from the same photo, not the other cheek (×0.75)', 'autofluorescence', -0.81),
-  f('af.confounder_porphyrin', 'Red porphyrin glow (plaque) overlaps 31% of the area', 'autofluorescence', -0.45, 'Glow points ×0.81'),
-  f('site.high_risk', 'Common site for oral lesions in tobacco users (glow points ×1.15)', 'site', 0.3),
+  f(
+    'af.contrast',
+    'Darker than the surrounding tissue',
+    'autofluorescence',
+    0.5,
+    'Contrast 1.46 (≥ 1.4)',
+  ),
+  f(
+    'af.reference_in_image',
+    'Reference from the same photo, not the other cheek (×0.75)',
+    'autofluorescence',
+    -0.81,
+  ),
+  f(
+    'af.confounder_porphyrin',
+    'Red porphyrin glow (plaque) overlaps 31% of the area',
+    'autofluorescence',
+    -0.45,
+    'Glow points ×0.81',
+  ),
+  f(
+    'site.high_risk',
+    'Common site for oral lesions in tobacco users (glow points ×1.15)',
+    'site',
+    0.3,
+  ),
   f('visual.other', 'Change seen by the health worker', 'clinical_visual', 1.0),
 ];
 
-const sum = (fs: ContributingFactor[]) => Math.round(fs.reduce((a, b) => a + b.points, 0) * 100) / 100;
+const sum = (fs: ContributingFactor[]) =>
+  Math.round(fs.reduce((a, b) => a + b.points, 0) * 100) / 100;
 
-const highStages = stages(['lateral_tongue_right', 'lateral_tongue_left', 'buccal_mucosa_left', 'lower_gingiva'], true, ['lower_gingiva']);
+const highStages = stages(
+  ['lateral_tongue_right', 'lateral_tongue_left', 'buccal_mucosa_left', 'lower_gingiva'],
+  true,
+  ['lower_gingiva'],
+);
 
 export const highResult: ScreeningResult = {
   schema_version: '1.0.0',
@@ -810,8 +1036,20 @@ export const highResult: ScreeningResult = {
     thresholds: { moderate: 3.0, high: 6.0 },
     contributing_factors: [...L1_FACTORS, ...HIGH_PATIENT_FACTORS],
     overrides_applied: [
-      f('symptom.non_healing_ulcer', 'Non-healing ulcer for more than 2 weeks', 'override', 0, 'Floor: HIGH'),
-      f('visual.white_patch', 'White patch seen by the health worker', 'override', 0, 'Floor: MODERATE'),
+      f(
+        'symptom.non_healing_ulcer',
+        'Non-healing ulcer for more than 2 weeks',
+        'override',
+        0,
+        'Floor: HIGH',
+      ),
+      f(
+        'visual.white_patch',
+        'White patch seen by the health worker',
+        'override',
+        0,
+        'Floor: MODERATE',
+      ),
     ],
     recommended_action: ACTIONS.HIGH,
     highest_risk_lesion_id: 'L1',
@@ -834,11 +1072,30 @@ export const highResult: ScreeningResult = {
   },
   calibration_status: 'calibrated',
   limitations: [
-    { code: 'wl_model_unavailable', message: 'White-light classifier not available; white-light photos were not scored by a model.' },
-    { code: 'site_qc_failed', message: 'Lower gingiva could not be analysed because of image quality. Retake it or examine it clinically.' },
-    { code: 'reference_in_image', message: 'Left buccal mucosa used healthy tissue in the same photo as its reference because the right cheek was not captured.' },
-    { code: 'mm_scale_unknown', message: 'No millimetre scale was available, so areas are reported as a share of visible tissue.' },
-    { code: 'rules_unvalidated', message: 'Triage rules are a baseline heuristic and have not been clinically validated.' },
+    {
+      code: 'wl_model_unavailable',
+      message:
+        'White-light classifier not available; white-light photos were not scored by a model.',
+    },
+    {
+      code: 'site_qc_failed',
+      message:
+        'Lower gingiva could not be analysed because of image quality. Retake it or examine it clinically.',
+    },
+    {
+      code: 'reference_in_image',
+      message:
+        'Left buccal mucosa used healthy tissue in the same photo as its reference because the right cheek was not captured.',
+    },
+    {
+      code: 'mm_scale_unknown',
+      message:
+        'No millimetre scale was available, so areas are reported as a share of visible tissue.',
+    },
+    {
+      code: 'rules_unvalidated',
+      message: 'Triage rules are a baseline heuristic and have not been clinically validated.',
+    },
     { code: 'synthetic_inputs', message: 'All inputs are synthetic.' },
   ],
   processing: { working_max_side_px: 1024, duration_ms: total(highStages), stages: highStages },
@@ -859,7 +1116,12 @@ export const lowResult: ScreeningResult = {
   created_at: '2026-10-11T15:14:02Z',
   context: { ...highResult.context, captured_at: LOW_AT, device_ids: ['scout-sim-01'] },
   patient: { pseudonymous_id: 'MS-2C91-A7', age_years: 34, sex: 'female' },
-  consent: { ...highResult.consent, consent_id: 'cons-2c91', recorded_at: LOW_AT, research_use_opt_in: true },
+  consent: {
+    ...highResult.consent,
+    consent_id: 'cons-2c91',
+    recorded_at: LOW_AT,
+    research_use_opt_in: true,
+  },
   risk_factors: {
     ...NO_RISK_FACTORS,
     areca_nut: { uses: false, former: true, years: 3, per_day: null },
@@ -874,14 +1136,34 @@ export const lowResult: ScreeningResult = {
       visual_flag: { lesion_seen: false, appearance: [], description: null },
       diascopy: 'not_done',
       captures: [
-        capture('buccal_mucosa_right', 'white_light', 'cap-low-bmr-wl', qc(0.97), 'low/buccal_mucosa_right/wl.jpg', LOW_AT),
-        capture('buccal_mucosa_right', 'autofluorescence', 'cap-low-bmr-af', qc(0.96), 'low/buccal_mucosa_right/af.jpg', LOW_AT),
+        capture(
+          'buccal_mucosa_right',
+          'white_light',
+          'cap-low-bmr-wl',
+          qc(0.97),
+          'low/buccal_mucosa_right/wl.jpg',
+          LOW_AT,
+        ),
+        capture(
+          'buccal_mucosa_right',
+          'autofluorescence',
+          'cap-low-bmr-af',
+          qc(0.96),
+          'low/buccal_mucosa_right/af.jpg',
+          LOW_AT,
+        ),
         capture('buccal_mucosa_right', 'dark_frame', 'cap-low-bmr-dark', qc(1), null, LOW_AT),
       ],
       qc: qc(0.96),
       analysis_status: 'analysed',
       calibration: CALIBRATED,
-      registration: { method: 'ecc_affine', confidence: 0.93, passed: true, warp_matrix: IDENTITY_WARP, note: null },
+      registration: {
+        method: 'ecc_affine',
+        confidence: 0.93,
+        passed: true,
+        warp_matrix: IDENTITY_WARP,
+        note: null,
+      },
       segmentation: {
         method: 'classical_hsv_lab',
         version: '1.0.0',
@@ -893,7 +1175,12 @@ export const lowResult: ScreeningResult = {
       },
       af: {
         status: 'ok',
-        reference: { type: 'contralateral', reference_site: 'buccal_mucosa_left', reference_green: 0.402, note: null },
+        reference: {
+          type: 'contralateral',
+          reference_site: 'buccal_mucosa_left',
+          reference_green: 0.402,
+          note: null,
+        },
         fvl_threshold: 0.75,
         min_region_area_px: 150,
         site_medians: { green: 0.399, gr_ratio: 4.4, af_index: 0.396, relative_af: 0.99 },
@@ -933,13 +1220,33 @@ export const lowResult: ScreeningResult = {
       visual_flag: { lesion_seen: false, appearance: [], description: null },
       diascopy: 'not_done',
       captures: [
-        capture('buccal_mucosa_left', 'white_light', 'cap-low-bml-wl', qc(0.96), 'low/buccal_mucosa_left/wl.jpg', LOW_AT),
-        capture('buccal_mucosa_left', 'autofluorescence', 'cap-low-bml-af', qc(0.95), 'low/buccal_mucosa_left/af.jpg', LOW_AT),
+        capture(
+          'buccal_mucosa_left',
+          'white_light',
+          'cap-low-bml-wl',
+          qc(0.96),
+          'low/buccal_mucosa_left/wl.jpg',
+          LOW_AT,
+        ),
+        capture(
+          'buccal_mucosa_left',
+          'autofluorescence',
+          'cap-low-bml-af',
+          qc(0.95),
+          'low/buccal_mucosa_left/af.jpg',
+          LOW_AT,
+        ),
       ],
       qc: qc(0.95, [issue('no_dark_frame', 'warning')]),
       analysis_status: 'analysed',
       calibration: CALIBRATED,
-      registration: { method: 'ecc_affine', confidence: 0.92, passed: true, warp_matrix: IDENTITY_WARP, note: null },
+      registration: {
+        method: 'ecc_affine',
+        confidence: 0.92,
+        passed: true,
+        warp_matrix: IDENTITY_WARP,
+        note: null,
+      },
       segmentation: null,
       af: null,
       wl: null,
@@ -975,12 +1282,28 @@ export const lowResult: ScreeningResult = {
     requires_clinician_review: true,
     review_status: 'pending_review',
   },
-  qc_summary: { passed_all: true, sites_failed: [], captures_failed: 0, retakes_recommended: [], issues: [] },
+  qc_summary: {
+    passed_all: true,
+    sites_failed: [],
+    captures_failed: 0,
+    retakes_recommended: [],
+    issues: [],
+  },
   calibration_status: 'calibrated',
   limitations: [
-    { code: 'wl_model_unavailable', message: 'White-light classifier not available; white-light photos were not scored by a model.' },
-    { code: 'single_site', message: 'Only the right cheek was examined. Other sites were not screened.' },
-    { code: 'rules_unvalidated', message: 'Triage rules are a baseline heuristic and have not been clinically validated.' },
+    {
+      code: 'wl_model_unavailable',
+      message:
+        'White-light classifier not available; white-light photos were not scored by a model.',
+    },
+    {
+      code: 'single_site',
+      message: 'Only the right cheek was examined. Other sites were not screened.',
+    },
+    {
+      code: 'rules_unvalidated',
+      message: 'Triage rules are a baseline heuristic and have not been clinically validated.',
+    },
     { code: 'synthetic_inputs', message: 'All inputs are synthetic.' },
   ],
   processing: { working_max_side_px: 1024, duration_ms: total(lowStages), stages: lowStages },
@@ -991,7 +1314,9 @@ export const lowResult: ScreeningResult = {
 // ---------------------------------------------------------------------------------------------
 
 const INC_AT = '2026-10-10T11:02:10Z';
-const incStages = stages(['buccal_mucosa_left', 'buccal_mucosa_right'], false, ['buccal_mucosa_left']);
+const incStages = stages(['buccal_mucosa_left', 'buccal_mucosa_right'], false, [
+  'buccal_mucosa_left',
+]);
 const incWlIssues = [issue('blur', 'error', 'laplacian_var', 14.8, 40)];
 const incAfIssues = [
   issue('af_signal_low', 'error', 'green_p90', 0.08, 0.12),
@@ -1005,7 +1330,12 @@ export const inconclusiveResult: ScreeningResult = {
   created_at: '2026-10-10T11:03:31Z',
   context: { ...lowResult.context, captured_at: INC_AT },
   patient: { pseudonymous_id: 'MS-B4E0-Q5', age_years: 45, sex: 'female' },
-  consent: { ...lowResult.consent, consent_id: 'cons-b4e0', recorded_at: INC_AT, research_use_opt_in: false },
+  consent: {
+    ...lowResult.consent,
+    consent_id: 'cons-b4e0',
+    recorded_at: INC_AT,
+    research_use_opt_in: false,
+  },
   risk_factors: {
     ...NO_RISK_FACTORS,
     smokeless_tobacco: { uses: true, former: false, types: ['khaini'], years: 8, per_day: 4 },
@@ -1018,13 +1348,38 @@ export const inconclusiveResult: ScreeningResult = {
       paired_site: 'buccal_mucosa_right',
       pairing: 'contralateral',
       captures: [
-        capture('buccal_mucosa_left', 'white_light', 'cap-inc-bml-wl', qc(0.3, incWlIssues), 'high/lower_gingiva/wl.jpg', INC_AT),
-        capture('buccal_mucosa_left', 'autofluorescence', 'cap-inc-bml-af', qc(0.4, incAfIssues), 'high/lower_gingiva/af.jpg', INC_AT),
+        capture(
+          'buccal_mucosa_left',
+          'white_light',
+          'cap-inc-bml-wl',
+          qc(0.3, incWlIssues),
+          'high/lower_gingiva/wl.jpg',
+          INC_AT,
+        ),
+        capture(
+          'buccal_mucosa_left',
+          'autofluorescence',
+          'cap-inc-bml-af',
+          qc(0.4, incAfIssues),
+          'high/lower_gingiva/af.jpg',
+          INC_AT,
+        ),
       ],
       qc: qc(0.2, [...incWlIssues, ...incAfIssues]),
       site_risk_level: 'INCONCLUSIVE',
     },
-    { ...lowResult.sites[0]!, af: { ...lowResult.sites[0]!.af!, reference: { type: 'in_image_auto', reference_site: null, reference_green: 0.4, note: 'The paired site failed quality checks.' } } },
+    {
+      ...lowResult.sites[0]!,
+      af: {
+        ...lowResult.sites[0]!.af!,
+        reference: {
+          type: 'in_image_auto',
+          reference_site: null,
+          reference_green: 0.4,
+          note: 'The paired site failed quality checks.',
+        },
+      },
+    },
   ],
   triage: {
     ...lowResult.triage,
@@ -1045,9 +1400,19 @@ export const inconclusiveResult: ScreeningResult = {
     issues: [...incWlIssues, ...incAfIssues],
   },
   limitations: [
-    { code: 'site_qc_failed', message: 'Left buccal mucosa could not be analysed because of image quality.' },
-    { code: 'wl_model_unavailable', message: 'White-light classifier not available; white-light photos were not scored by a model.' },
-    { code: 'rules_unvalidated', message: 'Triage rules are a baseline heuristic and have not been clinically validated.' },
+    {
+      code: 'site_qc_failed',
+      message: 'Left buccal mucosa could not be analysed because of image quality.',
+    },
+    {
+      code: 'wl_model_unavailable',
+      message:
+        'White-light classifier not available; white-light photos were not scored by a model.',
+    },
+    {
+      code: 'rules_unvalidated',
+      message: 'Triage rules are a baseline heuristic and have not been clinically validated.',
+    },
     { code: 'synthetic_inputs', message: 'All inputs are synthetic.' },
   ],
   processing: { working_max_side_px: 1024, duration_ms: total(incStages), stages: incStages },
@@ -1087,11 +1452,28 @@ export const moderateResult: ScreeningResult = {
     explanation:
       'A shallow area of glow loss on the left cheek, a change seen by the health worker and daily khaini use give a score of 4.79, between the MODERATE (3) and HIGH (6) thresholds. Red porphyrin glow from plaque explains part of the darkness, so its points were reduced.',
   },
-  qc_summary: { passed_all: true, sites_failed: [], captures_failed: 0, retakes_recommended: [], issues: [] },
+  qc_summary: {
+    passed_all: true,
+    sites_failed: [],
+    captures_failed: 0,
+    retakes_recommended: [],
+    issues: [],
+  },
   limitations: [
-    { code: 'wl_model_unavailable', message: 'White-light classifier not available; white-light photos were not scored by a model.' },
-    { code: 'reference_in_image', message: 'Left buccal mucosa used healthy tissue in the same photo as its reference because the right cheek was not captured.' },
-    { code: 'rules_unvalidated', message: 'Triage rules are a baseline heuristic and have not been clinically validated.' },
+    {
+      code: 'wl_model_unavailable',
+      message:
+        'White-light classifier not available; white-light photos were not scored by a model.',
+    },
+    {
+      code: 'reference_in_image',
+      message:
+        'Left buccal mucosa used healthy tissue in the same photo as its reference because the right cheek was not captured.',
+    },
+    {
+      code: 'rules_unvalidated',
+      message: 'Triage rules are a baseline heuristic and have not been clinically validated.',
+    },
     { code: 'synthetic_inputs', message: 'All inputs are synthetic.' },
   ],
   processing: { working_max_side_px: 1024, duration_ms: total(modStages), stages: modStages },

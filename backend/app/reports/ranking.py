@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from mukha_pipeline.schema.models import LesionAssessment, RiskLevel, ScreeningResult
-
 from app.reports.labels import SEVERITY_RANK
+from mukha_pipeline.schema.models import LesionAssessment, RiskLevel, ScreeningResult
 
 
 def severity_rank(level: RiskLevel | str) -> float:

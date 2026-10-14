@@ -11,7 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { compile } from 'json-schema-to-typescript';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const schemaPath = resolve(here, '../../pipeline/mukha_pipeline/schema/screening_result.v1.schema.json');
+const schemaPath = resolve(
+  here,
+  '../../pipeline/mukha_pipeline/schema/screening_result.v1.schema.json',
+);
 const outPath = resolve(here, '../src/api/types.gen.ts');
 
 const schema = JSON.parse(await readFile(schemaPath, 'utf8'));

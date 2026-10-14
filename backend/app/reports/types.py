@@ -18,7 +18,10 @@ or ``None`` when the artifact does not exist. Exceptions are caught and treated 
 
 @dataclass
 class PatientIdentity:
-    """Personally identifying details, joined from the separate PII store only for rendering."""
+    """Personally identifying details, joined from the separate PII store only for rendering.
+
+    ``external_id`` (e.g. an ABHA or Aadhaar-linked number) is always printed masked, keeping
+    only its last 4 characters."""
 
     name: str | None = None
     external_id: str | None = None
@@ -26,7 +29,11 @@ class PatientIdentity:
 
 @dataclass
 class Facility:
-    """A referral facility shown on the report (configured in ``app/config/facilities.yaml``)."""
+    """A referral facility shown on the report (configured in ``app/config/facilities.yaml``).
+
+    ``levels`` limits the facility to results at those risk levels (``HIGH``, ``MODERATE``,
+    ``LOW``, ``INCONCLUSIVE``); empty means every level. ``capabilities`` are short tags printed
+    with the facility (e.g. "biopsy", "oral medicine")."""
 
     name: str
     address: str
@@ -34,6 +41,16 @@ class Facility:
     hours: str | None = None
     notes: str | None = None
     example: bool = False
+    levels: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ProgrammeContact:
+    """Who a patient or clinician calls about the screening programme."""
+
+    name: str
+    phone: str | None = None
 
 
 @dataclass
@@ -43,3 +60,6 @@ class ReportOptions:
     record_url: str | None = None
     facilities: list[Facility] = field(default_factory=list)
     report_version: int = 1
+    display_tz: str = "Asia/Kolkata"
+    """IANA time zone for every printed date and time (the reader's local time)."""
+    programme_contact: ProgrammeContact | None = None

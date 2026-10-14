@@ -8,7 +8,8 @@ export function useMediaQuery(query: string): boolean {
       mql.addEventListener('change', onChange);
       return () => mql.removeEventListener('change', onChange);
     },
-    () => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : false),
+    () =>
+      typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(query).matches : false,
     () => false,
   );
 }

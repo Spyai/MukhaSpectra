@@ -84,7 +84,6 @@ from mukha_pipeline.schema.models import (
     WorkingResolution,
 )
 from mukha_pipeline.sites import OralSite, reference_site_for, site_label
-
 from report_fixtures.images import LesionDraw, site_artifacts
 
 IST = timezone(timedelta(hours=5, minutes=30), "IST")
@@ -139,8 +138,11 @@ def _versions() -> VersionInfo:
 
 def _wl_unavailable() -> WLAnalysis:
     model = _models()[1]
-    return WLAnalysis(status="model_unavailable", model=model,
-                      note="No trained white-light weights; not used in triage.")
+    return WLAnalysis(
+        status="model_unavailable",
+        model=model,
+        note="No trained white-light weights; not used in triage.",
+    )
 
 
 def _qc(passed: bool = True, score: float = 0.93, issues: list[QCIssue] | None = None) -> QCResult:
@@ -149,15 +151,28 @@ def _qc(passed: bool = True, score: float = 0.93, issues: list[QCIssue] | None =
 
 def _cal(status: CalibrationStatus, device: str = SCOUT) -> CalibrationInfo:
     if status == CalibrationStatus.CALIBRATED:
-        return CalibrationInfo(status=status, calibration_id=f"cal-{device}-20261014",
-                               expires_at=CAPTURED_AT + timedelta(hours=20))
+        return CalibrationInfo(
+            status=status,
+            calibration_id=f"cal-{device}-20261014",
+            expires_at=CAPTURED_AT + timedelta(hours=20),
+        )
     return CalibrationInfo(status=status, note="No calibration record for this device today.")
 
 
-def _capture(site: OralSite, kind: CaptureKind, *, synthetic: bool, qc: QCResult,
-             artifact: str | None, calibrated: bool = True) -> CaptureRecord:
-    led = {CaptureKind.WHITE_LIGHT: LedMode.WHITE, CaptureKind.AUTOFLUORESCENCE: LedMode.VIOLET,
-           CaptureKind.DARK_FRAME: LedMode.OFF}.get(kind)
+def _capture(
+    site: OralSite,
+    kind: CaptureKind,
+    *,
+    synthetic: bool,
+    qc: QCResult,
+    artifact: str | None,
+    calibrated: bool = True,
+) -> CaptureRecord:
+    led = {
+        CaptureKind.WHITE_LIGHT: LedMode.WHITE,
+        CaptureKind.AUTOFLUORESCENCE: LedMode.VIOLET,
+        CaptureKind.DARK_FRAME: LedMode.OFF,
+    }.get(kind)
     meta = CaptureMetadata(
         capture_id=f"cap-{site.value}-{kind.value}",
         kind=kind,
@@ -179,16 +194,18 @@ def _capture(site: OralSite, kind: CaptureKind, *, synthetic: bool, qc: QCResult
     return CaptureRecord(metadata=meta, qc=qc, artifact=artifact)
 
 
-def _af(reference: AFReference, regions: list[FVLRegion], *, status: str = "ok",
-        green: float = 0.56) -> AFAnalysis:
+def _af(
+    reference: AFReference, regions: list[FVLRegion], *, status: str = "ok", green: float = 0.56
+) -> AFAnalysis:
     fvl_frac = sum(r.area_fraction_of_mucosa for r in regions)
     return AFAnalysis(
         status=status,  # type: ignore[arg-type]
         reference=reference,
         fvl_threshold=0.75,
         min_region_area_px=150,
-        site_medians=AFSiteMedians(green=green, gr_ratio=4.6, af_index=0.71,
-                                   relative_af=0.97 if not regions else 0.88),
+        site_medians=AFSiteMedians(
+            green=green, gr_ratio=4.6, af_index=0.71, relative_af=0.97 if not regions else 0.88
+        ),
         fvl_area_fraction=min(1.0, fvl_frac),
         porphyrin_red_fraction=0.04 if any(r.confounders for r in regions) else 0.0,
         regions=regions,
@@ -285,8 +302,13 @@ def _thresholds() -> ScoreThresholds:
 
 
 def _consent() -> ConsentInfo:
-    return ConsentInfo(consent_recorded=True, method="checkbox", research_use_opt_in=False,
-                       consent_id="consent-0001", recorded_at=CAPTURED_AT - timedelta(minutes=6))
+    return ConsentInfo(
+        consent_recorded=True,
+        method="checkbox",
+        research_use_opt_in=False,
+        consent_id="consent-0001",
+        recorded_at=CAPTURED_AT - timedelta(minutes=6),
+    )
 
 
 def _context(camp: str, *, devices: list[str]) -> ScreeningContext:
@@ -314,8 +336,9 @@ def _processing() -> ProcessingInfo:
         StageTiming(stage="fusion", duration_ms=4.0)])  # fmt: skip
 
 
-def _f(code: str, label: str, source: FactorSource, points: float,
-       detail: str | None = None) -> ContributingFactor:
+def _f(
+    code: str, label: str, source: FactorSource, points: float, detail: str | None = None
+) -> ContributingFactor:
     return ContributingFactor(code=code, label=label, source=source, points=points, detail=detail)
 
 
@@ -364,6 +387,10 @@ def _spectral_pair(synthetic: bool) -> list[SpectralReadingResult]:
     ref_f, les_f = _features(_REF_VALUES), _features(_LES_VALUES)
     delta = _delta(les_f, ref_f)
     placeholder_model = _models()[2]
+    reasons = [
+        f"Haemoglobin dip deeper than the reference (Δ +{delta.hb_absorption_proxy:.2f})",
+        f"555/630 nm ratio lower than the reference (Δ {delta.ratio_555_630:.2f})",
+    ]
     lesion = SpectralReadingResult(
         reading_id="s1", site=OralSite.BUCCAL_MUCOSA_LEFT, role="lesion", lesion_ref="r1",
         capture=meta("s1", OralSite.BUCCAL_MUCOSA_LEFT), n_readings=5,
@@ -372,8 +399,7 @@ def _spectral_pair(synthetic: bool) -> list[SpectralReadingResult]:
         features=les_f, reference_reading_id="s2", delta_vs_reference=delta,
         classifier=SpectralClassifierOutput(
             status="placeholder", method="rules_v1", suspicion_score=0.68, label="suspicious",
-            reasons=[f"Haemoglobin dip deeper than the reference (Δ +{delta.hb_absorption_proxy:.2f})",
-                     f"555/630 nm ratio lower than the reference (Δ {delta.ratio_555_630:.2f})"],
+            reasons=reasons,
             model=placeholder_model),
     )  # fmt: skip
     reference = SpectralReadingResult(
@@ -396,14 +422,29 @@ L2_BOX = NormBox(x=0.52, y=0.30, w=0.20, h=0.30)
 def build_high(synthetic: bool = True) -> ReportCase:
     provenance, notices = _provenance(synthetic)
     S = OralSite
-    blur = QCIssue(code="blur", severity=QCSeverity.ERROR,
-                   message="Image blurry — hold the device steady and retake.",
-                   message_key="qc.blur", metric="laplacian_var", value=12.4, threshold=40.0)
+    blur = QCIssue(
+        code="blur",
+        severity=QCSeverity.ERROR,
+        message="Image blurry — hold the device steady and retake.",
+        message_key="qc.blur",
+        metric="laplacian_var",
+        value=12.4,
+        threshold=40.0,
+    )
 
     r1 = FVLRegion(
-        region_id="r1", area_px=5120, area_mm2=38.6, area_fraction_of_mucosa=0.072,
-        centroid=NormPoint(x=0.47, y=0.54), bbox=L1_BOX, mean_relative_af=0.52,
-        min_relative_af=0.38, contrast_vs_surround=1.71, border_irregularity=0.46, solidity=0.81)
+        region_id="r1",
+        area_px=5120,
+        area_mm2=38.6,
+        area_fraction_of_mucosa=0.072,
+        centroid=NormPoint(x=0.47, y=0.54),
+        bbox=L1_BOX,
+        mean_relative_af=0.52,
+        min_relative_af=0.38,
+        contrast_vs_surround=1.71,
+        border_irregularity=0.46,
+        solidity=0.81,
+    )
     r2 = FVLRegion(
         region_id="r1", area_px=9800, area_fraction_of_mucosa=0.16,
         centroid=NormPoint(x=0.62, y=0.45), bbox=L2_BOX, mean_relative_af=0.47,
@@ -412,10 +453,14 @@ def build_high(synthetic: bool = True) -> ReportCase:
                                     note="red porphyrin fluorescence (plaque or bacteria) can "
                                          "mimic AF loss; points discounted")])  # fmt: skip
 
-    contra = AFReference(type=ReferenceType.CONTRALATERAL, reference_site=S.BUCCAL_MUCOSA_RIGHT,
-                         reference_green=0.57)
-    in_image = AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=0.55,
-                           note="Contralateral site failed QC; in-image reference used.")
+    contra = AFReference(
+        type=ReferenceType.CONTRALATERAL, reference_site=S.BUCCAL_MUCOSA_RIGHT, reference_green=0.57
+    )
+    in_image = AFReference(
+        type=ReferenceType.IN_IMAGE_AUTO,
+        reference_green=0.55,
+        note="Contralateral site failed QC; in-image reference used.",
+    )
     sites = [
         _site(S.BUCCAL_MUCOSA_LEFT, RiskLevel.HIGH, synthetic=synthetic, af=_af(contra, [r1]),
               visual=VisualFlag(lesion_seen=True, appearance=[VisualAppearance.WHITE_PATCH],
@@ -518,8 +563,7 @@ def build_high(synthetic: bool = True) -> ReportCase:
         patient=PatientInfo(pseudonymous_id="P-7F3K-92QD", age_years=52, sex=Sex.MALE),
         consent=_consent(),
         risk_factors=RiskFactors(
-            smokeless_tobacco=SmokelessTobaccoUse(uses=True, types=["gutka"], years=20,
-                                                  per_day=6),
+            smokeless_tobacco=SmokelessTobaccoUse(uses=True, types=["gutka"], years=20, per_day=6),
             smoking=SmokingUse(uses=True, types=["bidi"], years=15),
             alcohol=AlcoholUse(uses=True, frequency="daily"),
             symptoms=Symptoms(non_healing_ulcer_over_2_weeks=True, burning_sensation=True),
@@ -543,21 +587,42 @@ def build_high(synthetic: bool = True) -> ReportCase:
             ),
         ),
         qc_summary=QCSummary(
-            passed_all=False, sites_failed=[S.LATERAL_TONGUE_RIGHT], captures_failed=1,
+            passed_all=False,
+            sites_failed=[S.LATERAL_TONGUE_RIGHT],
+            captures_failed=1,
             retakes_recommended=["Right lateral tongue, white light: hold steady and retake"],
-            issues=[blur]),  # fmt: skip
+            issues=[blur],
+        ),  # fmt: skip
         calibration_status=CalibrationStatus.CALIBRATED,
         limitations=[
-            Limitation(code="qc.site_failed", message="Right lateral tongue failed quality "
-                       "control (blur) and was not analysed; the left lateral tongue was compared "
-                       "with an in-image reference instead of its contralateral site."),
-            Limitation(code="model.wl_unavailable", message="White-light classifier not "
-                       "available: triage used autofluorescence, the spectral probe and the "
-                       "health worker's observations only."),
-            Limitation(code="rules.unvalidated", message="Triage rules are a baseline "
-                       "heuristic and have not been clinically validated."),
-            *([Limitation(code="data.synthetic", message="Synthetic data generated for "
-                          "demonstration; not from a real patient.")] if synthetic else []),
+            Limitation(
+                code="qc.site_failed",
+                message="Right lateral tongue failed quality "
+                "control (blur) and was not analysed; the left lateral tongue was compared "
+                "with an in-image reference instead of its contralateral site.",
+            ),
+            Limitation(
+                code="model.wl_unavailable",
+                message="White-light classifier not "
+                "available: triage used autofluorescence, the spectral probe and the "
+                "health worker's observations only.",
+            ),
+            Limitation(
+                code="rules.unvalidated",
+                message="Triage rules are a baseline "
+                "heuristic and have not been clinically validated.",
+            ),
+            *(
+                [
+                    Limitation(
+                        code="data.synthetic",
+                        message="Synthetic data generated for "
+                        "demonstration; not from a real patient.",
+                    )
+                ]
+                if synthetic
+                else []
+            ),
         ],  # fmt: skip
         processing=_processing(),
     )
@@ -569,8 +634,9 @@ def build_high(synthetic: bool = True) -> ReportCase:
     artifacts |= site_artifacts(S.LATERAL_TONGUE_LEFT.value, [
         LesionDraw(L2_BOX.x, L2_BOX.y, L2_BOX.w, L2_BOX.h, "red", 0.5, porphyrin=True)], seed=13,
         synthetic=synthetic)  # fmt: skip
-    artifacts |= site_artifacts(S.LATERAL_TONGUE_RIGHT.value, [], seed=14, synthetic=synthetic,
-                                qc_failed=True)
+    artifacts |= site_artifacts(
+        S.LATERAL_TONGUE_RIGHT.value, [], seed=14, synthetic=synthetic, qc_failed=True
+    )
     artifacts |= site_artifacts(S.TONGUE_DORSUM.value, [], seed=15, synthetic=synthetic)
     return ReportCase("high", result, artifacts)
 
@@ -586,8 +652,9 @@ def build_low(synthetic: bool = True) -> ReportCase:
                   S.BUCCAL_MUCOSA_RIGHT: S.BUCCAL_MUCOSA_LEFT,
                   S.LATERAL_TONGUE_LEFT: S.LATERAL_TONGUE_RIGHT,
                   S.LATERAL_TONGUE_RIGHT: S.LATERAL_TONGUE_LEFT}[site]  # fmt: skip
-        ref = AFReference(type=ReferenceType.CONTRALATERAL, reference_site=paired,
-                          reference_green=0.56)
+        ref = AFReference(
+            type=ReferenceType.CONTRALATERAL, reference_site=paired, reference_green=0.56
+        )
         sites.append(_site(site, RiskLevel.LOW, synthetic=synthetic, af=_af(ref, [])))
     for site in (S.TONGUE_DORSUM, S.LOWER_GINGIVA):
         ref = AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=0.54)
@@ -615,13 +682,25 @@ def build_low(synthetic: bool = True) -> ReportCase:
             score=0.0,
             thresholds=_thresholds(),
             contributing_factors=[
-                _f("af.no_fvl", "No AF-loss region at any examined site",
-                   FactorSource.AUTOFLUORESCENCE, 0.0),
-                _f("visual.none", "No lesion seen by the health worker",
-                   FactorSource.CLINICAL_VISUAL, 0.0),
-                _f("risk.counselling_only", "Khaini use (5 years): counselling, no lesion",
-                   FactorSource.CLINICAL_HISTORY, 0.0,
-                   "habits add points only when a lesion exists"),
+                _f(
+                    "af.no_fvl",
+                    "No AF-loss region at any examined site",
+                    FactorSource.AUTOFLUORESCENCE,
+                    0.0,
+                ),
+                _f(
+                    "visual.none",
+                    "No lesion seen by the health worker",
+                    FactorSource.CLINICAL_VISUAL,
+                    0.0,
+                ),
+                _f(
+                    "risk.counselling_only",
+                    "Khaini use (5 years): counselling, no lesion",
+                    FactorSource.CLINICAL_HISTORY,
+                    0.0,
+                    "habits add points only when a lesion exists",
+                ),
             ],  # fmt: skip
             recommended_action=_action(RiskLevel.LOW),
             rule_config=_versions().rule_config,
@@ -631,11 +710,23 @@ def build_low(synthetic: bool = True) -> ReportCase:
         qc_summary=QCSummary(passed_all=True),
         calibration_status=CalibrationStatus.CALIBRATED,
         limitations=[
-            Limitation(code="model.wl_unavailable", message="White-light classifier not "
-                       "available: triage used autofluorescence and the health worker's "
-                       "observations only."),
-            *([Limitation(code="data.synthetic", message="Synthetic data generated for "
-                          "demonstration; not from a real patient.")] if synthetic else []),
+            Limitation(
+                code="model.wl_unavailable",
+                message="White-light classifier not "
+                "available: triage used autofluorescence and the health worker's "
+                "observations only.",
+            ),
+            *(
+                [
+                    Limitation(
+                        code="data.synthetic",
+                        message="Synthetic data generated for "
+                        "demonstration; not from a real patient.",
+                    )
+                ]
+                if synthetic
+                else []
+            ),
         ],  # fmt: skip
         processing=_processing(),
     )
@@ -657,8 +748,11 @@ def build_inconclusive(synthetic: bool = True) -> ReportCase:
                 message="Some glare — tilt the device slightly to avoid reflections.",
                 message_key="qc.glare", metric="glare_fraction", value=0.022, threshold=0.015),
     ]  # fmt: skip
-    ref = AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=0.31,
-                      note="Contralateral site failed QC; in-image reference used.")
+    ref = AFReference(
+        type=ReferenceType.IN_IMAGE_AUTO,
+        reference_green=0.31,
+        note="Contralateral site failed QC; in-image reference used.",
+    )
     sites = [
         _site(S.BUCCAL_MUCOSA_LEFT, RiskLevel.INCONCLUSIVE, synthetic=synthetic,
               qc_issues=issues, calibration=unc),
@@ -678,8 +772,9 @@ def build_inconclusive(synthetic: bool = True) -> ReportCase:
         patient=PatientInfo(pseudonymous_id="P-9Q4C-77LM", age_years=61, sex=Sex.FEMALE),
         consent=_consent(),
         risk_factors=RiskFactors(
-            smokeless_tobacco=SmokelessTobaccoUse(uses=True, types=["paan_with_tobacco"],
-                                                  years=30, per_day=4),
+            smokeless_tobacco=SmokelessTobaccoUse(
+                uses=True, types=["paan_with_tobacco"], years=30, per_day=4
+            ),
             symptoms=Symptoms(burning_sensation=True),
         ),  # fmt: skip
         sites=sites,
@@ -689,8 +784,13 @@ def build_inconclusive(synthetic: bool = True) -> ReportCase:
             score=None,
             thresholds=_thresholds(),
             contributing_factors=[
-                _f("qc.site_failed", "Left buccal mucosa could not be analysed (QC failed)",
-                   FactorSource.QC, 0.0, "LOW requires every examined site to be analysed"),
+                _f(
+                    "qc.site_failed",
+                    "Left buccal mucosa could not be analysed (QC failed)",
+                    FactorSource.QC,
+                    0.0,
+                    "LOW requires every examined site to be analysed",
+                ),
             ],  # fmt: skip
             recommended_action=_action(RiskLevel.INCONCLUSIVE),
             rule_config=_versions().rule_config,
@@ -698,24 +798,43 @@ def build_inconclusive(synthetic: bool = True) -> ReportCase:
             "so a LOW level cannot be given. Retake now, or refer for clinical examination.",
         ),
         qc_summary=QCSummary(
-            passed_all=False, sites_failed=[S.BUCCAL_MUCOSA_LEFT], captures_failed=1,
-            retakes_recommended=["Left buccal mucosa, autofluorescence: check the violet light "
-                                 "and retake"],
-            issues=issues),  # fmt: skip
+            passed_all=False,
+            sites_failed=[S.BUCCAL_MUCOSA_LEFT],
+            captures_failed=1,
+            retakes_recommended=[
+                "Left buccal mucosa, autofluorescence: check the violet light and retake"
+            ],
+            issues=issues,
+        ),  # fmt: skip
         calibration_status=unc,
         limitations=[
-            Limitation(code="calibration.missing", message="Device not calibrated today: "
-                       "fluorescence intensities are not corrected against the reference card."),
-            Limitation(code="model.wl_unavailable", message="White-light classifier not "
-                       "available: not used in triage."),
-            *([Limitation(code="data.synthetic", message="Synthetic data generated for "
-                          "demonstration; not from a real patient.")] if synthetic else []),
+            Limitation(
+                code="calibration.missing",
+                message="Device not calibrated today: "
+                "fluorescence intensities are not corrected against the reference card.",
+            ),
+            Limitation(
+                code="model.wl_unavailable",
+                message="White-light classifier not available: not used in triage.",
+            ),
+            *(
+                [
+                    Limitation(
+                        code="data.synthetic",
+                        message="Synthetic data generated for "
+                        "demonstration; not from a real patient.",
+                    )
+                ]
+                if synthetic
+                else []
+            ),
         ],  # fmt: skip
         processing=_processing(),
     )
     artifacts: dict[str, bytes] = {}
-    artifacts |= site_artifacts(S.BUCCAL_MUCOSA_LEFT.value, [], seed=51, synthetic=synthetic,
-                                qc_failed=True, af_signal=0.25)
+    artifacts |= site_artifacts(
+        S.BUCCAL_MUCOSA_LEFT.value, [], seed=51, synthetic=synthetic, qc_failed=True, af_signal=0.25
+    )
     artifacts |= site_artifacts(S.BUCCAL_MUCOSA_RIGHT.value, [], seed=52, synthetic=synthetic)
     return ReportCase("inconclusive", result, artifacts)
 

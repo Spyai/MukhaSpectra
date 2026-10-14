@@ -27,12 +27,21 @@ export function useSiteCatalogue() {
 
 export function useVersionInfo() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.version, queryFn: () => api.getVersion(), staleTime: 300_000, retry: 0 });
+  return useQuery({
+    queryKey: queryKeys.version,
+    queryFn: () => api.getVersion(),
+    staleTime: 300_000,
+    retry: 0,
+  });
 }
 
 export function useScreenings() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.screenings, queryFn: () => api.listScreenings(), retry: 1 });
+  return useQuery({
+    queryKey: queryKeys.screenings,
+    queryFn: () => api.listScreenings(),
+    retry: 1,
+  });
 }
 
 export function useScreening(id: string | undefined) {
@@ -45,7 +54,11 @@ export function useScreening(id: string | undefined) {
   });
 }
 
-export function useResultVersion(id: string | undefined, version: number | undefined, enabled: boolean) {
+export function useResultVersion(
+  id: string | undefined,
+  version: number | undefined,
+  enabled: boolean,
+) {
   const api = useApi();
   return useQuery({
     queryKey: queryKeys.result(id ?? '', version ?? 0),
@@ -68,8 +81,21 @@ export function useArtifactJson<T>(id: string, key: string | null | undefined, v
 function useStoreDetail() {
   const qc = useQueryClient();
   return (detail: ScreeningDetail) => {
-    qc.setQueryData(queryKeys.screening(detail.screening_id), detail);
-    qc.setQueryData(queryKeys.result(detail.screening_id, detail.latest.result_version), detail.latest);
+    const key = queryKeys.screening(detail.screening_id);
+    // Create/re-analyse responses carry only the new result. Keep the versions we already know
+    // (re-analysis never overwrites them) and refetch the full list in the background.
+    const prev = qc.getQueryData<ScreeningDetail>(key);
+    const versions = new Map((prev?.versions ?? []).map((v) => [v.result_version, v]));
+    for (const v of detail.versions) versions.set(v.result_version, v);
+    qc.setQueryData<ScreeningDetail>(key, {
+      ...detail,
+      versions: [...versions.values()].sort((a, b) => a.result_version - b.result_version),
+    });
+    qc.setQueryData(
+      queryKeys.result(detail.screening_id, detail.latest.result_version),
+      detail.latest,
+    );
+    void qc.invalidateQueries({ queryKey: key, exact: true });
     void qc.invalidateQueries({ queryKey: queryKeys.screenings });
   };
 }
@@ -83,7 +109,10 @@ export function useRunDemo() {
 export function useCreateScreening() {
   const api = useApi();
   const store = useStoreDetail();
-  return useMutation({ mutationFn: (req: UploadRequest) => api.createScreening(req), onSuccess: store });
+  return useMutation({
+    mutationFn: (req: UploadRequest) => api.createScreening(req),
+    onSuccess: store,
+  });
 }
 
 export function useReanalyze(id: string) {

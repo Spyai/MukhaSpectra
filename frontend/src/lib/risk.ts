@@ -1,4 +1,4 @@
-import type { RiskLevel } from '../api/types';
+import type { ContributingFactor, RiskLevel } from '../api/types';
 
 export const RISK_LEVELS: RiskLevel[] = ['LOW', 'MODERATE', 'HIGH', 'INCONCLUSIVE'];
 
@@ -14,7 +14,12 @@ export interface RiskStyle {
 
 export const RISK_STYLE: Record<RiskLevel, RiskStyle> = {
   LOW: { color: 'var(--risk-low)', bg: 'var(--risk-low-bg)', steps: 1, dashed: false },
-  MODERATE: { color: 'var(--risk-moderate)', bg: 'var(--risk-moderate-bg)', steps: 2, dashed: false },
+  MODERATE: {
+    color: 'var(--risk-moderate)',
+    bg: 'var(--risk-moderate-bg)',
+    steps: 2,
+    dashed: false,
+  },
   HIGH: { color: 'var(--risk-high)', bg: 'var(--risk-high-bg)', steps: 3, dashed: false },
   INCONCLUSIVE: {
     color: 'var(--risk-inconclusive)',
@@ -26,4 +31,10 @@ export const RISK_STYLE: Record<RiskLevel, RiskStyle> = {
 
 export function isRiskLevel(v: unknown): v is RiskLevel {
   return typeof v === 'string' && (RISK_LEVELS as string[]).includes(v);
+}
+
+/** Floor level of a clinical red-flag override, parsed from its detail ("Floor: HIGH") or label. */
+export function overrideFloor(o: ContributingFactor): RiskLevel | null {
+  const match = `${o.detail ?? ''} ${o.label}`.match(/\b(LOW|MODERATE|HIGH)\b/);
+  return match && isRiskLevel(match[1]) ? match[1] : null;
 }

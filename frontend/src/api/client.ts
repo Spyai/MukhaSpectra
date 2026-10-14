@@ -3,6 +3,7 @@
  * `api` switches to the in-memory mock (src/mocks/) when the app is built or served with
  * VITE_MOCK=1. The mock module is loaded with a dynamic import, so it never ships in a live build.
  */
+import { loadMockClient } from '@mock-loader';
 import {
   isScreeningResult,
   normalizeScreeningDetail,
@@ -113,6 +114,10 @@ export function createHttpClient(options: HttpClientOptions = {}): ApiClient {
       }
     }
     if (!res.ok) {
+      // A dev/preview proxy answers 500 with an empty body (or 502-504) when the API is down.
+      if (res.status >= 502 || (res.status === 500 && !text)) {
+        throw new ApiError('network', `HTTP ${res.status}`, res.status);
+      }
       throw new ApiError('http', `HTTP ${res.status}`, res.status, extractDetail(body));
     }
     return body as T;
@@ -128,7 +133,8 @@ export function createHttpClient(options: HttpClientOptions = {}): ApiClient {
         raw && typeof raw === 'object' && 'screening_id' in raw
           ? String((raw as { screening_id: unknown }).screening_id)
           : undefined;
-      if (id) return normalizeScreeningDetail(await request(`/screenings/${encodeURIComponent(id)}`));
+      if (id)
+        return normalizeScreeningDetail(await request(`/screenings/${encodeURIComponent(id)}`));
       throw new ApiError('bad-response', 'unexpected response shape');
     }
   };
@@ -144,7 +150,11 @@ export function createHttpClient(options: HttpClientOptions = {}): ApiClient {
         `/screenings/${encodeURIComponent(id)}/results/${encodeURIComponent(String(version))}`,
       );
       if (isScreeningResult(raw)) return raw;
-      if (raw && typeof raw === 'object' && isScreeningResult((raw as { result?: unknown }).result)) {
+      if (
+        raw &&
+        typeof raw === 'object' &&
+        isScreeningResult((raw as { result?: unknown }).result)
+      ) {
         return (raw as { result: ScreeningResult }).result;
       }
       throw new ApiError('bad-response', 'unexpected result shape');
@@ -155,10 +165,14 @@ export function createHttpClient(options: HttpClientOptions = {}): ApiClient {
       detail(request(`/demo/screenings/${encodeURIComponent(kind)}`, { method: 'POST' })),
     reanalyze: (id) =>
       detail(request(`/screenings/${encodeURIComponent(id)}/reanalyze`, { method: 'POST' })),
-    getArtifactJson: <T,>(id: string, key: string, version?: number) =>
-      request<T>(withVersion(`/screenings/${encodeURIComponent(id)}/artifacts/${encodeKey(key)}`, version)),
+    getArtifactJson: <T>(id: string, key: string, version?: number) =>
+      request<T>(
+        withVersion(`/screenings/${encodeURIComponent(id)}/artifacts/${encodeKey(key)}`, version),
+      ),
     artifactUrl: (id, key, version) =>
-      url(withVersion(`/screenings/${encodeURIComponent(id)}/artifacts/${encodeKey(key)}`, version)),
+      url(
+        withVersion(`/screenings/${encodeURIComponent(id)}/artifacts/${encodeKey(key)}`, version),
+      ),
     reportUrl: (id, version) =>
       url(withVersion(`/screenings/${encodeURIComponent(id)}/report.pdf`, version)),
     sitemapUrl: (id) => url(`/screenings/${encodeURIComponent(id)}/sitemap.svg`),
@@ -173,9 +187,9 @@ export function createLazyMockClient(): ApiClient {
   let loaded: ApiClient | null = null;
   let pending: Promise<ApiClient> | null = null;
   const get = () =>
-    (pending ??= import('../mocks/mockClient').then((m) => {
-      loaded = m.createMockClient();
-      return loaded;
+    (pending ??= loadMockClient().then((c) => {
+      loaded = c;
+      return c;
     }));
   return {
     mode: 'mock',
@@ -187,7 +201,7 @@ export function createLazyMockClient(): ApiClient {
     createScreening: (req) => get().then((c) => c.createScreening(req)),
     runDemo: (kind) => get().then((c) => c.runDemo(kind)),
     reanalyze: (id) => get().then((c) => c.reanalyze(id)),
-    getArtifactJson: <T,>(id: string, key: string, version?: number) =>
+    getArtifactJson: <T>(id: string, key: string, version?: number) =>
       get().then((c) => c.getArtifactJson<T>(id, key, version)),
     artifactUrl: (id, key, version) => loaded?.artifactUrl(id, key, version) ?? '',
     reportUrl: (id, version) => loaded?.reportUrl(id, version) ?? '',
@@ -195,8 +209,9 @@ export function createLazyMockClient(): ApiClient {
   };
 }
 
-export const IS_MOCK = import.meta.env.VITE_MOCK === '1' || import.meta.env.VITE_MOCK === 'true';
+export const IS_MOCK: boolean = typeof __MUKHA_MOCK__ !== 'undefined' && __MUKHA_MOCK__;
 
 export function createDefaultClient(): ApiClient {
-  return IS_MOCK ? createLazyMockClient() : createHttpClient();
+  if (__MUKHA_MOCK__) return createLazyMockClient();
+  return createHttpClient();
 }

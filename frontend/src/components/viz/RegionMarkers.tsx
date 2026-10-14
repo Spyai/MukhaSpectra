@@ -5,7 +5,13 @@ import type { FVLRegion } from '../../api/types';
 import { formatNumber, formatPercent } from '../../lib/format';
 
 /** Region outlines (r1…) with hover/focus cards. Coordinates are normalised to the WL frame. */
-export function RegionMarkers({ regions, threshold }: { regions: FVLRegion[]; threshold?: number }) {
+export function RegionMarkers({
+  regions,
+  threshold,
+}: {
+  regions: FVLRegion[];
+  threshold?: number;
+}) {
   const { t } = useTranslation();
   const [active, setActive] = useState<string | null>(null);
 
@@ -13,8 +19,8 @@ export function RegionMarkers({ regions, threshold }: { regions: FVLRegion[]; th
     <>
       {regions.map((r) => {
         const open = active === r.region_id;
-        const right = r.centroid.x > 0.55;
-        const below = r.bbox.y < 0.3;
+        // Dock the card in the image corner opposite the region so it never hides it or clips.
+        const dockLeft = r.centroid.x >= 0.5;
         return (
           <div key={r.region_id}>
             <div
@@ -52,41 +58,51 @@ export function RegionMarkers({ regions, threshold }: { regions: FVLRegion[]; th
                 <m.div
                   id={`region-card-${r.region_id}`}
                   role="tooltip"
-                  initial={{ opacity: 0, scale: 0.96, y: below ? -4 : 4 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  initial={{ opacity: 0, scale: 0.96, x: dockLeft ? -6 : 6 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
                   exit={{ opacity: 0, scale: 0.97 }}
                   transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                  className="pointer-events-none absolute z-20 w-56 rounded-xl border border-line bg-surface/95 p-3 text-xs text-fg shadow-card backdrop-blur-md"
-                  style={{
-                    left: right ? undefined : `calc(${r.bbox.x * 100}% + 18px)`,
-                    right: right ? `calc(${(1 - r.bbox.x) * 100}% + 18px)` : undefined,
-                    top: below ? `calc(${r.bbox.y * 100}% + 8px)` : undefined,
-                    bottom: below ? undefined : `calc(${(1 - r.bbox.y) * 100}% - 32px)`,
-                  }}
+                  className={`pointer-events-none absolute top-3 z-20 max-h-[calc(100%-1.5rem)] w-[min(16rem,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line bg-surface/95 p-3 text-xs text-fg shadow-card backdrop-blur-md ${
+                    dockLeft ? 'left-3' : 'right-3'
+                  }`}
                 >
-                  <p className="mb-2 text-sm font-bold">{t('results.viewer.regionTitle', { id: r.region_id })}</p>
-                  <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 tabular">
+                  <p className="mb-2 text-sm font-bold">
+                    {t('results.viewer.regionTitle', { id: r.region_id })}
+                  </p>
+                  <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 tabular">
                     <dt className="text-fg-subtle">{t('results.viewer.area')}</dt>
                     <dd className="text-right font-semibold">
                       {r.area_mm2 != null
                         ? `${formatNumber(r.area_mm2, 1)} mm²`
-                        : t('results.viewer.areaFraction', { value: (r.area_fraction_of_mucosa * 100).toFixed(1) })}
+                        : t('results.viewer.areaFraction', {
+                            value: (r.area_fraction_of_mucosa * 100).toFixed(1),
+                          })}
                     </dd>
                     <dt className="text-fg-subtle">{t('results.viewer.meanRelAf')}</dt>
                     <dd className="text-right font-semibold">
                       {formatNumber(r.mean_relative_af, 2)} ({formatPercent(r.mean_relative_af)})
                     </dd>
                     <dt className="text-fg-subtle">{t('results.viewer.minRelAf')}</dt>
-                    <dd className="text-right font-semibold">{formatNumber(r.min_relative_af, 2)}</dd>
+                    <dd className="text-right font-semibold">
+                      {formatNumber(r.min_relative_af, 2)}
+                    </dd>
                     <dt className="text-fg-subtle">{t('results.viewer.contrast')}</dt>
-                    <dd className="text-right font-semibold">{formatNumber(r.contrast_vs_surround, 2)}×</dd>
+                    <dd className="text-right font-semibold">
+                      {formatNumber(r.contrast_vs_surround, 2)}×
+                    </dd>
                     <dt className="text-fg-subtle">{t('results.viewer.border')}</dt>
-                    <dd className="text-right font-semibold">{formatNumber(r.border_irregularity, 2)}</dd>
+                    <dd className="text-right font-semibold">
+                      {formatNumber(r.border_irregularity, 2)}
+                    </dd>
                   </dl>
                   {threshold !== undefined ? (
-                    <p className="mt-2 text-fg-subtle">{t('results.viewer.threshold', { value: threshold })}</p>
+                    <p className="mt-2 text-fg-subtle">
+                      {t('results.viewer.threshold', { value: threshold })}
+                    </p>
                   ) : null}
-                  <p className="mt-2 font-semibold text-fg-muted">{t('results.viewer.confounders')}</p>
+                  <p className="mt-2 font-semibold text-fg-muted">
+                    {t('results.viewer.confounders')}
+                  </p>
                   {(r.confounders ?? []).length === 0 ? (
                     <p className="text-fg-subtle">{t('results.viewer.noConfounders')}</p>
                   ) : (
@@ -94,7 +110,9 @@ export function RegionMarkers({ regions, threshold }: { regions: FVLRegion[]; th
                       {(r.confounders ?? []).map((c) => (
                         <li key={c.type}>
                           {t(`results.confounder.${c.type}`)} ·{' '}
-                          {t('results.confounder.overlap', { value: Math.round(c.overlap_fraction * 100) })}
+                          {t('results.confounder.overlap', {
+                            value: Math.round(c.overlap_fraction * 100),
+                          })}
                         </li>
                       ))}
                     </ul>

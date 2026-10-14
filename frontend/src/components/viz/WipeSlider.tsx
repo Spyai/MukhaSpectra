@@ -1,4 +1,11 @@
-import { useCallback, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 export interface WipeSliderProps {
@@ -104,7 +111,12 @@ export function WipeSlider({
       onPointerCancel={onPointerUp}
       data-testid="wipe-slider"
     >
-      <img src={rightSrc} alt={rightAlt} className="absolute inset-0 h-full w-full object-contain" draggable={false} />
+      <img
+        src={rightSrc}
+        alt={rightAlt}
+        className="absolute inset-0 h-full w-full object-contain"
+        draggable={false}
+      />
       <img
         src={leftSrc}
         alt={leftAlt}
@@ -151,7 +163,17 @@ export function WipeSlider({
         style={{ left: `${pos}%` }}
         data-testid="wipe-handle"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="m9 7-5 5 5 5M15 7l5 5-5 5" />
         </svg>
       </div>

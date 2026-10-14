@@ -23,7 +23,10 @@ export function ScreeningList({ limit }: { limit?: number }) {
   }
   if (q.isError) {
     return (
-      <div className="rounded-2xl border border-dashed border-line p-5 text-sm text-fg-muted" role="alert">
+      <div
+        className="rounded-2xl border border-dashed border-line p-5 text-sm text-fg-muted"
+        role="alert"
+      >
         <p>{t('home.recentError')}</p>
         <p className="mt-1 text-fg-subtle">{errorMessage(q.error, t)}</p>
         <button type="button" className="btn btn-secondary mt-3" onClick={() => void q.refetch()}>
@@ -35,7 +38,11 @@ export function ScreeningList({ limit }: { limit?: number }) {
   }
   const items = limit ? q.data.slice(0, limit) : q.data;
   if (items.length === 0) {
-    return <p className="rounded-2xl border border-dashed border-line p-5 text-sm text-fg-muted">{t('home.recentEmpty')}</p>;
+    return (
+      <p className="rounded-2xl border border-dashed border-line p-5 text-sm text-fg-muted">
+        {t('home.recentEmpty')}
+      </p>
+    );
   }
   return (
     <m.ul
@@ -66,12 +73,18 @@ export function ScreeningList({ limit }: { limit?: number }) {
                 {formatDateTime(s.created_at)}
                 {s.age_years != null ? ` · ${t('common.years', { count: s.age_years })}` : ''}
                 {s.sex ? ` · ${t(`upload.sex.${s.sex}`)}` : ''}
-                {s.sites?.length ? ` · ${t('home.sitesCount', { count: s.sites.length })}` : ''}
-                {s.latest_version && s.latest_version > 1 ? ` · ${t('common.version', { version: s.latest_version })}` : ''}
+                {s.site_count ? ` · ${t('home.sitesCount', { count: s.site_count })}` : ''}
+                {s.latest_version && s.latest_version > 1
+                  ? ` · ${t('common.version', { version: s.latest_version })}`
+                  : ''}
               </span>
             </span>
             {s.overall_risk_level ? <RiskPill level={s.overall_risk_level} /> : null}
-            <Icon name="chevronRight" size={18} className="shrink-0 text-fg-subtle transition-transform group-hover:translate-x-0.5" />
+            <Icon
+              name="chevronRight"
+              size={18}
+              className="shrink-0 text-fg-subtle transition-transform group-hover:translate-x-0.5"
+            />
           </Link>
         </m.li>
       ))}

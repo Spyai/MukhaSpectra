@@ -14,12 +14,12 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from markupsafe import Markup
-from mukha_pipeline.positioning import find_positioning_violations
-from mukha_pipeline.schema.models import ScreeningResult
 
 from app.reports.context import build_context
 from app.reports.images import svg_data_uri
 from app.reports.types import ArtifactReader, PatientIdentity, ReportOptions
+from mukha_pipeline.positioning import find_positioning_violations
+from mukha_pipeline.schema.models import ScreeningResult
 
 log = logging.getLogger(__name__)
 

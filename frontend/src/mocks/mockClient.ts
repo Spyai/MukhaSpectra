@@ -31,7 +31,7 @@ interface Entry {
   versions: ScreeningResult[];
 }
 
-const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function randomId(n = 4): string {
@@ -94,7 +94,12 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
     async getVersion(): Promise<VersionResponse> {
       await sleep(readLatency / 2);
       const v = FIXTURES.high.versions;
-      return { software: v.software, pipeline: v.pipeline, schema_version: v.schema_version, models: v.models };
+      return {
+        software: v.software,
+        pipeline: v.pipeline,
+        schema_version: v.schema_version,
+        models: v.models,
+      };
     },
     async listScreenings() {
       await sleep(readLatency);
@@ -127,7 +132,8 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
         r.patient.sex = m.patient.sex;
         r.consent.research_use_opt_in = m.consent.research_use_opt_in;
         r.risk_factors = { ...r.risk_factors, ...m.risk_factors };
-        if (m.context.screening_site_name) r.context.screening_site_name = m.context.screening_site_name;
+        if (m.context.screening_site_name)
+          r.context.screening_site_name = m.context.screening_site_name;
       });
     },
     async runDemo(kind: DemoKind) {
@@ -146,13 +152,13 @@ export function createMockClient(options: MockClientOptions = {}): ApiClient {
       next.created_at = now().toISOString();
       next.processing = {
         ...next.processing,
-        stages: next.processing.stages.map((s) => ({
+        stages: (next.processing.stages ?? []).map((s) => ({
           ...s,
           duration_ms: Math.round(s.duration_ms * (0.85 + Math.random() * 0.3) * 10) / 10,
         })),
       };
       next.processing.duration_ms =
-        Math.round(next.processing.stages.reduce((a, s) => a + s.duration_ms, 0) * 10) / 10;
+        Math.round((next.processing.stages ?? []).reduce((a, s) => a + s.duration_ms, 0) * 10) / 10;
       e.versions.push(next);
       return detail(id);
     },

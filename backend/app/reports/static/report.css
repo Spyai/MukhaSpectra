@@ -1,7 +1,8 @@
 /* MukhaSpectra clinician report — print stylesheet (WeasyPrint, A4).
-   Calm clinical typography: Inter with DejaVu Sans fallback, tabular numbers, risk colour always
-   paired with an icon and the level text. Page-level running header/footer rules that depend on
-   the report (report id, versions) are injected by the template. */
+   Calm clinical typography: Inter with Noto Sans Kannada / Devanagari (names in Indian scripts,
+   when installed) and DejaVu Sans as fallbacks; tabular figures only where numbers line up; risk
+   colour always paired with an icon and the level text. Page-level running header/footer rules
+   that depend on the report (report id, patient, versions) are injected by the template. */
 
 :root {
   --ink: #1d2939;
@@ -28,10 +29,10 @@
 
 @page {
   size: A4;
-  margin: 15mm 13mm 13mm 13mm;
+  margin: 14mm 13mm 12.5mm 13mm;
 
   @top-left {
-    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
     font-size: 7.4pt;
     font-weight: 700;
     color: #b42318;
@@ -40,7 +41,7 @@
     padding-bottom: 2.4mm;
   }
   @top-center {
-    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
     font-size: 7.4pt;
     font-weight: 700;
     color: #b42318;
@@ -49,7 +50,7 @@
     padding-bottom: 3mm;
   }
   @top-right {
-    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
     font-size: 7.4pt;
     color: #475467;
     vertical-align: bottom;
@@ -57,7 +58,7 @@
     font-variant-numeric: tabular-nums;
   }
   @bottom-left {
-    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
     font-size: 6.8pt;
     color: #667085;
     vertical-align: top;
@@ -66,7 +67,7 @@
   }
   @bottom-right {
     content: "Page " counter(page) " of " counter(pages);
-    font-family: Inter, "DejaVu Sans", sans-serif;
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
     font-size: 7.2pt;
     font-weight: 600;
     color: #344054;
@@ -79,11 +80,19 @@
 * { box-sizing: border-box; }
 
 html {
-  font-family: Inter, "DejaVu Sans", Arial, sans-serif;
+  font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", Arial, sans-serif;
   font-size: 9.6pt;
   line-height: 1.38;
   color: var(--ink);
   background: #ffffff;
+  /* Keep risk colours and badge fills when report.html is printed from a browser. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Tabular figures only where numbers must line up: applied globally they give Inter's hyphen a
+   figure width ("Non - healing"). */
+.num, td.num, .mono, .report-meta, .kv .v, table.features td, .score-line .txt {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
@@ -99,7 +108,6 @@ strong { font-weight: 600; }
 .tiny { font-size: 7.2pt; }
 .num { text-align: right; white-space: nowrap; }
 th.num { white-space: normal; }
-.nowrap { white-space: nowrap; }
 .mono { font-size: 0.92em; letter-spacing: 0.01em; color: var(--ink-2); }
 
 /* ---------------------------------------------------------------- watermark + screen banner */
@@ -147,17 +155,22 @@ th.num { white-space: normal; }
   margin: 0;
 }
 .report-header .subtitle { color: var(--muted); font-size: 8.4pt; margin-top: 0.6mm; }
-.report-meta { text-align: right; font-size: 7.8pt; color: var(--ink-2); }
-.report-meta .rid { font-size: 10.5pt; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
-.report-meta div { margin-bottom: 0.2mm; }
+.report-meta { text-align: right; font-size: 7.8pt; color: var(--ink-2); max-width: 86mm; }
+.report-meta div { margin-bottom: 0.5mm; }
+.report-meta .meta-level { white-space: nowrap; }
+.report-meta .meta-when { font-size: 10pt; font-weight: 700; color: var(--c); margin-left: 2mm; vertical-align: 0.4mm; }
+.report-meta .meta-action { font-size: 8.4pt; font-weight: 600; color: var(--ink); line-height: 1.25; }
+.report-meta .meta-review { font-size: 7.6pt; font-weight: 600; color: var(--brand); line-height: 1.25; }
+.report-meta .meta-id { color: var(--muted); font-size: 7.2pt; }
+.report-meta .meta-id b { color: var(--ink-2); }
 
 .context-grid {
   display: grid;
-  grid-template-columns: 1.25fr 1fr 1fr 1fr;
+  grid-template-columns: 1.6fr 1.2fr 1fr 1fr;
   column-gap: 3mm;
-  row-gap: 1.2mm;
-  margin-top: 2.4mm;
-  padding: 2mm 3mm;
+  row-gap: 1mm;
+  margin-top: 2.2mm;
+  padding: 1.6mm 3mm;
   background: var(--soft);
   border: 0.6pt solid var(--rule);
   border-radius: 2mm;
@@ -169,7 +182,7 @@ th.num { white-space: normal; }
   color: var(--muted);
   font-weight: 600;
 }
-.kv .v { font-size: 8.3pt; color: var(--ink); }
+.kv .v { font-size: 8.3pt; color: var(--ink); line-height: 1.25; }
 
 .versions {
   margin-top: 1.2mm;
@@ -179,6 +192,7 @@ th.num { white-space: normal; }
 }
 .versions span.item { white-space: nowrap; margin-right: 2.4mm; }
 .versions b { color: var(--ink-2); font-weight: 600; }
+.versions .model-item { white-space: normal; }
 
 .status-chip {
   display: inline-block;
@@ -191,33 +205,30 @@ th.num { white-space: normal; }
 .status-chip.ok { color: var(--low); background: var(--low-tint); border-color: #9bd6cd; }
 .status-chip.warn { color: var(--moderate); background: var(--moderate-tint); border-color: #efc98a; }
 .status-chip.bad { color: var(--high); background: var(--high-tint); border-color: #f1aaa2; }
-.status-chip.neutral { color: var(--inconclusive); background: var(--inconclusive-tint); border-color: var(--rule-strong); }
 
 /* ---------------------------------------------------------------- notices */
 
-.synthetic-ribbon {
-  margin-top: 2.2mm;
-  padding: 1.4mm 3mm;
-  border: 1pt dashed #e0786d;
-  background: #fff4f2;
-  color: #912018;
-  border-radius: 2mm;
-  font-size: 7.5pt;
-  line-height: 1.3;
-}
-.synthetic-ribbon b { letter-spacing: 0.04em; }
-
 .disclaimer {
-  margin-top: 2.2mm;
-  padding: 1.8mm 3.4mm 1.8mm 10.5mm;
+  margin-top: 2mm;
+  padding: 1.6mm 3.4mm 1.6mm 10.5mm;
   position: relative;
   background: var(--brand-soft);
   border: 0.7pt solid var(--brand-line);
   border-radius: 2mm;
 }
-.disclaimer .icon { position: absolute; left: 3.2mm; top: 2.2mm; width: 4.8mm; height: 4.8mm; }
-.disclaimer .title { font-weight: 700; font-size: 9.6pt; color: #3f2a8c; margin-bottom: 0.3mm; }
+.disclaimer .icon { position: absolute; left: 3.2mm; top: 2.3mm; width: 4.6mm; height: 4.6mm; }
+.disclaimer .title { font-weight: 700; font-size: 9.4pt; color: #3f2a8c; }
 .disclaimer p { margin: 0; font-size: 8.2pt; line-height: 1.33; color: var(--ink-2); }
+.disclaimer .data-line {
+  margin-top: 1.1mm;
+  padding: 0.7mm 2.2mm;
+  border-radius: 1.4mm;
+  font-size: 7.3pt;
+  line-height: 1.28;
+  font-weight: 600;
+}
+.disclaimer .synthetic-line { border: 0.9pt dashed #e0786d; background: #fff4f2; color: #912018; }
+.disclaimer .provenance-line { border: 0.9pt dashed #e0a24a; background: #fff7e8; color: #7a3d06; }
 
 /* ---------------------------------------------------------------- sections */
 
@@ -249,7 +260,18 @@ h3 {
 .keep { break-inside: avoid; page-break-inside: avoid; }
 
 .cols-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; }
-.cols-main-side { display: grid; grid-template-columns: 1fr 74mm; column-gap: 5mm; }
+.cols-main-side { display: grid; grid-template-columns: 1fr 74mm; column-gap: 4.5mm; }
+.patient-row { display: grid; grid-template-columns: 1.1fr 0.9fr; column-gap: 4mm; }
+.page-start { break-before: page; page-break-before: always; }
+section.patient { margin-top: 3mm; }
+section.overall-row { margin-top: 3mm; }
+.overall-top { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; }
+.review-note { color: var(--brand); font-weight: 600; }
+.lesion .factors h3 { margin-top: 1.4mm; }
+.why .expl { font-size: 8.1pt; line-height: 1.3; color: var(--ink-2); margin: 0 0 1mm; }
+section.why { margin-top: 2.6mm; }
+section.why h3 { margin-top: 0; }
+.why table td { font-size: 7.8pt; padding-top: 0.5mm; padding-bottom: 0.5mm; line-height: 1.25; }
 
 .card {
   border: 0.6pt solid var(--rule);
@@ -259,14 +281,16 @@ h3 {
 }
 .card.soft { background: var(--soft); }
 
-dl.facts { display: grid; grid-template-columns: auto 1fr; column-gap: 3mm; row-gap: 0.4mm; margin: 0; font-size: 8.8pt; }
-dl.facts dt { color: var(--muted); font-size: 8.2pt; }
-dl.facts dd { margin: 0; font-weight: 600; }
+.pt { padding: 1.6mm 3mm; }
+.pt-main { font-size: 9.6pt; line-height: 1.3; }
+.pt-main b { font-weight: 700; }
+.pt-ids { font-size: 7.8pt; line-height: 1.32; color: var(--muted); margin-top: 0.5mm; }
+.pt-ids .v { color: var(--ink); font-weight: 600; }
+.pt-rf { padding: 1.4mm 3mm; }
 
-.rf-summary { font-weight: 600; font-size: 9.2pt; margin-bottom: 1.2mm; }
-.rf-groups { font-size: 8.2pt; }
-.rf-groups .grp { margin-bottom: 0.3mm; }
-.rf-groups .grp b { display: inline-block; min-width: 15mm; color: var(--muted); font-weight: 600; }
+.rf-label { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; margin-bottom: 0.3mm; }
+.rf-summary { font-weight: 600; font-size: 8.8pt; line-height: 1.3; margin-bottom: 0.4mm; }
+.rf-groups { font-size: 7.6pt; }
 
 /* ---------------------------------------------------------------- risk badges */
 
@@ -290,6 +314,8 @@ dl.facts dd { margin: 0; font-weight: 600; }
 .risk-badge.risk-inconclusive { background: var(--t); color: var(--c); border-style: dashed; border-width: 1.4pt; }
 .risk-badge svg { width: 5mm; height: 5mm; vertical-align: -0.6mm; margin-right: 1.8mm; }
 .risk-badge .lvl-sub { display: block; font-size: 6.8pt; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 1.2mm; opacity: 0.9; }
+.risk-badge.sm { font-size: 11pt; padding: 1.1mm 2.6mm 1.1mm 2mm; border-radius: 1.6mm; }
+.risk-badge.sm svg { width: 3.9mm; height: 3.9mm; margin-right: 1.2mm; vertical-align: -0.5mm; }
 
 .pill {
   display: inline-block;
@@ -308,19 +334,35 @@ dl.facts dd { margin: 0; font-weight: 600; }
 .pill svg { width: 2.9mm; height: 2.9mm; vertical-align: -0.45mm; margin-right: 0.8mm; }
 
 .overall { border-left: 2.6pt solid var(--c); background: #ffffff; }
-.overall .when { margin-top: 1.6mm; }
+.overall .when { margin-top: 0; }
 .overall .when .k { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
 .overall .when .v { font-size: 10pt; font-weight: 700; color: var(--c); }
 .overall .summary { font-size: 9.4pt; font-weight: 600; margin: 1.8mm 0 1mm; }
 .overall ol { font-size: 8.4pt; }
 .overall li { margin-bottom: 0.2mm; }
-.overall .expl { margin-top: 1.4mm; font-size: 7.9pt; line-height: 1.32; color: var(--ink-2); }
-.review-chip { display: inline-block; margin-left: 2mm; font-size: 7.2pt; font-weight: 600; color: var(--brand); border: 0.6pt solid var(--brand-line); background: var(--brand-soft); border-radius: 8pt; padding: 0.3mm 1.8mm; vertical-align: 1.4mm; }
+.overall .reviewed {
+  margin-top: 1.6mm; padding: 1mm 2mm; border: 0.9pt solid var(--brand-line); background: var(--brand-soft);
+  border-radius: 1.6mm; font-size: 8.2pt; line-height: 1.3; color: #3f2a8c;
+}
+.overall .steps-label { font-size: 7.6pt; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4mm; }
+.overall .clin-note {
+  margin-top: 1.2mm; padding: 1mm 2mm; border-left: 2pt solid var(--brand); background: var(--brand-soft);
+  font-size: 8.2pt; font-weight: 600; line-height: 1.3; color: #3f2a8c;
+}
+.overall .coverage { margin-top: 1.4mm; padding-top: 1.2mm; border-top: 0.5pt solid var(--rule); font-size: 7.5pt; line-height: 1.32; color: var(--ink-2); }
+.overall .coverage b { font-weight: 700; color: var(--ink); }
 
 .map-col img.sitemap { width: 100%; height: auto; display: block; }
-.map-col .orient { font-size: 7.2pt; color: var(--muted); text-align: center; margin-top: 0.8mm; }
-.findings-list { margin-top: 1.2mm; font-size: 8pt; }
-.findings-list .f { margin-bottom: 0.5mm; }
+.map-legend { margin-top: 0.8mm; font-size: 7pt; line-height: 1.25; color: var(--ink-2); display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 1.2mm; row-gap: 0.6mm; }
+.map-legend .it { white-space: nowrap; }
+.map-legend .sw { width: 4.2mm; height: 2.6mm; vertical-align: -0.4mm; margin-right: 0.6mm; }
+.map-legend .risk-icon { width: 2.7mm; height: 2.7mm; vertical-align: -0.4mm; margin-right: 0.6mm; }
+.map-legend .mk {
+  display: inline-block; width: 3.3mm; height: 3.3mm; line-height: 3mm; border-radius: 50%; border: 0.9pt solid var(--ink);
+  text-align: center; font-size: 6.4pt; font-weight: 700; margin: 0 0.8mm 0 0.5mm; vertical-align: -0.3mm;
+}
+.findings-list { margin-top: 1.6mm; padding-top: 1.4mm; border-top: 0.5pt solid var(--rule); font-size: 8pt; }
+.findings-list .f { display: inline-block; margin: 0 3mm 0.6mm 0; white-space: nowrap; }
 .findings-list .no {
   display: inline-block; width: 4.2mm; height: 4.2mm; line-height: 4.2mm; border-radius: 50%;
   border: 1pt solid var(--c); color: var(--c); text-align: center; font-weight: 700; font-size: 7pt;
@@ -353,6 +395,7 @@ tr.override .tag {
 td.pts { font-weight: 600; }
 td.pts.neg { color: var(--low); }
 td.pts.floor { color: var(--high); font-weight: 700; text-transform: uppercase; font-size: 6.6pt; letter-spacing: 0.05em; }
+.override-note { font-size: 6.9pt; color: var(--muted); margin-top: 0.5mm; }
 table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
 
 .score-line { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; margin-bottom: 1.2mm; }
@@ -380,7 +423,7 @@ table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
 .lesion-head .origins { font-size: 7.3pt; color: var(--muted); }
 .lesion-head .right { text-align: right; }
 .lesion-head .score { font-size: 7.3pt; color: var(--muted); margin-top: 0.4mm; }
-.lesion .summary { margin: 1.2mm 0 1.4mm; font-size: 8.5pt; line-height: 1.3; }
+.lesion .summary { margin: 1mm 0 1.2mm; font-size: 8.4pt; line-height: 1.28; }
 
 .triptych { display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 2.4mm; }
 .panel { margin: 0; }
@@ -391,7 +434,7 @@ table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
   overflow: hidden;
   text-align: center;
 }
-.panel img { width: 100%; height: 30mm; object-fit: contain; display: block; }
+.panel img { width: 100%; height: 30mm; object-fit: cover; display: block; }
 .panel .placeholder {
   height: 30mm;
   background: var(--soft);
@@ -406,9 +449,17 @@ table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
 .panel figcaption { margin-top: 0.5mm; font-size: 7.2pt; line-height: 1.25; }
 .panel figcaption b { font-weight: 700; }
 .panel figcaption span { color: var(--muted); }
+.hm-scale { margin-top: 0.4mm; font-size: 6.4pt; line-height: 1.2; color: var(--muted); }
+.hm-scale .bar-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 1mm; align-items: center; }
+.hm-scale .bar { display: block; height: 2mm; border-radius: 0.6mm; border: 0.4pt solid var(--rule-strong); }
+.hm-scale .end { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; color: var(--ink-2); }
+.hm-scale .key { margin-top: 0.2mm; }
 
 .measure-wrap { margin-top: 1.6mm; }
 table.measure { table-layout: fixed; }
+table.measure th { letter-spacing: 0.02em; }
+td.num.wrap { white-space: normal; }
+.why h3, .why .expl, .why .score-line { break-after: avoid; page-break-after: avoid; }
 table.measure .chip-warn { white-space: normal; }
 .measure-wrap .cap { font-size: 6.9pt; line-height: 1.3; color: var(--muted); margin-top: 0.6mm; }
 .obs { margin-top: 0.8mm; font-size: 7.6pt; line-height: 1.3; color: var(--ink-2); }
@@ -425,9 +476,8 @@ table.measure .chip-warn { white-space: normal; }
 .spectral .meta { font-size: 6.9pt; line-height: 1.3; color: var(--muted); margin-top: 0.4mm; }
 .clf { margin-top: 1.4mm; padding: 1.2mm 2mm; background: var(--soft); border-radius: 1.4mm; font-size: 7.5pt; line-height: 1.3; }
 .clf .status { color: var(--moderate); font-weight: 600; }
-.clf ul { margin-top: 0.4mm; }
-.clf li { margin-bottom: 0.1mm; }
-table.features td { font-size: 7.4pt; padding-top: 0.45mm; padding-bottom: 0.45mm; }
+table.features td { font-size: 7.4pt; padding-top: 0.4mm; padding-bottom: 0.4mm; line-height: 1.2; }
+table.features tr.cited td { font-weight: 700; color: var(--ink); }
 
 .model-line {
   margin-top: 1.4mm; padding: 1mm 2mm; border-radius: 1.4mm; font-size: 7.5pt; line-height: 1.3;
@@ -448,6 +498,10 @@ table.features td { font-size: 7.4pt; padding-top: 0.45mm; padding-bottom: 0.45m
 td.sev.error { color: var(--high); font-weight: 600; white-space: nowrap; }
 td.sev.warning { color: var(--moderate); font-weight: 600; white-space: nowrap; }
 tr.muted td { color: var(--muted); }
+.ref-chip {
+  display: inline-block; padding: 0.25mm 1.8mm; border-radius: 8pt; font-size: 7pt; font-weight: 600;
+  color: #1e3a8a; background: #eaf1fe; border: 0.7pt dashed #2563eb; white-space: nowrap;
+}
 .limits li { font-size: 7.8pt; line-height: 1.32; margin-bottom: 0.4mm; }
 
 /* ---------------------------------------------------------------- review + referral */
@@ -462,22 +516,41 @@ tr.muted td { color: var(--muted); }
   display: inline-block; width: 3.6mm; height: 3.6mm; border: 0.9pt solid var(--ink-2); border-radius: 0.6mm;
   vertical-align: -0.7mm; margin-right: 1.4mm; text-align: center; line-height: 3.2mm; font-size: 8pt; font-weight: 700;
 }
-.notes-lines .nl { border-bottom: 0.6pt solid var(--rule-strong); height: 6.2mm; }
-.notes-filled { min-height: 12mm; padding: 1.6mm 0; border-bottom: 0.6pt solid var(--rule-strong); }
+.notes-lines { margin-bottom: 1.4mm; }
+.notes-lines .nl { border-bottom: 0.6pt solid var(--rule-strong); height: 5.8mm; }
+.notes-filled { min-height: 10mm; padding: 1.2mm 0; border-bottom: 0.6pt solid var(--rule-strong); font-size: 8.4pt; line-height: 1.32; }
+.checks.biopsy { margin: 0 0 1.6mm; }
+.checks .lbl-inline { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-right: 2mm; }
+.checks .lbl-inline.fu { margin-left: 2mm; }
+.checks .blank { display: inline-block; width: 16mm; border-bottom: 0.7pt solid var(--ink-2); height: 3.4mm; vertical-align: -0.6mm; }
+.checks .blank.wide { width: 26mm; }
+.sig-note { font-size: 7.2pt; font-weight: 500; color: var(--muted); }
 
-.referral { display: grid; grid-template-columns: 1fr 38mm; column-gap: 5mm; break-inside: avoid; page-break-inside: avoid; }
-.facility { padding: 1.3mm 2.4mm; border: 0.6pt solid var(--rule); border-radius: 1.6mm; margin-bottom: 1.3mm; font-size: 7.9pt; line-height: 1.32; break-inside: avoid; }
+.referral { display: grid; grid-template-columns: 1fr 38mm; column-gap: 5mm; }
+.facility { padding: 1.1mm 2.4mm; border: 0.6pt solid var(--rule); border-radius: 1.6mm; margin-bottom: 1.3mm; font-size: 7.9pt; line-height: 1.32; break-inside: avoid; }
 .facility .name { font-weight: 700; font-size: 8.6pt; }
 .facility .example {
   display: inline-block; font-size: 6.8pt; font-weight: 700; color: var(--moderate); background: var(--moderate-tint);
   border: 0.5pt dashed #e0a24a; border-radius: 6pt; padding: 0 1.6mm; margin-left: 1mm; vertical-align: 0.3mm;
 }
 .facility .first { font-size: 6.6pt; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: 0.07em; }
+.facility.single .first { font-size: 7.6pt; text-transform: none; letter-spacing: 0; }
+.facility.missing {
+  border: 1.2pt solid var(--high); background: var(--high-tint); color: var(--high);
+  font-weight: 700; font-size: 9pt; padding: 1.6mm 2.6mm;
+}
+.slip {
+  margin: 0 0 1.6mm; padding: 1.1mm 2.4mm; border: 0.8pt dashed var(--rule-strong); border-radius: 1.6mm;
+  font-size: 8pt; line-height: 1.35; background: var(--soft);
+}
+.slip .k { display: inline-block; min-width: 13mm; font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
 .qr { text-align: center; }
 .qr img { width: 32mm; height: 32mm; display: block; margin: 0 auto; }
 .qr .url { font-size: 6.6pt; color: var(--ink-2); word-break: break-all; margin-top: 1mm; }
 .qr .hint { font-size: 7pt; color: var(--muted); margin-top: 0.8mm; }
 .qr .noqr { border: 0.8pt dashed var(--rule-strong); border-radius: 1.6mm; padding: 4mm 2mm; font-size: 7.6pt; color: var(--muted); }
 .urgency { font-size: 9.4pt; font-weight: 700; color: var(--c); margin-bottom: 1.2mm; }
+.urgency.reviewed-line { color: #3f2a8c; font-size: 8.8pt; }
+.urgency.reviewed-line .sub { display: block; font-size: 7.4pt; font-weight: 500; color: var(--muted); }
 
 .end-note { margin-top: 3mm; font-size: 6.9pt; color: var(--muted); border-top: 0.6pt solid var(--rule); padding-top: 1.6mm; }

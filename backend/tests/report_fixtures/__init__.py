@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
+from functools import cache
 
 from report_fixtures.results import (
     BUILDERS,
@@ -22,18 +24,26 @@ __all__ = [
     "build_high",
     "build_inconclusive",
     "build_low",
-    "dict_reader",
+    "cached_case",
     "default_options",
+    "dict_reader",
 ]
 
 
-def dict_reader(artifacts: dict[str, bytes]):
+@cache
+def cached_case(name: str, synthetic: bool = True) -> ReportCase:
+    """Build a fixture case once per test session (artifact drawing is the slow part)."""
+    return build_case(name, synthetic=synthetic)
+
+
+def dict_reader(artifacts: dict[str, bytes]) -> Callable[[str], bytes | None]:
     """ArtifactReader backed by a dict (missing key -> None)."""
     return artifacts.get
 
 
-def default_options(case: ReportCase, *, record_url: str | None = "default",
-                    generated_at: datetime | None = None):
+def default_options(
+    case: ReportCase, *, record_url: str | None = "default", generated_at: datetime | None = None
+):
     """ReportOptions for a fixture case with the example facilities from facilities.yaml."""
     from app.reports import ReportOptions, load_facilities
 

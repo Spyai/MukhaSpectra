@@ -11,7 +11,12 @@ const HeroScene = lazy(() => import('../../three/HeroScene'));
 /** Static illustration of the same principle (no WebGL, reduced motion, or while loading). */
 export function HeroFallback() {
   return (
-    <svg viewBox="0 0 640 400" className="h-full w-full" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+    <svg
+      viewBox="0 0 640 400"
+      className="h-full w-full"
+      aria-hidden="true"
+      preserveAspectRatio="xMidYMid slice"
+    >
       <defs>
         <radialGradient id="hf-glow" cx="42%" cy="62%" r="55%">
           <stop offset="0%" stopColor="oklch(0.82 0.2 150)" stopOpacity="0.95" />
@@ -30,15 +35,31 @@ export function HeroFallback() {
           <circle cx="6.5" cy="6" r="0.7" fill="oklch(1 0 0 / 0.05)" />
         </pattern>
       </defs>
-      <path d="M0 250 C 120 205, 230 300, 360 250 S 560 205, 640 245 L640 400 L0 400 Z" fill="oklch(0.2 0.05 330 / 0.9)" />
+      <path
+        d="M0 250 C 120 205, 230 300, 360 250 S 560 205, 640 245 L640 400 L0 400 Z"
+        fill="oklch(0.2 0.05 330 / 0.9)"
+      />
       <ellipse cx="300" cy="300" rx="300" ry="95" fill="url(#hf-glow)" filter="url(#hf-blur)" />
-      <path d="M0 250 C 120 205, 230 300, 360 250 S 560 205, 640 245 L640 400 L0 400 Z" fill="url(#hf-tex)" />
+      <path
+        d="M0 250 C 120 205, 230 300, 360 250 S 560 205, 640 245 L640 400 L0 400 Z"
+        fill="url(#hf-tex)"
+      />
       <path
         d="M402 286 c 18 -14 52 -16 66 0 c 14 16 6 34 -14 40 c -22 6 -48 2 -58 -14 c -6 -10 -2 -18 6 -26 Z"
         fill="oklch(0.14 0.03 160)"
         opacity="0.92"
       />
-      <ellipse cx="436" cy="305" rx="62" ry="40" fill="none" stroke="white" strokeOpacity="0.8" strokeWidth="2" strokeDasharray="7 7" />
+      <ellipse
+        cx="436"
+        cy="305"
+        rx="62"
+        ry="40"
+        fill="none"
+        stroke="white"
+        strokeOpacity="0.8"
+        strokeWidth="2"
+        strokeDasharray="7 7"
+      />
       <path d="M300 30 L 210 280 L 390 280 Z" fill="url(#hf-beam)" opacity="0.55" />
       <circle cx="300" cy="30" r="6" fill="oklch(0.85 0.12 290)" />
     </svg>
@@ -65,18 +86,27 @@ export function Hero() {
           <m.p variants={rise} className="eyebrow">
             {t('home.eyebrow')}
           </m.p>
-          <h1 id="hero-title" className="mt-3 text-[2.1rem] leading-[1.08] font-extrabold tracking-tight sm:text-5xl lg:text-[3.4rem]">
+          <h1
+            id="hero-title"
+            className="mt-3 text-[2.1rem] leading-[1.08] font-extrabold tracking-tight sm:text-5xl lg:text-[3.4rem]"
+          >
             <m.span variants={rise} className="block violet-text">
               {t('home.heroTitle1')}
             </m.span>
             <m.span variants={rise} className="block glow-text">
               {t('home.heroTitle2')}
             </m.span>
-            <m.span variants={rise} className="mt-1 block text-[1.45rem] leading-snug font-bold text-fg sm:text-3xl">
+            <m.span
+              variants={rise}
+              className="mt-1 block text-[1.45rem] leading-snug font-bold text-fg sm:text-3xl"
+            >
               {t('home.heroTitle3')}
             </m.span>
           </h1>
-          <m.p variants={rise} className="mt-5 max-w-xl text-base leading-relaxed text-fg-muted sm:text-lg">
+          <m.p
+            variants={rise}
+            className="mt-5 max-w-xl text-base leading-relaxed text-fg-muted sm:text-lg"
+          >
             {t('home.heroBody')}
           </m.p>
           <m.div variants={rise} className="mt-7 flex flex-wrap gap-3">
@@ -99,7 +129,7 @@ export function Hero() {
           >
             {show3d ? (
               <Suspense fallback={<HeroFallback />}>
-                <HeroScene reduced={reduced} dark={true} />
+                <HeroScene reduced={reduced} />
               </Suspense>
             ) : (
               <HeroFallback />
