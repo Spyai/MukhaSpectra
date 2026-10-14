@@ -13,6 +13,7 @@ from mukha_pipeline.io.images import (
     encode_png,
     load_image_bytes,
     resize_max_side,
+    to_float_rgb,
     to_uint8,
 )
 from mukha_pipeline.io.spectral import (
@@ -35,5 +36,6 @@ __all__ = [
     "load_image_bytes",
     "parse_spectral_file",
     "resize_max_side",
+    "to_float_rgb",
     "to_uint8",
 ]

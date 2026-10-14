@@ -3,8 +3,8 @@
 Phase 1 uses transparent HSV/Lab colour rules; a U-Net can replace it later behind the same
 :class:`Segmenter` interface.
 
-Clinical point that drives the design: leukoplakia (a white patch, one of the commonest oral
-potentially malignant disorders) is whitish and low-saturation, exactly like teeth. Naive colour
+Clinical point that drives the design: leukoplakia (a white patch, the commonest oral lesion
+with a risk of progression) is whitish and low-saturation, exactly like teeth. Naive colour
 rules therefore label it "teeth" and silently drop the lesion from the AF analysis — the worst
 kind of false reassurance. We keep any non-mucosa blob that is enclosed (or almost enclosed) by
 mucosa *inside* the mucosa mask, while teeth, which reach the image border or the dark oral
@@ -34,6 +34,7 @@ _DEFAULTS: dict[str, Any] = {
     "mucosa_lab_a_min": 14.0,
     "teeth_saturation_max": 0.22,
     "teeth_value_min": 0.62,
+    "teeth_lab_a_max": 8.0,
     "background_value_max": 0.12,
     "specular_value_min": 0.96,
     "specular_saturation_max": 0.20,
@@ -153,8 +154,10 @@ def classify_pixels(wl: np.ndarray, cfg: dict | None) -> PixelClasses:
     """Per-pixel colour rules. ``wl`` must already be sanitised float32 RGB in [0, 1].
 
     Mucosa is pink/red: hue in the configured OpenCV ranges (0-180) or Lab a* (redness) high,
-    with enough saturation and brightness. Teeth are bright and unsaturated. The oral cavity
-    shadow is very dark. Specular highlights are near-white (V high, S low).
+    with enough saturation and brightness. Teeth are bright, unsaturated and not pinkish
+    (a* < ``teeth_lab_a_max``); bright, unsaturated but pinkish pixels are pale mucosa (anaemia,
+    blanched submucous fibrosis), not teeth. The oral cavity shadow is very dark. Specular
+    highlights are near-white (V high, S low).
     """
     hsv = cv2.cvtColor(wl, cv2.COLOR_RGB2HSV)  # float32: H 0-360, S 0-1, V 0-1
     hue = hsv[:, :, 0] / 2.0  # OpenCV 8-bit hue convention, matches the YAML ranges
@@ -165,17 +168,15 @@ def classify_pixels(wl: np.ndarray, cfg: dict | None) -> PixelClasses:
     specular = (val >= float(_cfg(cfg, "specular_value_min"))) & (
         sat <= float(_cfg(cfg, "specular_saturation_max"))
     )
-    teeth = (
-        (sat <= float(_cfg(cfg, "teeth_saturation_max")))
-        & (val >= float(_cfg(cfg, "teeth_value_min")))
-        & ~specular
-    )
+    bright = val >= float(_cfg(cfg, "teeth_value_min"))
+    pinkish = lab_a >= float(_cfg(cfg, "teeth_lab_a_max"))
+    teeth = (sat <= float(_cfg(cfg, "teeth_saturation_max"))) & bright & ~pinkish & ~specular
     reddish = _hue_in_ranges(hue, _cfg(cfg, "mucosa_hue_ranges")) | (
         lab_a >= float(_cfg(cfg, "mucosa_lab_a_min"))
     )
+    coloured = reddish & (sat >= float(_cfg(cfg, "mucosa_saturation_min")))
     mucosa = (
-        reddish
-        & (sat >= float(_cfg(cfg, "mucosa_saturation_min")))
+        (coloured | (pinkish & bright))
         & (val >= float(_cfg(cfg, "mucosa_value_min")))
         & ~teeth
         & ~background

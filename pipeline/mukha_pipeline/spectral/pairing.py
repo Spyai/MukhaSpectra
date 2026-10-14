@@ -57,6 +57,5 @@ def auto_pair(entries: Iterable[PairingEntry]) -> dict[str, AutoPair]:
 def auto_pair_inputs(inputs: Sequence[SpectralInput]) -> dict[str, AutoPair]:
     """:func:`auto_pair` for already-built ``SpectralInput`` objects."""
     return auto_pair(
-        PairingEntry(i.reading_id, OralSite(i.site), i.role, i.reference_reading_id)
-        for i in inputs
+        PairingEntry(i.reading_id, OralSite(i.site), i.role, i.reference_reading_id) for i in inputs
     )

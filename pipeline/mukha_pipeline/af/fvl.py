@@ -82,6 +82,22 @@ def empty_fvl_output(
     )
 
 
+def analysable_mucosa(mucosa: np.ndarray, cfg: dict | None) -> np.ndarray:
+    """Mucosa minus a thin rim along its outer edge (``edge_margin_px``).
+
+    A few pixels of AF-to-WL misregistration put the dark oral-cavity background of the AF image
+    inside the WL mucosa border, which would read as a band of fluorescence loss along every
+    edge. Only the outer outline is eroded: holes (glare cut-outs) are not widened, and the image
+    border itself is not treated as an edge.
+    """
+    margin = int(get(cfg, "edge_margin_px", AF_DEFAULTS))
+    if margin <= 0 or not mucosa.any():
+        return mucosa
+    outline = ndi.binary_fill_holes(mucosa).astype(np.uint8)
+    eroded = cv2.erode(outline, disk(margin), borderType=cv2.BORDER_CONSTANT, borderValue=1)
+    return mucosa & eroded.astype(bool)
+
+
 def fvl_mask(relative_af: np.ndarray, mucosa: np.ndarray, cfg: dict | None) -> np.ndarray:
     """Threshold relative AF inside mucosa, open (remove speckle), close (bridge texture gaps)."""
     thr = float(get(cfg, "fvl_relative_threshold", AF_DEFAULTS))
@@ -187,7 +203,9 @@ def _measure_regions(
     return out
 
 
-def _site_medians(maps: AFMaps, mucosa: np.ndarray, relative_af: np.ndarray) -> AFSiteMedians | None:
+def _site_medians(
+    maps: AFMaps, mucosa: np.ndarray, relative_af: np.ndarray
+) -> AFSiteMedians | None:
     meds = [
         finite_median(arr[mucosa])
         for arr in (maps.green, maps.gr_ratio, maps.af_index, relative_af)
@@ -210,12 +228,13 @@ def detect_fvl(
 
     Statuses: ``insufficient_mucosa`` when too little tissue is analysable, ``no_reference``
     when there is no usable reference level; both return no regions and an all-NaN relative AF
-    (the triage then cannot call the site low risk on AF grounds). Regions are ordered by
+    (the triage then cannot call the site low risk on AF grounds). A thin rim along the mucosa
+    edge is excluded (see :func:`analysable_mucosa`). Regions are ordered by
     severity: lowest mean relative AF first, larger area first on ties; ids are "r1".."rN" and
     ``labels`` uses the same numbering.
     """
     shape = maps.green.shape
-    muc = as_bool_mask(mucosa, shape, "mucosa") & np.isfinite(maps.green)
+    muc = analysable_mucosa(as_bool_mask(mucosa, shape, "mucosa"), cfg) & np.isfinite(maps.green)
     n_px = max(int(np.prod(shape)), 1)
     mucosa_area = int(muc.sum())
     min_area = effective_min_area(cfg, mucosa_area)
@@ -223,7 +242,11 @@ def detect_fvl(
     min_px = max(int(get(cfg, "reference_min_pixels", AF_DEFAULTS)), min_area)
     if mucosa_area / n_px < min_frac or mucosa_area < min_px:
         return empty_fvl_output(
-            shape, cfg, status="insufficient_mucosa", reference=reference, min_region_area_px=min_area
+            shape,
+            cfg,
+            status="insufficient_mucosa",
+            reference=reference,
+            min_region_area_px=min_area,
         )
     ref = reference.reference_green
     if reference.type == ReferenceType.NONE or ref is None or not math.isfinite(ref) or ref <= 0:

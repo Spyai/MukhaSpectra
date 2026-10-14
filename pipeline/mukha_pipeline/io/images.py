@@ -120,10 +120,11 @@ def load_image_bytes(
         if pil.format == "TIFF" and _is_dng(pil):
             return _load_raw(data, digest, max_pixels)
         _check_size(pil.width, pil.height, max_pixels)
+        high_bit = _is_high_bit_colour(pil)  # before EXIF: reading PNG EXIF loads the pixels
         exif = exif_from_pil(pil)
         mime = _mime_type(pil.format, filename)
         try:
-            image, bit_depth, notes = _decode_pil(pil, data)
+            image, bit_depth, notes = _decode_pil(pil, data, high_bit)
         except ImageDecodeError:
             raise
         except Image.DecompressionBombError as err:
@@ -184,10 +185,10 @@ def _mime_type(fmt: str | None, filename: str | None) -> str:
     return guessed or "application/octet-stream"
 
 
-def _decode_pil(pil: Image.Image, data: bytes) -> tuple[np.ndarray, int, list[str]]:
+def _decode_pil(pil: Image.Image, data: bytes, high_bit: bool) -> tuple[np.ndarray, int, list[str]]:
     """Pixels -> float32 RGB [0, 1] with EXIF orientation applied."""
     notes: list[str] = []
-    if _is_high_bit_colour(pil):
+    if high_bit:
         # Pillow truncates 16-bit colour to 8 bits; OpenCV keeps the full precision.
         arr = _decode_high_bit_colour(data)
         arr = apply_exif_orientation(arr, _orientation(pil))
@@ -358,7 +359,7 @@ def exif_from_pil(pil: Image.Image) -> ExifInfo:
         value = sub.get(code) if sub else None
         return base.get(code) if value is None else value
 
-    exposure_s = _positive_float(tag(_EXIF_EXPOSURE_TIME))
+    exposure_s = _positive_float(tag(_EXIF_EXPOSURE_TIME), rational=True)
     iso = None
     for code in (_EXIF_ISO, _EXIF_ISO_SPEED, _EXIF_RECOMMENDED_EI):
         iso = _positive_float(tag(code))
@@ -377,14 +378,16 @@ def exif_from_pil(pil: Image.Image) -> ExifInfo:
     )
 
 
-def _positive_float(value: Any) -> float | None:
+def _positive_float(value: Any, *, rational: bool = False) -> float | None:
+    """Finite positive float, else None. Sequences: a (num, den) pair when ``rational``, else
+    the first value (ISO may be stored as several values)."""
     if isinstance(value, tuple | list):
-        if len(value) == 2 and all(isinstance(v, int | float) for v in value) and value[1]:
-            value = value[0] / value[1]  # (numerator, denominator)
-        elif value:
-            value = value[0]
-        else:
+        if not value:
             return None
+        if rational and len(value) == 2 and all(isinstance(v, int | float) for v in value):
+            value = value[0] / value[1] if value[1] else None
+        else:
+            value = value[0]
     try:
         out = float(value)
     except (TypeError, ValueError, ZeroDivisionError):
@@ -436,6 +439,26 @@ def _clean_text(value: Any) -> str | None:
 # --------------------------------------------------------------------------------------------
 # Encoding and resizing
 # --------------------------------------------------------------------------------------------
+
+
+def to_float_rgb(img: np.ndarray) -> np.ndarray:
+    """Any (H, W), (H, W, 1|3|4) float / int / bool array -> float32 RGB in [0, 1], NaN-safe.
+
+    Lets in-memory sources (synthetic generator, mock devices, tests) meet the same image
+    convention as decoded uploads. Integer images are scaled by their dtype's maximum.
+    """
+    arr = np.asarray(img)
+    if arr.dtype == np.bool_:
+        arr = arr.astype(np.float32)
+    elif np.issubdtype(arr.dtype, np.integer):
+        arr = arr.astype(np.float32) / float(np.iinfo(arr.dtype).max)
+    if arr.ndim == 2:
+        arr = arr[..., None]
+    if arr.ndim != 3 or arr.shape[2] not in (1, 3, 4):
+        raise ValueError(f"expected an (H, W) or (H, W, 1|3|4) image, got shape {arr.shape}")
+    if arr.shape[2] == 1:
+        arr = np.repeat(arr, 3, axis=2)
+    return _finalise(arr[..., :3])
 
 
 def to_uint8(img: np.ndarray) -> np.ndarray:

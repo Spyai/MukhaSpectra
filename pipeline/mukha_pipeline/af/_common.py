@@ -19,6 +19,7 @@ AF_DEFAULTS: dict[str, Any] = {
     "morphology_open_px": 5,
     "morphology_close_px": 9,
     "surround_ring_px": 15,
+    "edge_margin_px": 3,
     "reference_percentile_low": 25,
     "reference_percentile_high": 90,
     "reference_min_pixels": 200,
@@ -58,6 +59,25 @@ def as_bool_mask(mask: np.ndarray | None, shape: tuple[int, int], name: str) -> 
     if m.shape != shape:
         raise ValueError(f"{name} has shape {m.shape}, expected {shape}")
     return m.astype(bool, copy=False)
+
+
+def to_float_rgb(img: np.ndarray) -> np.ndarray:
+    """Any RGB-like array (uint8/uint16/float, gray or RGBA) -> float32 RGB in [0, 1], NaN -> 0."""
+    arr = np.asarray(img)
+    if arr.dtype == np.uint8:
+        arr = arr.astype(np.float32) / 255.0
+    elif arr.dtype == np.uint16:
+        arr = arr.astype(np.float32) / 65535.0
+    else:
+        arr = arr.astype(np.float32, copy=True)
+    if arr.ndim == 2:
+        arr = np.repeat(arr[:, :, None], 3, axis=2)
+    if arr.ndim != 3 or arr.shape[2] not in (1, 3, 4):
+        raise ValueError(f"expected an RGB image (H, W, 3), got shape {np.shape(img)}")
+    if arr.shape[2] == 1:
+        arr = np.repeat(arr, 3, axis=2)
+    arr = arr[:, :, :3]
+    return np.clip(np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0), 0.0, 1.0)
 
 
 def disk(radius_px: float) -> np.ndarray:

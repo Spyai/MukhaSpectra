@@ -21,8 +21,15 @@ IN_IMAGE_SUFFIX = (
 )
 
 
-def _usable(value: float | None) -> bool:
-    return value is not None and math.isfinite(value) and value > 0
+def _positive(value: float | None) -> float | None:
+    """The value as a float if it is a usable (finite, positive) reference level, else None."""
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) and v > 0 else None
 
 
 def _label(site: OralSite) -> str:
@@ -58,36 +65,34 @@ def resolve_reference(
     """
     site = OralSite(site)
     paired, pairing = reference_site_for(site)
-    own_ok = _usable(own_reference)
+    own = _positive(own_reference)
     reason: str | None = None
-    if paired is not None and paired != site:
-        paired_value = available.get(paired)
-        if _usable(paired_value):
-            assert paired_value is not None  # for type checkers; _usable guarantees it
-            too_dim = own_ok and paired_value < min_paired_ratio * float(own_reference or 0.0)
-            if not too_dim:
-                if pairing == "contralateral":
-                    return AFReference(
-                        type=ReferenceType.CONTRALATERAL,
-                        reference_site=paired,
-                        reference_green=float(paired_value),
-                        note=f"Compared with the patient's own {_label(paired)}.",
-                    )
-                return AFReference(
-                    type=ReferenceType.ANALOGOUS_SITE,
-                    reference_site=paired,
-                    reference_green=float(paired_value),
-                    note=(
-                        f"No mirror-image site exists; compared with the patient's own "
-                        f"{_label(paired)}, which has similar tissue."
-                    ),
-                )
+    paired_value = _positive(available.get(paired)) if paired is not None else None
+    if paired is not None and paired_value is not None:
+        if own is not None and paired_value < min_paired_ratio * own:
             reason = "dim"
-    if own_ok:
+        elif pairing == "contralateral":
+            return AFReference(
+                type=ReferenceType.CONTRALATERAL,
+                reference_site=paired,
+                reference_green=paired_value,
+                note=f"Compared with the patient's own {_label(paired)}.",
+            )
+        else:
+            return AFReference(
+                type=ReferenceType.ANALOGOUS_SITE,
+                reference_site=paired,
+                reference_green=paired_value,
+                note=(
+                    f"No mirror-image site exists; compared with the patient's own "
+                    f"{_label(paired)}, which has similar tissue."
+                ),
+            )
+    if own is not None:
         return AFReference(
             type=ReferenceType.IN_IMAGE_AUTO,
             reference_site=None,
-            reference_green=float(own_reference),  # type: ignore[arg-type]
+            reference_green=own,
             note=_in_image_note(paired, reason),
         )
     return AFReference(
