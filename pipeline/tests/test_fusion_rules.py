@@ -24,7 +24,7 @@ def test_bundled_rules_parse():
     assert OralSite.LOWER_GINGIVA in rules.site.high_risk_sites
     # Gingivobuccal complex: high-risk, and not discounted as a low-specificity AF site.
     assert OralSite.LOWER_GINGIVA not in rules.site.af_low_specificity_sites
-    assert rules.version == "1.1.0"
+    assert rules.version == "1.2.0"
     assert {o.code for o in rules.overrides} >= {"visual.red_patch", "symptom.non_healing_ulcer"}
 
 

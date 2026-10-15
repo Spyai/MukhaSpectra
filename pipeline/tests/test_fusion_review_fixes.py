@@ -45,6 +45,10 @@ from mukha_pipeline.sites import OralSite, reference_site_for
 C = ConfounderType
 V = VisualAppearance
 CLEAN_STEP = "lean the area (gauze/rinse) and retake the photos"
+# Not a high-risk site (where any FVL is at least MODERATE, `af.high_risk_site_fvl_floor`) and
+# not low-specificity: a mild region here keeps the score-based LOW path. The lower lip is its
+# analogous reference (x0.9).
+LIP, LIP_REF = S.UPPER_LIP_MUCOSA, S.LOWER_LIP_MUCOSA
 
 
 def triage(
@@ -143,7 +147,7 @@ def test_strong_floor_from_raw_points_and_from_depth_alone():
 
 
 def test_mild_region_is_not_floored():
-    out = triage([site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70)]), site(S.BUCCAL_MUCOSA_RIGHT)])
+    out = triage([site(LIP, [region(mean_rel=0.70)]), site(LIP_REF)])
     assert out.lesions[0].risk_level == RiskLevel.LOW
     assert "af.strong_fvl_floor" not in codes(out.lesions[0].contributing_factors)
 
@@ -153,10 +157,7 @@ def test_strong_floor_is_configurable(tmp_path):
         d["lesion"]["af"]["strong_fvl_floor"].update(raw_points_min=99, mean_relative_af_max=0.0)
 
     rules = write_rules(tmp_path, mutate)
-    sites = [
-        site(S.BUCCAL_MUCOSA_LEFT, [strong_region(confounders=[(C.PORPHYRIN_RED, 1.0)])]),
-        site(S.BUCCAL_MUCOSA_RIGHT),
-    ]
+    sites = [site(LIP, [strong_region(confounders=[(C.PORPHYRIN_RED, 1.0)])]), site(LIP_REF)]
     assert triage(sites, rules=rules).lesions[0].risk_level == RiskLevel.LOW
 
 
@@ -183,13 +184,10 @@ def test_strong_floor_validation(key, value):
 
 @pytest.mark.parametrize("confounder", [C.PORPHYRIN_RED, C.GLARE])
 def test_cleanable_confounder_adds_clean_and_retake_step(confounder):
-    sites = [
-        site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70, confounders=[(confounder, 0.6)])]),
-        site(S.BUCCAL_MUCOSA_RIGHT),
-    ]
+    sites = [site(LIP, [region(mean_rel=0.70, confounders=[(confounder, 0.6)])]), site(LIP_REF)]
     out = triage(sites)
     assert out.triage.overall_risk_level == RiskLevel.LOW
-    assert any(CLEAN_STEP in s and "Left buccal mucosa" in s for s in steps(out))
+    assert any(CLEAN_STEP in s and "Upper lip mucosa" in s for s in steps(out))
     assert any(CLEAN_STEP in s for s in out.lesions[0].recommended_action.steps)
 
 
@@ -220,7 +218,7 @@ def test_clean_step_never_delays_a_high_referral():
 
 
 def test_low_explanation_never_says_below_re_examination_level():
-    out = triage([site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70)]), site(S.BUCCAL_MUCOSA_RIGHT)])
+    out = triage([site(LIP, [region(mean_rel=0.70)]), site(LIP_REF)])
     assert out.triage.overall_risk_level == RiskLevel.LOW
     assert "below the level that needs re-examination" not in out.triage.explanation
 
@@ -404,15 +402,15 @@ def test_level_raised_by_habits_is_explained_and_lesion_keeps_its_level():
         areca_nut={"uses": True},
         alcohol={"uses": True, "frequency": "daily"},
     )
-    sites = [site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.68)]), site(S.BUCCAL_MUCOSA_RIGHT)]
+    sites = [site(LIP, [region(mean_rel=0.68)]), site(LIP_REF)]
     out = triage(sites, age=52, rf=rf)
     (lesion,) = out.lesions
     assert lesion.risk_level == RiskLevel.LOW
-    assert out.site_levels[S.BUCCAL_MUCOSA_LEFT] == RiskLevel.LOW
+    assert out.site_levels[LIP] == RiskLevel.LOW
     t = out.triage
     assert t.overall_risk_level == RiskLevel.MODERATE
     assert "Overall MODERATE because habits and history" in t.explanation
-    assert "the finding at the left buccal mucosa scored LOW on its own" in t.explanation
+    assert "the finding at the upper lip mucosa scored LOW on its own" in t.explanation
     action = lesion.recommended_action
     assert "No high-risk features" not in action.summary
     assert action.code == ActionCode.REEXAMINE_2_WEEKS
@@ -421,15 +419,13 @@ def test_level_raised_by_habits_is_explained_and_lesion_keeps_its_level():
 
 def test_level_raised_by_floor_is_explained():
     rf = risk(symptoms={"non_healing_ulcer_over_2_weeks": True})
-    out = triage(
-        [site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70)]), site(S.BUCCAL_MUCOSA_RIGHT)], rf=rf
-    )
+    out = triage([site(LIP, [region(mean_rel=0.70)]), site(LIP_REF)], rf=rf)
     t = out.triage
     assert t.overall_risk_level == RiskLevel.HIGH
     assert out.lesions[0].risk_level == RiskLevel.LOW
     assert (
         "Overall HIGH because of a non-healing ulcer reported for more than 2 weeks, even though "
-        "the finding at the left buccal mucosa scored LOW on its own."
+        "the finding at the upper lip mucosa scored LOW on its own."
     ) in t.explanation
     assert out.lesions[0].recommended_action.code == ActionCode.URGENT_REFERRAL
 
@@ -662,7 +658,7 @@ def test_findings_at_unreliable_segmentation_site_still_count():
     assert lesion.risk_level == RiskLevel.HIGH
     assert out.triage.overall_risk_level == RiskLevel.HIGH
     assert "qc.segmentation_unreliable" in codes(lesion.contributing_factors)
-    mild = triage([site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70)], seg_status="failed")])
+    mild = triage([site(LIP, [region(mean_rel=0.70)], seg_status="failed")])
     assert mild.lesions[0].risk_level == RiskLevel.INCONCLUSIVE
     assert mild.triage.overall_risk_level == RiskLevel.INCONCLUSIVE
 
@@ -684,7 +680,7 @@ def test_moderate_finding_at_only_site_with_unreliable_segmentation_stays_modera
 
 def test_rules_version_bumped():
     rules = parse_rules_default()
-    assert rules.version == "1.1.0"
+    assert rules.version == "1.2.0"
     assert all(find_positioning_violations(o.label) == [] for o in rules.overrides)
     assert rules.af.strong_fvl_floor is not None
     assert rules.af.strong_fvl_floor.floor == RiskLevel.MODERATE
@@ -718,10 +714,7 @@ def test_strong_floor_can_be_removed_and_must_be_well_formed(tmp_path):
 
     rules = write_rules(tmp_path, drop)
     assert parse_triage_rules(rules.data).af.strong_fvl_floor is None
-    sites = [
-        site(S.BUCCAL_MUCOSA_LEFT, [strong_region(confounders=[(C.PORPHYRIN_RED, 1.0)])]),
-        site(S.BUCCAL_MUCOSA_RIGHT),
-    ]
+    sites = [site(LIP, [strong_region(confounders=[(C.PORPHYRIN_RED, 1.0)])]), site(LIP_REF)]
     assert triage(sites, rules=rules).lesions[0].risk_level == RiskLevel.LOW
     for bad in ("yes", {**default_rules().data["lesion"]["af"]["strong_fvl_floor"], "extra": 1}):
         data = default_rules().data
@@ -732,15 +725,12 @@ def test_strong_floor_can_be_removed_and_must_be_well_formed(tmp_path):
 
 
 def test_low_with_several_findings_names_the_strongest():
-    sites = [
-        site(S.BUCCAL_MUCOSA_LEFT, [region("r1", mean_rel=0.72), region("r2", mean_rel=0.70)]),
-        site(S.BUCCAL_MUCOSA_RIGHT),
-    ]
+    sites = [site(LIP, [region("r1", mean_rel=0.72), region("r2", mean_rel=0.70)]), site(LIP_REF)]
     t = triage(sites).triage
     assert t.overall_risk_level == RiskLevel.LOW
     assert t.explanation.startswith(
         "All findings scored low on this screen; the strongest is mild loss of fluorescence at "
-        "the left buccal mucosa (relative AF 0.70"
+        "the upper lip mucosa (relative AF 0.70"
     )
 
 

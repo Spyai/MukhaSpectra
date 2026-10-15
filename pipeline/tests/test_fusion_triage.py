@@ -170,20 +170,19 @@ def test_visual_other_at_failed_site_without_floor_stays_inconclusive(tmp_path):
 
 
 def test_mild_fvl_is_low_and_more_features_make_it_moderate():
-    mild = triage(
-        [site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70)]), site(S.BUCCAL_MUCOSA_RIGHT)]
-    )
+    # Upper lip mucosa: not a high-risk site (where any FVL is at least MODERATE), so the level
+    # follows the score; the lower lip is its analogous reference (x0.9).
+    mild = triage([site(S.UPPER_LIP_MUCOSA, [region(mean_rel=0.70)]), site(S.LOWER_LIP_MUCOSA)])
     (lesion,) = mild.lesions
-    expected = (1.5 + 0.75 * 0.5) * 1.15
+    expected = (1.5 + 0.75 * 0.5) * 0.9
     assert lesion.score == pytest.approx(expected, abs=1e-3)
     assert lesion.risk_level == RiskLevel.LOW
     assert mild.triage.overall_risk_level == RiskLevel.LOW
     assert "The only finding scored low on this screen" in mild.triage.explanation
 
-    more = triage(
-        [site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70, fraction=0.06, contrast=1.5)])]
-    )
-    assert more.lesions[0].score == pytest.approx((1.5 + 0.375 + 0.5 + 0.5) * 1.15, abs=1e-3)
+    more_region = region(mean_rel=0.70, fraction=0.06, border=0.2, contrast=1.5)
+    more = triage([site(S.UPPER_LIP_MUCOSA, [more_region])])
+    assert more.lesions[0].score == pytest.approx((1.5 + 0.375 + 0.5 + 0.5 + 0.5) * 0.9, abs=1e-3)
     assert more.lesions[0].risk_level == RiskLevel.MODERATE
     assert more.triage.overall_risk_level == RiskLevel.MODERATE
     assert more.triage.recommended_action.code == ActionCode.REEXAMINE_2_WEEKS
@@ -488,13 +487,14 @@ def test_limitations_cover_wl_reference_and_spectral():
 
 
 def test_site_levels_take_most_severe_lesion():
+    # Upper lip mucosa is not a high-risk site, so the mild region r1 keeps its LOW level.
     sites = [
-        site(S.BUCCAL_MUCOSA_LEFT, [region("r1", mean_rel=0.70), deep_region(region_id="r2")]),
-        site(S.BUCCAL_MUCOSA_RIGHT),
+        site(S.UPPER_LIP_MUCOSA, [region("r1", mean_rel=0.70), deep_region(region_id="r2")]),
+        site(S.LOWER_LIP_MUCOSA),
     ]
     out = triage(sites)
-    assert [lesion.risk_level for lesion in out.lesions] == [RiskLevel.LOW, RiskLevel.HIGH]
-    assert out.site_levels[S.BUCCAL_MUCOSA_LEFT] == RiskLevel.HIGH
+    assert [lesion.risk_level for lesion in out.lesions] == [RiskLevel.LOW, RiskLevel.MODERATE]
+    assert out.site_levels[S.UPPER_LIP_MUCOSA] == RiskLevel.MODERATE
     assert out.triage.highest_risk_lesion_id == "L2"
 
 

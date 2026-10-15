@@ -211,13 +211,17 @@ def test_high_risk_multiplier_comes_last():
         ]
     )
     order = [c for c in codes(lesion.contributing_factors) if "." in c]
-    assert order[-4:] == [
+    assert order[-5:] == [
         "af.diascopy.fvl_persists",
         "af.confounders",
         "site.high_risk",
-        "af.strong_fvl_floor",
+        "af.strong_fvl_floor",  # zero-point floor records, after the points
+        "af.high_risk_site_fvl_floor",
     ]
     assert lesion.score == pytest.approx(5.5 * 0.8 * 1.2 * 0.7 * 1.15, abs=1e-3)
+    # Any FVL at a high-risk site is at least MODERATE (rules 1.2.0).
+    assert lesion.risk_level == RiskLevel.MODERATE
+    assert factor(lesion.contributing_factors, "af.high_risk_site_fvl_floor").points == 0.0
 
 
 # --------------------------------------------------------------------------------------------
@@ -375,9 +379,11 @@ def test_reference_readings_are_not_lesions():
 
 
 def test_visual_merges_into_darkest_region():
+    # Upper lip mucosa is not a high-risk site (where any FVL is at least MODERATE), so r1's
+    # level shows that the visual observation and its floor did not reach it.
     sites = [
         site(
-            TONGUE,
+            S.UPPER_LIP_MUCOSA,
             [region("r1", mean_rel=0.70), region("r2", mean_rel=0.45)],
             appearance=[V.WHITE_PATCH, V.RED_PATCH],
         )

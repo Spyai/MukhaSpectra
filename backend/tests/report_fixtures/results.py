@@ -119,6 +119,7 @@ class ReportCase:
 
 
 def _models() -> list[ModelInfo]:
+    triage = PipelineConfig.default().triage.ref  # the fusion entry mirrors the bundled rules
     return [
         ModelInfo(component=ModelComponent.SEGMENTER, name="classical_hsv_lab", version="1.0.0",
                   status=ModelStatus.BASELINE_RULES),
@@ -127,8 +128,8 @@ def _models() -> list[ModelInfo]:
                   notes="No trained weights in this build."),
         ModelInfo(component=ModelComponent.SPECTRAL_CLASSIFIER, name="spectral-rules",
                   version="2.0.0", status=ModelStatus.PLACEHOLDER),
-        ModelInfo(component=ModelComponent.FUSION, name="mukhaspectra-triage-rules",
-                  version="1.1.0", status=ModelStatus.BASELINE_RULES),
+        ModelInfo(component=ModelComponent.FUSION, name=triage.name,
+                  version=triage.version, status=ModelStatus.BASELINE_RULES),
     ]  # fmt: skip
 
 
