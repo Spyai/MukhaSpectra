@@ -35,7 +35,9 @@ RISK_FACTOR_KEYS: tuple[str, ...] = (
     "prior_oral_cancer",
     "age_40_plus",
 )
-OVERRIDE_KEYS: frozenset[str] = frozenset({"symptom", "visual_appearance", "history", "any_lesion"})
+OVERRIDE_KEYS: frozenset[str] = frozenset(
+    {"symptom", "visual_appearance", "visual_lesion_seen", "history", "any_lesion"}
+)
 FLOOR_LEVELS: frozenset[RiskLevel] = frozenset({RiskLevel.MODERATE, RiskLevel.HIGH})
 _EPS = 1e-9
 
@@ -84,6 +86,22 @@ class RedAreaFloor:
 
 
 @dataclass(frozen=True)
+class StrongFVLFloor:
+    """Fluorescence loss strong enough that no discount may take the lesion below ``floor``.
+
+    It holds when the region's AF points before any multiplier (reference, diascopy,
+    confounders, low-specificity site) reach ``raw_points_min``, or when its mean relative AF is
+    at most ``mean_relative_af_max``. Plaque (porphyrin), pigment or a vascular spot can sit on
+    top of a dysplastic area, so a discount may order lesions but never make such a region LOW.
+    """
+
+    raw_points_min: float
+    mean_relative_af_max: float
+    floor: RiskLevel
+    label: str
+
+
+@dataclass(frozen=True)
 class AFRules:
     fvl_present: float
     depth_points_per_0_1: float
@@ -97,6 +115,7 @@ class AFRules:
     confounder_discount: dict[ConfounderType, float]
     min_confounder_multiplier: float
     red_area_floor: RedAreaFloor | None = None
+    strong_fvl_floor: StrongFVLFloor | None = None
 
 
 @dataclass(frozen=True)
@@ -136,8 +155,15 @@ class Override:
     floor: RiskLevel
     symptom: str | None = None
     visual_appearance: frozenset[VisualAppearance] | None = None
+    visual_lesion_seen: bool | None = None
     history: str | None = None
     any_lesion: bool | None = None
+
+    @property
+    def lesion_scoped(self) -> bool:
+        """Conditions on the health worker's visual observation also floor the lesion that
+        carries that observation, not only the patient."""
+        return self.visual_appearance is not None or self.visual_lesion_seen is not None
 
 
 @dataclass(frozen=True)
@@ -286,6 +312,7 @@ def _af_rules(af: dict) -> AFRules:
         confounder_discount=discounts,
         min_confounder_multiplier=min_mult,
         red_area_floor=_red_area_floor(af.get("red_area_floor")),
+        strong_fvl_floor=_strong_fvl_floor(af.get("strong_fvl_floor")),
     )
 
 
@@ -313,18 +340,43 @@ def _red_area_floor(raw: Any) -> RedAreaFloor | None:
     )
 
 
-def _override(raw: Any, index: int) -> Override:
-    where = f"overrides[{index}]"
-    if not isinstance(raw, dict):
-        raise TriageRulesError(f"triage rules: '{where}' must be a mapping")
-    code = _get(raw, "code")
-    label = _check_text(_get(raw, "label"), f"{where}.label")
+def _floor_level(raw: dict, where: str) -> RiskLevel:
     try:
         floor = RiskLevel(_get(raw, "floor"))
     except ValueError as exc:
         raise TriageRulesError(f"triage rules: '{where}.floor' is not a risk level") from exc
     if floor not in FLOOR_LEVELS:
         raise TriageRulesError(f"triage rules: '{where}.floor' must be MODERATE or HIGH")
+    return floor
+
+
+def _strong_fvl_floor(raw: Any) -> StrongFVLFloor | None:
+    if raw is None:
+        return None
+    where = "lesion.af.strong_fvl_floor"
+    if not isinstance(raw, dict):
+        raise TriageRulesError(f"triage rules: '{where}' must be a mapping")
+    unknown = set(raw) - {"raw_points_min", "mean_relative_af_max", "floor", "label"}
+    if unknown:
+        raise TriageRulesError(f"triage rules: '{where}' has unknown keys {sorted(unknown)}")
+    max_rel = _num(raw, "mean_relative_af_max")
+    if not 0.0 <= max_rel <= 1.0:
+        raise TriageRulesError(f"triage rules: '{where}.mean_relative_af_max' must lie in [0, 1]")
+    return StrongFVLFloor(
+        raw_points_min=_num(raw, "raw_points_min", positive=True),
+        mean_relative_af_max=max_rel,
+        floor=_floor_level(raw, where),
+        label=_check_text(_get(raw, "label"), f"{where}.label"),
+    )
+
+
+def _override(raw: Any, index: int) -> Override:
+    where = f"overrides[{index}]"
+    if not isinstance(raw, dict):
+        raise TriageRulesError(f"triage rules: '{where}' must be a mapping")
+    code = _get(raw, "code")
+    label = _check_text(_get(raw, "label"), f"{where}.label")
+    floor = _floor_level(raw, where)
     when = _get(raw, "when")
     if not isinstance(when, dict) or not when:
         raise TriageRulesError(f"triage rules: '{where}.when' must be a non-empty mapping")
@@ -347,17 +399,21 @@ def _override(raw: Any, index: int) -> Override:
             raise TriageRulesError(f"triage rules: '{where}' bad visual_appearance") from exc
         if not visual:
             raise TriageRulesError(f"triage rules: '{where}' visual_appearance is empty")
-    any_lesion = when.get("any_lesion")
-    if any_lesion is not None and not isinstance(any_lesion, bool):
-        raise TriageRulesError(f"triage rules: '{where}.when.any_lesion' must be true or false")
+    flags: dict[str, bool | None] = {}
+    for key in ("any_lesion", "visual_lesion_seen"):
+        value = when.get(key)
+        if value is not None and not isinstance(value, bool):
+            raise TriageRulesError(f"triage rules: '{where}.when.{key}' must be true or false")
+        flags[key] = value
     return Override(
         code=str(code),
         label=label,
         floor=floor,
         symptom=symptom,
         visual_appearance=visual,
+        visual_lesion_seen=flags["visual_lesion_seen"],
         history=history,
-        any_lesion=any_lesion,
+        any_lesion=flags["any_lesion"],
     )
 
 

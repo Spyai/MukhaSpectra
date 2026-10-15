@@ -409,8 +409,8 @@ def test_invalid_artifact_key_from_the_pipeline_fails_the_analysis(client, servi
 def test_pipeline_result_fields_owned_by_the_backend_are_pinned(client, fake_pipeline):
     original = fake_pipeline.analyze
 
-    def sloppy(inp, *, classifier=None):
-        out = original(inp, classifier=classifier)
+    def sloppy(inp, *, classifier=None, software_version=None):
+        out = original(inp, classifier=classifier, software_version=software_version)
         out.result = out.result.model_copy(update={"screening_id": "wrong", "result_version": 9})
         return out
 

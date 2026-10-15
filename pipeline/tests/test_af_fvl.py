@@ -6,7 +6,7 @@ import copy
 
 import numpy as np
 import pytest
-from af_helpers import disc, make_af_scene, uniform_maps
+from af_helpers import disc, ellipse, make_af_scene, uniform_maps
 
 from mukha_pipeline.af import (
     compute_af_maps,
@@ -120,6 +120,37 @@ def test_irregular_region_has_higher_border_irregularity(af_cfg: dict) -> None:
     r = detect_fvl(maps, np.ones(shape, bool), ref, af_cfg).analysis.regions[0]
     assert r.border_irregularity > 0.35
     assert r.solidity < 0.9
+
+
+@pytest.mark.parametrize("aspect", [1.0, 2.0, 3.0, 4.0, 6.0])
+@pytest.mark.parametrize("angle", [0.0, 0.5])
+def test_smooth_elongated_region_has_a_regular_border(af_cfg: dict, aspect, angle) -> None:
+    """Border irregularity measures raggedness, not elongation (review science.8): lesions along
+    the linea alba or the lateral tongue are often long and smooth."""
+    shape = (300, 420)
+    maps = uniform_maps(shape, 0.4)
+    region = ellipse(shape, 150, 210, 18, 18 * aspect, angle)
+    maps.green[region] = 0.2
+    ref = AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=0.4)
+    regs = detect_fvl(maps, np.ones(shape, bool), ref, af_cfg).analysis.regions
+    assert len(regs) == 1
+    assert regs[0].border_irregularity < 0.05
+    assert regs[0].solidity > 0.95
+
+
+def test_jagged_blob_scores_high(af_cfg: dict) -> None:
+    rng = np.random.default_rng(3)
+    shape = (300, 300)
+    yy, xx = np.mgrid[: shape[0], : shape[1]]
+    ang = np.degrees(np.arctan2(yy - 150, xx - 150)).astype(int) % 360
+    wiggle = np.convolve(rng.standard_normal(360 + 8), np.ones(5) / 5, mode="same")[4:-4]
+    jagged = np.hypot(yy - 150, xx - 150) <= 80.0 * (1 + 0.35 * wiggle[ang])
+    maps = uniform_maps(shape, 0.4)
+    maps.green[jagged] = 0.15
+    ref = AFReference(type=ReferenceType.IN_IMAGE_AUTO, reference_green=0.4)
+    regs = detect_fvl(maps, np.ones(shape, bool), ref, af_cfg).analysis.regions
+    r = max(regs, key=lambda reg: reg.area_px)
+    assert 0.2 < r.border_irregularity <= 1.0
 
 
 def test_insufficient_mucosa(rng, af_cfg: dict) -> None:

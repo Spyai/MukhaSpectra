@@ -284,8 +284,10 @@ class _FakeRaw:
     def __exit__(self, *exc: object) -> None:
         return None
 
-    def postprocess(self, use_camera_wb: bool, output_bps: int) -> np.ndarray:
-        assert use_camera_wb and output_bps == 16
+    def postprocess(self, **kwargs: object) -> np.ndarray:
+        # Linear-safe LibRaw settings: no auto-brightening, sRGB curve, 16-bit output.
+        assert kwargs["use_camera_wb"] and kwargs["output_bps"] == 16
+        assert kwargs["no_auto_bright"] is True and kwargs["gamma"] == (2.4, 12.92)
         return np.full((self._h, self._w, 3), 32768, dtype=np.uint16)
 
 

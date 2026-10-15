@@ -5,13 +5,21 @@ Order of operations (each step is a factor, so ``score == sum(factor.points)``):
 1. AF points for the FVL region (presence, depth, area, border, contrast), then the AF-only
    multipliers as deltas: reference type, diascopy, confounders (combined, floored), and the
    low-specificity site discount.
+   * Diascopy is one test recorded once per site. "Fluorescence came back" is applied only when
+     the site has exactly one FVL region; "stayed dark" only to the darkest region. Otherwise
+     a zero-point note says why it was not applied.
+   * At a site with no paired site the in-image reference is the only one possible, so the
+     reference and low-specificity discounts are not compounded there: only the larger of the
+     two (smaller multiplier) applies, with a zero-point note.
 2. WL model points (only when the model actually ran).
 3. Spectral delta points (only lesion-minus-reference deltas are scored).
 4. The health worker's visual observation.
 5. The site high-risk multiplier on the lesion total, as one delta.
 
-Then the level: score thresholds, raised by any visual-appearance floor that applies to this
-lesion, and INCONCLUSIVE when a LOW lesion sits where the device could not look.
+Then the level: score thresholds, raised by floors that apply to this lesion (the health
+worker's observation, a red area with FVL, strong FVL whatever the discounts), and
+INCONCLUSIVE when a LOW lesion sits where the device could not look properly. Floors are
+zero-point factors, so the score stays the exact sum of the factors.
 """
 
 from __future__ import annotations
@@ -19,7 +27,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mukha_pipeline.fusion.factors import POINT_DECIMALS, Ledger, total_points
-from mukha_pipeline.fusion.lesions import LesionDraft, site_readable
+from mukha_pipeline.fusion.lesions import (
+    LesionDraft,
+    probe_only_unchecked,
+    segmentation_reliable,
+    site_analysed,
+    site_readable,
+    visual_seen,
+)
 from mukha_pipeline.fusion.overrides import (
     ClinicalContext,
     highest_floor,
@@ -37,6 +52,7 @@ from mukha_pipeline.fusion.text import (
 )
 from mukha_pipeline.schema.models import (
     RISK_ORDER,
+    ConfounderType,
     ContributingFactor,
     Diascopy,
     FactorSource,
@@ -54,14 +70,21 @@ from mukha_pipeline.sites import site_label
 
 AF = FactorSource.AUTOFLUORESCENCE
 
+# Look-alikes the health worker can remove before retaking: plaque (porphyrin red fluorescence)
+# with gauze or a rinse, and glare by drying and re-angling. Pigment cannot be cleaned and blood
+# is never discounted (see red_area_floor).
+CLEANABLE_CONFOUNDERS: frozenset[ConfounderType] = frozenset(
+    {ConfounderType.PORPHYRIN_RED, ConfounderType.GLARE}
+)
+
 _REFERENCE_LABEL: dict[ReferenceType, str] = {
     ReferenceType.CONTRALATERAL: "Compared with the same site on the opposite side",
     ReferenceType.ANALOGOUS_SITE: (
         "Compared with a similar site rather than the opposite side, so it counts a little less"
     ),
     ReferenceType.IN_IMAGE_AUTO: (
-        "No matching healthy site, so compared with surrounding tissue in the same photo "
-        "(less reliable)"
+        "No opposite-side or similar site to compare with, so compared with surrounding tissue "
+        "in the same photo (less reliable)"
     ),
     ReferenceType.NONE: "No reference tissue for comparison (much less reliable)",
 }
@@ -85,7 +108,18 @@ class ScoredLesion:
     score_level: RiskLevel
     level: RiskLevel
     floors: list[Override]
-    readable: bool
+    readable: bool  # the site was readable (analysed, reliable segmentation)
+    assessed: bool = True  # readable, and the device had a usable measurement of this lesion
+    af_raw_points: float = 0.0  # AF points before any multiplier
+    cleanable: tuple[ConfounderType, ...] = ()  # look-alikes a clean and retake could remove
+    diascopy_applied: Diascopy = Diascopy.NOT_DONE
+
+
+@dataclass(frozen=True)
+class AFPoints:
+    factors: list[ContributingFactor]
+    raw_points: float  # before any multiplier
+    diascopy_applied: Diascopy
 
 
 # --------------------------------------------------------------------------------------------
@@ -102,7 +136,72 @@ def _confounder_multiplier(region: FVLRegion, rules: TriageRules) -> tuple[float
     return max(mult, rules.af.min_confounder_multiplier), names
 
 
-def af_factors(region: FVLRegion, site: SiteResult, rules: TriageRules) -> list[ContributingFactor]:
+def diascopy_for_region(region: FVLRegion, site: SiteResult) -> tuple[Diascopy, str | None]:
+    """The diascopy result that applies to this region, and why it does not when it does not.
+
+    Diascopy is a manual test on one dark spot but is recorded once per site, and the record
+    does not say which region was pressed. "Fluorescence came back" lowers the score a lot, so
+    it is applied only when the site has a single region; "stayed dark" raises it, so it is
+    applied to the darkest (primary) region only.
+    """
+    assert site.af is not None
+    recorded = site.diascopy
+    if recorded == Diascopy.NOT_DONE:
+        return recorded, None
+    regions = site.af.regions
+    n = len(regions)
+    if recorded == Diascopy.FVL_RESOLVES:
+        if n <= 1:
+            return recorded, None
+        return Diascopy.NOT_DONE, (
+            f"Glass-slide pressure test recorded once for this site, which has {n} dark areas; "
+            "it is not known which one was tested, so the result was not applied"
+        )
+    darkest = min(regions, key=lambda r: r.mean_relative_af) if regions else region
+    if darkest.region_id == region.region_id:
+        return recorded, None
+    return Diascopy.NOT_DONE, (
+        "Glass-slide pressure test recorded once for this site; its result was applied only to "
+        f"the darkest dark area there ({darkest.region_id})"
+    )
+
+
+@dataclass(frozen=True)
+class _Discounts:
+    """Which of the reference-type and low-specificity multipliers apply at a site."""
+
+    reference: float | None  # multiplier to apply, None when skipped
+    site: float | None
+    not_compounded: str | None  # zero-point note when one of them was skipped
+
+
+def _reference_and_site_discounts(site: SiteResult, rules: TriageRules) -> _Discounts:
+    """Reference-type and low-specificity multipliers.
+
+    At a site with no paired site the in-image reference is the only reference possible, and
+    compounding it with the low-specificity discount left the strongest fluorescence loss at the
+    tongue dorsum or hard palate unable to reach MODERATE. There only the larger discount (the
+    smaller multiplier) applies; at paired sites both apply.
+    """
+    assert site.af is not None
+    ref_mult = rules.af.reference_multipliers[site.af.reference.type]
+    if site.site not in rules.site.af_low_specificity_sites:
+        return _Discounts(ref_mult, None, None)
+    site_mult = rules.site.af_low_specificity_multiplier
+    if site.paired_site is not None:
+        return _Discounts(ref_mult, site_mult, None)
+    kept = min(ref_mult, site_mult)
+    note = (
+        f"x{kept:.2f} applied instead of x{ref_mult:.2f} times x{site_mult:.2f}"
+        if ref_mult != 1.0 and site_mult != 1.0
+        else None
+    )
+    if ref_mult <= site_mult:
+        return _Discounts(ref_mult, None, note)
+    return _Discounts(None, site_mult, note)
+
+
+def af_factors(region: FVLRegion, site: SiteResult, rules: TriageRules) -> AFPoints:
     """Points for one fluorescence-visualisation-loss region and its AF-only adjustments."""
     assert site.af is not None
     ar = rules.af
@@ -147,17 +246,20 @@ def af_factors(region: FVLRegion, site: SiteResult, rules: TriageRules) -> list[
             AF,
             ar.contrast_vs_surround.points,
         )
+    raw = led.total
+    discounts = _reference_and_site_discounts(site, rules)
     ref_type = site.af.reference.type
+    if discounts.reference is not None:
+        led.scale(
+            discounts.reference, f"af.reference.{ref_type.value}", _REFERENCE_LABEL[ref_type], AF
+        )
+    diascopy, not_applied = diascopy_for_region(region, site)
+    if not_applied is not None:
+        led.note("af.diascopy.not_applied", not_applied, AF)
     led.scale(
-        ar.reference_multipliers[ref_type],
-        f"af.reference.{ref_type.value}",
-        _REFERENCE_LABEL[ref_type],
-        AF,
-    )
-    led.scale(
-        ar.diascopy_multipliers[site.diascopy],
-        f"af.diascopy.{site.diascopy.value}",
-        _DIASCOPY_LABEL[site.diascopy],
+        ar.diascopy_multipliers[diascopy],
+        f"af.diascopy.{diascopy.value}",
+        _DIASCOPY_LABEL[diascopy],
         AF,
     )
     conf_mult, conf_names = _confounder_multiplier(region, rules)
@@ -168,15 +270,36 @@ def af_factors(region: FVLRegion, site: SiteResult, rules: TriageRules) -> list[
         AF,
         detail=f"combined multiplier floored at {ar.min_confounder_multiplier:.2f}",
     )
-    if site.site in rules.site.af_low_specificity_sites:
+    if discounts.site is not None:
         led.scale(
-            rules.site.af_low_specificity_multiplier,
+            discounts.site,
             "af.low_specificity_site",
             f"Dark areas at {site_phrase(site.site)} are often due to inflammation, coating or "
             "keratin, so they count less",
             AF,
         )
-    return led.factors
+    if discounts.not_compounded is not None:
+        led.note(
+            "af.discount_not_compounded",
+            f"{site_label(site.site)} has no opposite-side partner, so only the larger of the "
+            "reference and site discounts was applied",
+            AF,
+            discounts.not_compounded,
+        )
+    return AFPoints(led.factors, raw, diascopy)
+
+
+def cleanable_confounders(region: FVLRegion, rules: TriageRules) -> tuple[ConfounderType, ...]:
+    """Plaque or glare that discounted this region: cleaning and retaking may remove them."""
+    return tuple(
+        dict.fromkeys(
+            c.type
+            for c in region.confounders
+            if c.type in CLEANABLE_CONFOUNDERS
+            and c.overlap_fraction > 0
+            and rules.af.confounder_discount[c.type] > 0
+        )
+    )
 
 
 def wl_factors(pred: WLPrediction, rules: TriageRules) -> list[ContributingFactor]:
@@ -211,8 +334,8 @@ def spectral_factors(
             # so the reading contributes 0 points x no_reference_multiplier = 0.
             led.note(
                 "spectral.no_reference",
-                f"Probe reading {r.reading_id} had no reference reading from the healthy side, "
-                "so it was not scored",
+                f"Probe reading {r.reading_id} had no reference reading from the opposite side "
+                "or a comparison site, so it was not scored",
                 FactorSource.SPECTRAL,
                 f"no_reference_multiplier {sr.no_reference_multiplier} applied to 0 points",
             )
@@ -238,7 +361,8 @@ def spectral_factors(
         pts, value, rid = best["ratio"]
         led.add(
             "spectral.ratio_555_630",
-            f"Lower 555/630 nm reflectance ratio than the reference reading ({value:+.3f})",
+            # The delta is a relative change (ratio_lesion / ratio_reference - 1).
+            f"Lower 555/630 nm reflectance ratio than the reference reading ({value:+.1%})",
             FactorSource.SPECTRAL,
             pts,
             f"Reading {rid}",
@@ -283,11 +407,18 @@ def _availability_notes(draft: LesionDraft, readable: bool, led: Ledger) -> None
             "No photos were analysed at this site; only the probe reading is available",
             FactorSource.QC,
         )
-    elif not readable:
+    elif not site_analysed(draft.site_result):
         led.note(
             "qc.device_analysis_unavailable",
             "Device analysis not available at this site (images could not be analysed); "
             "the health worker's observation still counts",
+            FactorSource.QC,
+        )
+    elif not segmentation_reliable(draft.site_result):
+        led.note(
+            "qc.segmentation_unreliable",
+            "The device could not reliably outline the mucosa at this site, so part of it may "
+            "not have been checked; what was measured still counts",
             FactorSource.QC,
         )
     elif draft.region is None:
@@ -310,14 +441,35 @@ def red_area_override(draft: LesionDraft, rules: TriageRules) -> Override | None
     return None
 
 
+def strong_fvl_override(
+    draft: LesionDraft, raw_points: float, rules: TriageRules
+) -> Override | None:
+    """Floor for fluorescence loss strong enough before discounts (see ``StrongFVLFloor``)."""
+    sf = rules.af.strong_fvl_floor
+    if sf is None or draft.region is None:
+        return None
+    strong_points = raw_points >= sf.raw_points_min - 1e-9
+    deep = draft.region.mean_relative_af <= sf.mean_relative_af_max + 1e-9
+    if strong_points or deep:
+        return Override(code="af.strong_fvl_floor", label=sf.label, floor=sf.floor)
+    return None
+
+
 def score_lesion(
     draft: LesionDraft, lesion_id: str, rules: TriageRules, risk_factors: RiskFactors
 ) -> ScoredLesion:
     """Score one lesion and decide its level."""
     readable = draft.site_result is not None and site_readable(draft.site_result)
+    assessed = readable and not probe_only_unchecked(draft)
     led = Ledger()
+    raw_af = 0.0
+    diascopy = Diascopy.NOT_DONE
+    cleanable: tuple[ConfounderType, ...] = ()
     if draft.region is not None and draft.site_result is not None:
-        led.extend(af_factors(draft.region, draft.site_result, rules))
+        af_points = af_factors(draft.region, draft.site_result, rules)
+        led.extend(af_points.factors)
+        raw_af, diascopy = af_points.raw_points, af_points.diascopy_applied
+        cleanable = cleanable_confounders(draft.region, rules)
     if draft.wl is not None:
         led.extend(wl_factors(draft.wl, rules))
     if draft.spectral:
@@ -338,11 +490,16 @@ def score_lesion(
 
     floors: list[Override] = []
     if draft.visual is not None:
-        ctx = ClinicalContext(risk_factors, frozenset(draft.visual.appearance), any_lesion=True)
+        ctx = ClinicalContext(
+            risk_factors,
+            frozenset(draft.visual.appearance),
+            any_lesion=True,
+            lesion_seen=visual_seen(draft.visual),
+        )
         floors = matching_overrides(rules.overrides, ctx, visual_only=True)
-    red_floor = red_area_override(draft, rules)
-    if red_floor is not None:
-        floors.append(red_floor)
+    for extra in (red_area_override(draft, rules), strong_fvl_override(draft, raw_af, rules)):
+        if extra is not None:
+            floors.append(extra)
     level = score_level
     floor = highest_floor(floors)
     if floor is not None and RISK_ORDER[floor] > RISK_ORDER[level]:
@@ -351,8 +508,21 @@ def score_lesion(
         led.factors.append(override_factor(o, "this lesion's"))
     if (
         level == RiskLevel.LOW
-        and not readable
+        and not assessed
         and rules.inconclusive.low_requires_all_examined_sites_analysed
     ):
         level = RiskLevel.INCONCLUSIVE
-    return ScoredLesion(draft, lesion_id, led.factors, score, score_level, level, floors, readable)
+    return ScoredLesion(
+        draft,
+        lesion_id,
+        led.factors,
+        score,
+        score_level,
+        level,
+        floors,
+        readable,
+        assessed=assessed,
+        af_raw_points=raw_af,
+        cleanable=cleanable,
+        diascopy_applied=diascopy,
+    )

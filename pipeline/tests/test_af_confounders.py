@@ -6,7 +6,19 @@ import copy
 
 import numpy as np
 import pytest
-from af_helpers import BLOOD_RGB, BROWN_RGB, disc, make_af_scene, paint, pink_wl, plain_masks
+from af_helpers import (
+    BLOOD_RGB,
+    BROWN_RGB,
+    MAROON_RGB,
+    ORANGE_RED_RGB,
+    disc,
+    make_af_scene,
+    paint,
+    pink_wl,
+    plain_masks,
+)
+from fusion_helpers import S, codes, default_rules, patient, risk
+from fusion_helpers import site as site_result
 
 from mukha_pipeline.af import (
     compute_af_maps,
@@ -18,8 +30,9 @@ from mukha_pipeline.af import (
     resolve_reference,
 )
 from mukha_pipeline.af.confounders import NOTES
+from mukha_pipeline.fusion import run_triage
 from mukha_pipeline.positioning import find_positioning_violations
-from mukha_pipeline.schema.models import AFReference, ConfounderType, ReferenceType
+from mukha_pipeline.schema.models import AFReference, ConfounderType, ReferenceType, RiskLevel
 from mukha_pipeline.sites import OralSite
 
 
@@ -66,7 +79,11 @@ def test_clean_scene_has_no_confounders(rng, cfg: dict) -> None:
 
 @pytest.mark.parametrize(
     ("rgb", "expected"),
-    [(BROWN_RGB, ConfounderType.PIGMENTATION), (BLOOD_RGB, ConfounderType.BLOOD)],
+    [
+        (BROWN_RGB, ConfounderType.PIGMENTATION),
+        ((120 / 255, 80 / 255, 60 / 255), ConfounderType.PIGMENTATION),  # lighter brown, a* 14
+        (BLOOD_RGB, ConfounderType.BLOOD),
+    ],
 )
 def test_wl_pigment_and_blood_are_flagged(rng, cfg: dict, rgb, expected) -> None:
     sc = make_af_scene(rng)
@@ -164,3 +181,90 @@ def test_notes_respect_positioning() -> None:
     for note in NOTES.values():
         assert not find_positioning_violations(note)
         assert "may" in note or "could not" in note  # never states a cause as fact
+
+
+# ------------------------------------------------------------------------------------------
+# Regression: red patches must never take the pigmentation discount (review clinical.3)
+# ------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rgb",
+    [ORANGE_RED_RGB, MAROON_RGB, (130 / 255, 60 / 255, 40 / 255)],
+    ids=["orange_red", "maroon", "red_brown"],
+)
+def test_red_patch_colours_are_a_red_area_not_pigment(rng, cfg: dict, rgb) -> None:
+    """Orange-red (warm white balance) and maroon erythroplakia colours sit inside the brown hue
+    range but are reddish (Lab a* >= 25): they belong to the red class, so the red-area floor
+    applies instead of a pigment discount."""
+    sc = make_af_scene(rng, fvl_discs=((0.45, 0.4, 0.11, 0.3),))  # mild loss, ~4% of mucosa
+    fvl, maps = analyse(sc, cfg)
+    h, w = sc.mucosa.shape
+    wl = pink_wl((h, w))
+    paint(wl, disc((h, w), 0.45 * h, 0.4 * w, 0.11 * h), rgb)
+    m = confounder_masks(wl, maps, plain_masks(sc.mucosa), cfg["confounders"])
+    patch = disc((h, w), 0.45 * h, 0.4 * w, 0.1 * h)
+    assert not m.pigmentation[patch].any()
+    assert m.blood[patch].all()
+    out = flag_confounders(fvl, wl, maps, plain_masks(sc.mucosa), cfg)
+    assert types_of(out) == {ConfounderType.BLOOD}
+    assert out.analysis.regions[0].confounders[0].overlap_fraction > 0.8
+
+    # Through the triage rules: no discount, and the red-area floor keeps it at least MODERATE.
+    tri = run_triage(
+        [site_result(S.BUCCAL_MUCOSA_LEFT, out.analysis.regions)],
+        [],
+        patient(45),
+        risk(),
+        default_rules(),
+    )
+    lesion = tri.lesions[0]
+    assert "af.confounders" not in codes(lesion.contributing_factors)
+    assert lesion.risk_level in (RiskLevel.MODERATE, RiskLevel.HIGH)
+    assert tri.triage.overall_risk_level != RiskLevel.LOW
+
+
+# ------------------------------------------------------------------------------------------
+# Regression: porphyrin needs a red excess, not just a high red/green (review science.2)
+# ------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("fvl_red_share", "base_red"), [(0.0, 0.06), (0.5, 0.1)])
+def test_deep_fvl_without_red_excess_is_not_porphyrin(
+    rng, cfg: dict, fvl_red_share: float, base_red: float
+) -> None:
+    """In a deep loss green falls more than red, so red/green rises without any red emission.
+    With exposure/calibration scaling (x2) the red channel also clears any absolute floor."""
+    sc = make_af_scene(
+        rng, fvl_discs=((0.45, 0.4, 0.11, 0.9),), fvl_red_share=fvl_red_share, base_red=base_red
+    )
+    maps = compute_af_maps(sc.af, None, intensity_scale=2.0)
+    ref = resolve_reference(OralSite.TONGUE_DORSUM, reference_green(maps, sc.mucosa, cfg["af"]), {})
+    fvl = detect_fvl(maps, sc.mucosa, ref, cfg["af"])
+    assert len(fvl.analysis.regions) == 1
+    assert fvl.analysis.regions[0].mean_relative_af < 0.2
+    region = fvl.labels == 1
+    assert np.nanmedian(maps.red[region] / maps.green[region]) > 0.85  # the old trigger
+    out = flag_confounders(fvl, pink_wl(sc.mucosa.shape), maps, plain_masks(sc.mucosa), cfg)
+    assert ConfounderType.PORPHYRIN_RED not in types_of(out)
+    assert out.analysis.porphyrin_red_fraction < 0.01
+
+
+@pytest.mark.parametrize("scale", [0.5, 1.0, 2.0])
+def test_real_red_spot_is_porphyrin_at_any_intensity_scale(rng, cfg: dict, scale: float) -> None:
+    sc = make_af_scene(rng, fvl_discs=((0.45, 0.4, 0.11, 0.6),), porphyrin_disc=(0.45, 0.4, 0.07))
+    maps = compute_af_maps(sc.af, None, intensity_scale=scale)
+    ref = resolve_reference(OralSite.TONGUE_DORSUM, reference_green(maps, sc.mucosa, cfg["af"]), {})
+    fvl = detect_fvl(maps, sc.mucosa, ref, cfg["af"])
+    out = flag_confounders(fvl, pink_wl(sc.mucosa.shape), maps, plain_masks(sc.mucosa), cfg)
+    assert types_of(out) == {ConfounderType.PORPHYRIN_RED}
+
+
+def test_af_saturation_is_judged_before_intensity_scaling(cfg: dict) -> None:
+    """Glare means the sensor clipped; bright-but-unclipped tissue scaled up is not glare."""
+    af = np.full((20, 20, 3), 0.4, np.float32)
+    af[5:8, 5:8, :] = 1.0
+    maps = compute_af_maps(af, None, intensity_scale=3.0)  # tissue now reads 1.2
+    masks = plain_masks(np.ones((20, 20), bool))
+    m = confounder_masks(pink_wl((20, 20)), maps, masks, cfg["confounders"], intensity_scale=3.0)
+    assert m.glare[5:8, 5:8].all() and m.glare.sum() == 9

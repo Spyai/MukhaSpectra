@@ -56,7 +56,8 @@ def make_client(
     clients: list[TestClient] = []
 
     def factory(*, fakes: bool = True, **setting_overrides: Any) -> TestClient:
-        settings = api_settings.model_copy(update=setting_overrides)
+        # Re-validate so overrides go through the same checks as environment variables.
+        settings = Settings(**{**api_settings.model_dump(), **setting_overrides})
         app = create_app(
             settings,
             bridge=fake_pipeline.bridge() if fakes else None,

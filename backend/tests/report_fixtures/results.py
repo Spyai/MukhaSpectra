@@ -125,10 +125,10 @@ def _models() -> list[ModelInfo]:
         ModelInfo(component=ModelComponent.WL_LESION_CLASSIFIER, name="wl_lesion_classifier",
                   version="none", status=ModelStatus.MODEL_UNAVAILABLE,
                   notes="No trained weights in this build."),
-        ModelInfo(component=ModelComponent.SPECTRAL_CLASSIFIER, name="rules_v1",
-                  version="0.1.0", status=ModelStatus.PLACEHOLDER),
+        ModelInfo(component=ModelComponent.SPECTRAL_CLASSIFIER, name="spectral-rules",
+                  version="2.0.0", status=ModelStatus.PLACEHOLDER),
         ModelInfo(component=ModelComponent.FUSION, name="mukhaspectra-triage-rules",
-                  version="1.0.0", status=ModelStatus.BASELINE_RULES),
+                  version="1.1.0", status=ModelStatus.BASELINE_RULES),
     ]  # fmt: skip
 
 
@@ -377,9 +377,13 @@ def _features(v: dict[str, float]) -> SpectralFeatures:
     )
 
 
-def _delta(a: SpectralFeatures, b: SpectralFeatures) -> SpectralFeatures:
-    da, db = a.model_dump(), b.model_dump()
-    return SpectralFeatures(**{k: da[k] - db[k] for k in da})
+def _delta(lesion: dict[str, float], reference: dict[str, float]) -> SpectralFeatures:
+    """The pipeline's own (quotient-based, probe-independent) lesion-vs-reference delta."""
+    from mukha_pipeline.spectral.features import reference_delta
+
+    delta = reference_delta(lesion, reference)
+    assert delta is not None
+    return delta
 
 
 def _spectral_pair(synthetic: bool) -> list[SpectralReadingResult]:
@@ -393,11 +397,11 @@ def _spectral_pair(synthetic: bool) -> list[SpectralReadingResult]:
     cal = _cal(CalibrationStatus.CALIBRATED, CONFIRM)
     std = {k: round(0.012 + 0.02 * v, 4) for k, v in _REF_VALUES.items()}
     ref_f, les_f = _features(_REF_VALUES), _features(_LES_VALUES)
-    delta = _delta(les_f, ref_f)
+    delta = _delta(_LES_VALUES, _REF_VALUES)
     placeholder_model = _models()[2]
     reasons = [
-        f"Haemoglobin dip deeper than the reference (Δ +{delta.hb_absorption_proxy:.2f})",
-        f"555/630 nm ratio lower than the reference (Δ {delta.ratio_555_630:.2f})",
+        f"Haemoglobin dip deeper than the reference (Δ {delta.hb_absorption_proxy:+.3f})",
+        f"555/630 nm ratio lower than the reference ({delta.ratio_555_630:+.1%})",
     ]
     lesion = SpectralReadingResult(
         reading_id="s1", site=OralSite.BUCCAL_MUCOSA_LEFT, role="lesion", lesion_ref="r1",
@@ -406,7 +410,7 @@ def _spectral_pair(synthetic: bool) -> list[SpectralReadingResult]:
         values_std={k: s * 1.3 for k, s in std.items()}, qc=_qc(True, 0.9),
         features=les_f, reference_reading_id="s2", delta_vs_reference=delta,
         classifier=SpectralClassifierOutput(
-            status="placeholder", method="rules_v1", suspicion_score=0.68, label="suspicious",
+            status="placeholder", method="rules_v2", suspicion_score=0.68, label="suspicious",
             reasons=reasons,
             model=placeholder_model),
     )  # fmt: skip
@@ -537,7 +541,7 @@ def build_high(synthetic: bool = True) -> ReportCase:
             risk_level=RiskLevel.HIGH, score=score1, contributing_factors=les1_factors,
             recommended_action=_action(RiskLevel.HIGH),
             summary="White patch with deep, irregular fluorescence loss and a stronger "
-                    "haemoglobin signal than the healthy right cheek: suspicious finding."),
+                    "haemoglobin signal than the right cheek (reference): suspicious finding."),
     ]  # fmt: skip
 
     overrides = [

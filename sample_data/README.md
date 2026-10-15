@@ -37,8 +37,8 @@ or patient data.
 | File | Content |
 |---|---|
 | `SYNTHETIC_<site>_wl.jpg` | White-light close-up, 1024 × 768, JPEG quality 92 |
-| `SYNTHETIC_<site>_af.jpg` | 405 nm autofluorescence capture of the same site, slightly misaligned on purpose (rotation ≤ 1.5°, shift ≤ 12 px, scale ≤ 2 %) to exercise registration |
-| `SYNTHETIC_<site>_dark.png` | Dark frame (LEDs off, AF exposure) |
+| `SYNTHETIC_<site>_af.jpg` | 405 nm autofluorescence capture of the same site, slightly misaligned on purpose (rotation ≤ 1.5°, shift ≤ 12 px, scale ≤ 2 %) to exercise registration. sRGB-encoded like a phone JPEG; the fluorescence (and its loss) is modelled in linear light |
+| `SYNTHETIC_<site>_dark.png` | Dark frame (LEDs off, AF exposure), in the same encoded file values |
 | `spectrum.csv` | Confirm-probe AS7341 raw counts in the spectral CSV v1 format (`docs/pipeline_contracts.md`), with `white` / `white_dark` rows when the case is calibrated |
 | `manifest.json` | Upload manifest (`docs/architecture.md` §6). Each `wl`/`af`/`dark`/`spectral_file` value is the file name without its extension, i.e. the multipart field name to use |
 
@@ -68,13 +68,16 @@ site anatomy (tongue papillae and coating, stippled gingiva, linea alba, palatal
 glands, ventral veins); teeth with embrasures and tobacco staining; the dark oral cavity and
 torch fall-off; white patch, red patch, mixed red-white and ulcer appearances; green
 autofluorescence with loss over the lesion mask (red/green ratio rising there), bright teeth,
-red porphyrin spots, bloom, sensor noise and a dark pedestal; AS7341 counts from a white-LED,
-filter-response and haemoglobin-absorption model.
+red porphyrin spots, bloom, sensor noise and a dark pedestal, all in linear light and then
+sRGB-encoded as a phone stores a photo (the fluorescence-loss depth is a fraction of light, which
+the analysis recovers only by linearising first, as it must for real uploads); AS7341 counts from
+a white-LED, filter-response and haemoglobin-absorption model.
 
 Not modelled: oral submucous fibrosis (blanching, fibrous bands), melanin pigmentation,
 keratin-bright autofluorescence of thick plaques, inflammation that mimics fluorescence loss,
-saliva bubbles, motion blur, out-of-focus captures, real camera colour pipelines, and the
-variety of real patients. Real bench and field data are needed for all of that.
+saliva bubbles, motion blur, out-of-focus captures, real camera colour pipelines and tone curves
+(beyond the plain sRGB encoding), a strongly uneven violet-LED profile (the demo calibration's
+flat fields are neutral), and the variety of real patients. Real bench and field data are needed for all of that.
 
 ### Regenerate
 

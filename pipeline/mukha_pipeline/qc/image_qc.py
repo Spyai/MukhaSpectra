@@ -26,13 +26,14 @@ from mukha_pipeline.qc.imageops import (
 )
 from mukha_pipeline.qc.messages import make_issue
 from mukha_pipeline.qc.result import build_result
-from mukha_pipeline.schema.models import QCIssue, QCResult
+from mukha_pipeline.schema.models import QCIssue, QCResult, QCSeverity
 from mukha_pipeline.types import Masks, RegistrationResult
 
 # Defaults for keys added to qc.v1.yaml during Phase 1, so older config files keep working.
 AF_DEFAULTS: Mapping[str, float] = {
     "signal_sum_min": 0.06,
     "green_fraction_min": 0.36,
+    "green_dominance_min": 0.03,
     "white_light_blue_fraction_min": 0.18,
     "white_light_red_excess_min": 0.05,
 }
@@ -138,36 +139,64 @@ def _af_colour_issues(shares: np.ndarray, c: Mapping) -> list[QCIssue]:
     * red-dominant with ordinary blue: a white-light photo (pink mucosa reflects blue, whereas
       genuine AF behind the long-pass filter has almost none). Analysing it as AF is dangerous:
       a white patch is bright green in white light and would hide fluorescence loss - error;
-    * red-dominant with little blue, or weakly green: white light seen through the filter, heavy
-      red porphyrin fluorescence (plaque, tongue coating) or auto white balance neutralising the
-      green cast. Colour alone cannot tell these apart, so analysis runs with a warning.
+    * green not dominant at all (green share at most ``green_dominance_min`` above the larger of
+      red and blue): auto white balance or a greyscale file neutralised the green cast, or the
+      photo is red-dominant (white light through the filter, or red porphyrin over the whole
+      field). Tissue green cannot be judged: every pixel would look like red porphyrin (plaque)
+      to the analysis, which then discounts a real fluorescence loss - error, retake;
+    * green dominant but weakly (share below ``green_fraction_min``): a partial colour shift;
+      the analysis still runs, with a warning.
     """
     red, green, blue = (float(x) for x in shares)
     excess = _af_param(c, "white_light_red_excess_min")
     found = _above("af_filter_leak", "af.blue_fraction", blue, c["blue_fraction_max"])
     if not found and blue >= _af_param(c, "white_light_blue_fraction_min"):
         found = _above("af_white_light", "af.red_minus_green_fraction", red - green, excess)
-    if not found:
-        found = _above("af_not_green", "af.red_minus_green_fraction", red - green, excess)
-    return found or _below(
-        "af_not_green", "af.green_fraction", green, _af_param(c, "green_fraction_min")
-    )
+    if found:
+        return found
+    dominance = green - max(red, blue)
+    dominance_min = _af_param(c, "green_dominance_min")
+    if dominance <= dominance_min:
+        return [
+            make_issue(
+                "af_not_green",
+                metric="af.green_dominance",
+                value=dominance,
+                threshold=dominance_min,
+                severity=QCSeverity.ERROR,
+            )
+        ]
+    return _below("af_not_green", "af.green_fraction", green, _af_param(c, "green_fraction_min"))
 
 
-def qc_autofluorescence(img: np.ndarray, cfg: Mapping) -> QCResult:
+def _auto_white_balance(white_balance: str | None) -> bool:
+    return isinstance(white_balance, str) and white_balance.strip().lower().startswith("auto")
+
+
+def qc_autofluorescence(
+    img: np.ndarray, cfg: Mapping, *, white_balance: str | None = None
+) -> QCResult:
     """Excitation on, emission filter fitted, really fluorescence, not over-exposed, sharp.
 
     Physics: under 405 nm excitation healthy mucosa emits broadband green (collagen, NADH, FAD,
     peak ~500-520 nm). The long-pass emission filter blocks the reflected violet light, so a good
     AF photo is green-dominant with little blue. A weak green 90th percentile means the violet
     LED was off or covered.
+
+    ``white_balance`` is the capture's recorded white-balance mode (EXIF / capture metadata).
+    ``"auto"`` adds the warning ``af_auto_white_balance``: auto white balance pulls the green
+    glow towards grey and shifts the green/red ratio the analysis relies on, even when the photo
+    still looks green enough to pass.
     """
     c = cfg["autofluorescence"]
     prep = prepare_image(img, cfg, "af")
     issues, metrics = prep.issues, prep.metrics
+    if _auto_white_balance(white_balance):
+        issues.append(make_issue("af_auto_white_balance"))
     if prep.rgb is None:
         return build_result(issues, metrics, cfg)
     rgb = prep.rgb
+    greyscale = any(i.code == "image_grayscale" for i in issues)
 
     green_p90 = float(np.percentile(rgb[..., 1], 90))
     _, high = clip_fractions(rgb)
@@ -182,6 +211,7 @@ def qc_autofluorescence(img: np.ndarray, cfg: Mapping) -> QCResult:
         "af.red_fraction": float(shares[0]),
         "af.green_fraction": float(shares[1]),
         "af.blue_fraction": float(shares[2]),
+        "af.green_dominance": float(shares[1] - max(shares[0], shares[2])),
         "af.blur_laplacian_var": sharpness,
     }
 
@@ -189,7 +219,7 @@ def qc_autofluorescence(img: np.ndarray, cfg: Mapping) -> QCResult:
     found += _above(
         "af_overexposed", "af.clip_high_fraction", high, c["clip_high_fraction_max"]
     ) or _above("af_overexposed", "af.mean_brightness", mean, c["mean_brightness_max"])
-    if np.isfinite(shares).all():
+    if np.isfinite(shares).all() and not greyscale:  # greyscale already has its retake prompt
         found += _af_colour_issues(shares, c)
     if not _exposure_error(found):
         found += _below("af_blur", "af.blur_laplacian_var", sharpness, c["blur_laplacian_var_min"])
@@ -262,8 +292,19 @@ def _fraction(mask: object) -> float:
     return float(arr.mean()) if arr.size else 0.0
 
 
-def qc_segmentation(masks: Masks, cfg: Mapping) -> QCResult:
-    """Enough analysable mucosa in view (teeth, lips, background and glare excluded)."""
+def qc_segmentation(masks: Masks, cfg: Mapping, *, status: str | None = None) -> QCResult:
+    """Enough analysable mucosa in view (teeth, lips, background and glare excluded), and a
+    tissue outline the segmenter itself trusts.
+
+    ``status`` is ``SegmentationSummary.status`` (``ok`` | ``low_confidence`` | ``failed``).
+    Tissue the segmenter could not classify is left out of the mucosa mask and never checked
+    for fluorescence loss, so:
+
+    * ``failed``: the tissue could not be outlined at all - error ``segmentation_failed``
+      (unless ``insufficient_mucosa`` already blocks the site for the same reason);
+    * ``low_confidence``: warning ``segmentation_low_confidence``; the site is analysed, and the
+      triage does not let such a site support a LOW result.
+    """
     c = cfg["segmentation"]
     fraction = _fraction(getattr(masks, "mucosa", None))
     metrics = {
@@ -273,4 +314,8 @@ def qc_segmentation(masks: Masks, cfg: Mapping) -> QCResult:
     }
     minimum = c["mucosa_fraction_min"]
     found = _below("insufficient_mucosa", "segmentation.mucosa_fraction", fraction, minimum)
+    if status == "failed" and not found:
+        found = [make_issue("segmentation_failed", metric="segmentation.confidence")]
+    elif status == "low_confidence":
+        found.append(make_issue("segmentation_low_confidence", metric="segmentation.confidence"))
     return build_result(found, metrics, cfg)

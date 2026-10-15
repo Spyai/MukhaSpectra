@@ -5,14 +5,19 @@
 # Purpose: stop false reassurance. A capture that could hide a lesion must fail (error) or be
 # reported as a limitation (warning); it must never be analysed as if it were good.
 name: mukhaspectra-qc
-version: 1.0.0
+version: 1.1.0
 status: baseline_unvalidated
+# 1.1.0: AF that is not green at all (auto white balance, greyscale file, red-dominant) is an
+#   error; greyscale detected by channel equality; auto white balance on AF is a warning;
+#   segmentation 'failed' blocks a site, 'low_confidence' warns; new 'limitations' section.
 
 # 512 px: area-averaging a phone photo down this far suppresses sensor/JPEG noise (which would
 # otherwise make a blurred photo look sharp) while blur that matters for analysis (>= ~3 px at
 # the 1024 px working resolution) still removes almost all Laplacian energy.
 metric_max_side_px: 512
 min_image_side_px: 64                 # shorter side below this: too small to assess or analyse
+grayscale_channel_diff_max: 0.01      # 99th pct of max(|R-G|, |G-B|) over lit pixels (0-1) at or
+                                      #   below this: a grey photo expanded to RGB (error)
 
 white_light:
   blur_laplacian_var_min: 5.0         # variance of 3x3 Laplacian of luma (0-255) at metric size,
@@ -30,11 +35,17 @@ white_light:
 autofluorescence:
   blur_laplacian_var_min: 1.2         # AF is intrinsically smooth (emission diffuses from the
                                       #   stroma), so only gross defocus/motion is caught here.
-                                      #   Synthetic AF: sharp 2.9-40, sigma 4 px @1024: < 0.5
+                                      #   QC sees the file's sRGB-encoded values. Synthetic AF
+                                      #   (encoded): sharp 120-200, sigma 2 px @1024: ~12,
+                                      #   sigma 4: ~1.1-1.2 (borderline; re-tune on real data)
   green_p90_min: 0.12                 # 0-1; below this the violet LED is probably off/blocked
   blue_fraction_max: 0.35             # median B/(R+G+B); high = reflected 405 nm reaching the
                                       #   sensor (emission filter missing)
-  green_fraction_min: 0.36            # median G/(R+G+B); below = not a green AF image (warning)
+  green_fraction_min: 0.36            # median G/(R+G+B); below = weakly green AF image (warning)
+  green_dominance_min: 0.03           # median G share minus the larger of R and B shares at or
+                                      #   below this: green not dominant at all (auto white
+                                      #   balance, greyscale, red-dominant) - error, retake.
+                                      #   Encoded synthetic AF: ~0.2; grey-world AWB: ~0
   white_light_blue_fraction_min: 0.18 # red-dominant AND this much blue = a white-light photo
   white_light_red_excess_min: 0.05    #   (median R share - G share) above this; with little
                                       #   blue it is only a warning (porphyrin looks the same)
@@ -63,6 +74,16 @@ spectral:
   signal_min: 50                      # lit - dark counts per spectral band; a few weak bands =
                                       #   warning, more than half weak = error
   min_readings: 3
+
+# Not capture failures: thresholds for the limitations the orchestrator reports alongside a
+# result, so the clinician knows what the device could not check.
+limitations:
+  # Whitish area touching the mucosa that stays excluded as "teeth" after the AF cross-check
+  # (image share): above this, 'white_area_not_analysed'.
+  white_area_not_analysed_fraction_max: 0.03
+  # Opposite-side (paired) reference below this x the site's own level: the dimmer side may be
+  # a change on both sides, which can hide a loss -> 'possible_bilateral_change'.
+  paired_reference_dimmer_ratio: 0.9
 
 score_weights:
   error: 0.5

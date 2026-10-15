@@ -1,11 +1,22 @@
 """Radiometric corrections applied before registration and AF analysis.
 
-Order: dark subtraction (removes sensor offset and ambient light leaking past the clip; for the
-weak AF signal this leak can be a large share of the green channel) -> flat field (removes the
-LED / vignetting profile so the image rim is not mistaken for fluorescence loss) -> colour
-matrix (WL only; never white-balance an AF image, it would distort the green/red ratio used to
-separate tissue autofluorescence from porphyrin red) -> exposure factor (AF intensities brought
-onto a common exposure before comparing sites).
+Transfer function first. Phone JPEG/HEIC/PNG files (and rawpy's default output) store
+gamma-ENCODED values (sRGB, IEC 61966-2-1), not light. Every radiometric step below assumes
+LINEAR light: subtracting a dark frame, dividing by an illumination profile and rescaling by an
+exposure ratio are only valid on values proportional to photon counts, and "relative AF < 0.75"
+is a statement about light. On encoded values a 2x exposure changes the number by only ~1.37x and
+an encoded relative AF of 0.75 is ~0.53 in light. AF and dark captures are therefore converted
+with :func:`srgb_to_linear` before any correction, and AF images shown to people are converted
+back with :func:`linear_to_srgb`. WL stays encoded: its colour rules (segmentation, confounders,
+white-patch checks) are defined on sRGB values.
+
+Order for AF (linear): dark subtraction (removes sensor offset and ambient light leaking past the
+clip; for the weak AF signal this leak can be a large share of the green channel) -> flat field
+(the VIOLET LED profile from the fluorescence card, so the image rim is not mistaken for
+fluorescence loss) -> exposure factor (AF intensities brought onto a common exposure before
+comparing sites). WL (encoded): flat field (white LED profile) -> colour matrix (WL only; never
+white-balance an AF image, it would distort the green/red ratio used to separate tissue
+autofluorescence from porphyrin red).
 
 All functions return float32, never raise on odd sizes or non-finite pixels, and never modify
 their inputs. Non-finite input pixels become 0.
@@ -29,6 +40,50 @@ def _as_float(img: np.ndarray) -> np.ndarray:
     else:
         out = arr.astype(np.float32, copy=True)
     return np.nan_to_num(out, nan=0.0, posinf=1.0, neginf=0.0)
+
+
+# IEC 61966-2-1 (sRGB) transfer function constants.
+_SRGB_ENCODED_KNEE = 0.04045  # encoded value where the linear toe ends
+_SRGB_LINEAR_KNEE = 0.0031308  # the same point in linear light
+_SRGB_SLOPE = 12.92
+_SRGB_A = 0.055
+_SRGB_GAMMA = 2.4
+
+
+def _unit_float(img: np.ndarray) -> np.ndarray:
+    """Float copy in [0, 1] (integers scaled by their full range, non-finite -> 0 / 1)."""
+    return np.clip(_as_float(img), 0.0, 1.0)
+
+
+def srgb_to_linear(img: np.ndarray) -> np.ndarray:
+    """sRGB-encoded values in [0, 1] -> linear light in [0, 1] (exact IEC 61966-2-1 piecewise).
+
+    ``x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4``. Integer inputs are scaled by
+    their full range first; values are clipped to [0, 1] and non-finite values become 0 (NaN,
+    -inf) or 1 (+inf). Returns float32 of the same shape; the input is not modified.
+    """
+    x = _unit_float(img).astype(np.float64)
+    out = np.where(
+        x <= _SRGB_ENCODED_KNEE,
+        x / _SRGB_SLOPE,
+        np.power((x + _SRGB_A) / (1.0 + _SRGB_A), _SRGB_GAMMA),
+    )
+    return out.astype(np.float32)
+
+
+def linear_to_srgb(img: np.ndarray) -> np.ndarray:
+    """Linear light in [0, 1] -> sRGB-encoded values in [0, 1] (exact IEC 61966-2-1 piecewise).
+
+    ``x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055``; the inverse of
+    :func:`srgb_to_linear`. Same input handling; float32 out; the input is not modified.
+    """
+    x = _unit_float(img).astype(np.float64)
+    out = np.where(
+        x <= _SRGB_LINEAR_KNEE,
+        x * _SRGB_SLOPE,
+        (1.0 + _SRGB_A) * np.power(x, 1.0 / _SRGB_GAMMA) - _SRGB_A,
+    )
+    return np.clip(out, 0.0, 1.0).astype(np.float32)
 
 
 def _resize_to(arr: np.ndarray, height: int, width: int) -> np.ndarray:
@@ -124,7 +179,8 @@ def exposure_factor(meta: CaptureMetadata, reference: CaptureMetadata | None) ->
     ``(t_ref * iso_ref) / (t * iso)`` when all four are finite positive numbers. When either ISO
     is missing, the exposure-time ratio alone is used (both times must be known); without both
     exposure times the factor is 1.0, because an ISO ratio alone cannot be trusted on phones that
-    hide their exposure program. Exact for linear (raw) data, approximate for tone-mapped JPEGs.
+    hide their exposure program. Apply it to LINEAR light only (see :func:`srgb_to_linear`);
+    phone tone curves are not pure sRGB, so it stays approximate for tone-mapped JPEGs.
     """
     if reference is None:
         return 1.0

@@ -34,7 +34,9 @@ def test_version_reports_every_version_and_config_hash(client):
     assert res.status_code == 200
     body = res.json()
     config = PipelineConfig.default()
-    assert body["software"] == __version__
+    # backend version + build id, exactly what every result records (honesty.4)
+    assert body["software"] == f"{__version__}+{body['build']}"
+    assert body["build"]
     assert body["pipeline"] == mukha_pipeline.__version__
     assert body["schema_version"] == mukha_pipeline.SCHEMA_VERSION
     assert body["configs"]["triage"]["sha256"] == config.triage.ref.sha256

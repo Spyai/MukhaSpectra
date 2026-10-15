@@ -15,6 +15,10 @@ Optics modelled (simplified, for software testing only):
 * Camera: torch fall-off, bloom (veiling glare), a dark pedestal matching
   :func:`generate_dark_frame`, shot and read noise, and a small random misalignment against the
   WL frame (the phone moves between the two captures) to exercise registration.
+* File encoding: everything above is LINEAR light (the FVL depth is a fraction of emitted
+  light, and the noise is sensor noise). The output is then sRGB-encoded (IEC 61966-2-1), as a
+  phone JPEG/HEIC stores it, so the analysis must linearise before it can recover the depth, as
+  it must for real uploads. The dark frame and the SYNTHETIC stamp are in file (encoded) values.
 
 Illumination is gentler than in the WL image so that only the FVL mask, not scene geometry,
 produces relative-AF values below the analysis threshold in a clean image.
@@ -27,6 +31,7 @@ from typing import Literal, overload
 import cv2
 import numpy as np
 
+from mukha_pipeline.preprocess.correction import linear_to_srgb, srgb_to_linear
 from mukha_pipeline.synthetic._fields import (
     blur,
     child_rngs,
@@ -40,12 +45,12 @@ from mukha_pipeline.synthetic._fields import (
 )
 from mukha_pipeline.synthetic.watermark import watermark_synthetic
 
-DEFAULT_DARK_LEVEL = 0.01
+DEFAULT_DARK_LEVEL = 0.01  # dark-frame level as stored in the (encoded) file
 MAX_ROTATION_DEG = 1.5
 MAX_SHIFT_PX = 12.0  # at the 768 px reference frame height; scales with image size
 MAX_SCALE_CHANGE = 0.02
 
-MUCOSA_GREEN = 0.42  # healthy mucosa green at the torch hot spot (0-1, before the pedestal)
+MUCOSA_GREEN = 0.42  # healthy mucosa green at the torch hot spot (LINEAR light, no pedestal)
 _RED_PER_GREEN = 0.33  # red tail of the tissue emission plus sensor cross-talk
 _BLUE_PER_GREEN = 0.10  # long-pass filter: very little blue reaches the sensor
 _FVL_RED_SHARE = 0.5  # red drops half as much as green, so red/green rises in FVL
@@ -183,7 +188,12 @@ def generate_af_from_wl(
     dark_level: float = DEFAULT_DARK_LEVEL,
     specular_mask: np.ndarray | None = None,
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-    """Synthesise the AF capture that matches a WL capture (float32 RGB in [0, 1]).
+    """Synthesise the AF capture that matches a WL capture (float32 RGB in [0, 1], sRGB-encoded).
+
+    The scene, ``fvl_depth`` (fraction of green LIGHT lost) and the noise are modelled in linear
+    light; the result is sRGB-encoded like a phone file, so ``srgb_to_linear(af)`` minus the
+    linearised dark frame gives back the modelled fluorescence. ``dark_level`` is the matching
+    :func:`generate_dark_frame` level in file (encoded) values.
 
     ``tissue_mask``/``teeth_mask``/``specular_mask`` come from :class:`SyntheticScene`; when
     omitted they are estimated from the WL colours. With ``return_transform=True`` returns
@@ -270,10 +280,12 @@ def generate_af_from_wl(
             flags=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_REFLECT_101,
         )
-    pedestal = dark_level * _PEDESTAL_TINT
+    # The dark frame stores the pedestal encoded; in light it is the linearised level.
+    pedestal = srgb_to_linear(np.clip(dark_level * _PEDESTAL_TINT, 0.0, 1.0))
     shot = np.sqrt(0.00025 * np.clip(af, 0.0, None)) * noise_rng.standard_normal(af.shape)
     read = 0.003 * noise_rng.standard_normal(af.shape)
-    out = np.clip(af + pedestal + shot + read, 0.0, 1.0).astype(np.float32)
+    linear = np.clip(af + pedestal + shot + read, 0.0, 1.0)
+    out = linear_to_srgb(linear)  # what the camera writes to the file
     if watermark:
         # Camera-fixed text, identical to the WL stamp's text pixels; see watermark.py.
         out = watermark_synthetic(out, band=False)
@@ -291,6 +303,8 @@ def generate_dark_frame(
 ) -> np.ndarray:
     """Dark frame (all LEDs off, AF exposure): pedestal, faint amp glow, hot pixels, noise.
 
+    Values are what the file holds (sRGB-encoded, like the AF capture); ``level`` is the
+    encoded pedestal. The analysis linearises it together with the AF capture before subtracting.
     ``shape`` is (H, W) or (H, W, 3). Not stamped by default: dark subtraction would carry any
     label into the AF image (and break the camera-fixed label that registration ignores), so
     dark frames are labelled SYNTHETIC by file name and metadata instead. ``watermark=True``

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from mukha_pipeline.fusion.habits import current_use
 from mukha_pipeline.schema.models import (
     AFReference,
     ConfounderType,
@@ -41,6 +42,24 @@ CONFOUNDER_NOUN: dict[ConfounderType, str] = {
     ConfounderType.PIGMENTATION: "pigmentation",
     ConfounderType.BLOOD: "blood",
     ConfounderType.GLARE: "glare",
+}
+
+# Every Symptoms field, phrased to follow "the patient reports ...".
+SYMPTOM_NOUN: dict[str, str] = {
+    "non_healing_ulcer_over_2_weeks": "a non-healing ulcer for more than 2 weeks",
+    "white_patch": "a white patch",
+    "red_patch": "a red patch",
+    "lump": "a lump in the mouth",
+    "pain": "pain in the mouth",
+    "difficulty_opening_mouth": "difficulty opening the mouth",
+    "bleeding": "unexplained bleeding in the mouth",
+    "burning_sensation": "a burning sensation in the mouth",
+    "neck_lump": "a lump in the neck",
+}
+
+HISTORY_NOUN: dict[str, str] = {
+    "prior_oral_lesion": "a previous oral lesion",
+    "prior_oral_cancer": "previous oral cancer",
 }
 
 SMOKELESS_NOUN: dict[str, str] = {
@@ -106,20 +125,36 @@ def fvl_strength(mean_relative_af: float) -> str:
     return "mild"
 
 
+def reported_symptoms(rf: RiskFactors) -> list[tuple[str, str]]:
+    """(field, phrase) for every symptom the patient reports, in questionnaire order."""
+    return [(k, SYMPTOM_NOUN.get(k, k.replace("_", " "))) for k, v in rf.symptoms if v is True]
+
+
+def reported_history(rf: RiskFactors) -> list[str]:
+    """Phrases for the oral history the patient reports."""
+    return [noun for key, noun in HISTORY_NOUN.items() if getattr(rf, key)]
+
+
 def habit_names(rf: RiskFactors, *, current_only: bool = False) -> list[str]:
-    """Short names of tobacco / areca / alcohol habits, for counselling text."""
+    """Short names of tobacco / areca / alcohol habits, for counselling text.
+
+    Recorded habit details count as current use unless marked former (``fusion.habits``).
+    """
     names: list[str] = []
     st = rf.smokeless_tobacco
-    if st.uses or (st.former and not current_only):
+    st_now = current_use(st)
+    if st_now or (st.former and not current_only):
         kinds = [SMOKELESS_NOUN[t] for t in st.types] or ["chewing tobacco"]
-        names.extend(kinds if st.uses else [f"former {k}" for k in kinds])
+        names.extend(kinds if st_now else [f"former {k}" for k in kinds])
     sm = rf.smoking
-    if sm.uses or (sm.former and not current_only):
+    sm_now = current_use(sm)
+    if sm_now or (sm.former and not current_only):
         kinds = [SMOKING_NOUN[t] for t in sm.types] or ["smoking"]
-        names.extend(kinds if sm.uses else [f"former {k}" for k in kinds])
+        names.extend(kinds if sm_now else [f"former {k}" for k in kinds])
     an = rf.areca_nut
-    if an.uses or (an.former and not current_only):
-        names.append("areca nut" if an.uses else "former areca nut")
+    an_now = current_use(an)
+    if an_now or (an.former and not current_only):
+        names.append("areca nut" if an_now else "former areca nut")
     if rf.alcohol.frequency == "daily":
         names.append("daily alcohol")
     return list(dict.fromkeys(names))

@@ -17,6 +17,7 @@ from app.schemas import (
     SitesResponse,
     VersionResponse,
 )
+from app.security import access_notice, authentication_mode
 from mukha_pipeline import SCHEMA_VERSION
 from mukha_pipeline.config import LoadedConfig, PipelineConfig
 from mukha_pipeline.schema.export import SCHEMA_PATH
@@ -25,10 +26,11 @@ from mukha_pipeline.sites import SITE_MAP_VIEWBOX, SITES
 
 SERVICE_NAME = "MukhaSpectra API"
 
+public_router = APIRouter(tags=["system"])  # no API key needed
 router = APIRouter(tags=["system"])
 
 
-@router.get("/health", response_model=HealthResponse, summary="Liveness")
+@public_router.get("/health", response_model=HealthResponse, summary="Liveness")
 def health() -> HealthResponse:
     return HealthResponse(
         status="ok", service=SERVICE_NAME, version=__version__, notice=PROTOTYPE_BANNER
@@ -46,7 +48,8 @@ def version(services: ServicesDep) -> VersionResponse:
     return VersionResponse(
         service=SERVICE_NAME,
         api_version="v1",
-        software=__version__,
+        software=services.analysis.software_version,
+        build=services.analysis.build_id,
         pipeline=mukha_pipeline.__version__,
         schema_version=SCHEMA_VERSION,
         configs={
@@ -57,6 +60,8 @@ def version(services: ServicesDep) -> VersionResponse:
         models=services.analysis.model_infos(),
         prototype_banner=PROTOTYPE_BANNER,
         disclaimer=DISCLAIMER,
+        authentication=authentication_mode(services.settings),  # type: ignore[arg-type]
+        access_notice=access_notice(services.settings),
     )
 
 

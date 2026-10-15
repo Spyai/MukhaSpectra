@@ -320,7 +320,12 @@ def test_review_block_prefilled_when_signed():
 
 def test_referral_with_qr_and_example_facilities(high: Rendered):
     url = "https://mukhaspectra.example.org/r/scr-2026-10-14-0042"
-    assert 'alt="QR code linking to the secure record"' in high.html
+    assert 'alt="QR code linking to this screening record"' in high.html
+    # No access-control claim until the record is behind a login (Phase 5).
+    assert "Scan to open this screening record (access control arrives in a later release)" in (
+        high.text
+    )
+    assert "secure" not in high.text.lower() and "login" not in high.text.lower()
     assert re.search(r'<img src="data:image/svg\+xml;base64,[^"]+" alt="QR code', high.html)
     assert url in high.text
     assert "Example facility — configure facilities.yaml" in high.text
@@ -445,7 +450,8 @@ def test_banner_and_report_id_on_every_page(any_report: Rendered):
         assert PROTOTYPE_BANNER in page, f"banner missing on page {i}"
         assert report_id in page, f"report id missing on page {i}"
         assert f"Page {i} of {len(any_report.pages)}" in page
-        assert "rules 1.0.0" in page  # footer versions
+        rules = any_report.case.result.versions.rule_config.version
+        assert f"rules {rules}" in page  # footer versions
 
 
 def test_running_header_identifies_the_patient(any_report: Rendered):
@@ -494,7 +500,7 @@ def test_clinician_modified_level_reaches_headline(stress: Rendered):
 
 
 def test_device_coverage_is_stated(high: Rendered, low: Rendered, inconclusive: Rendered):
-    assert "Device coverage: 5 of 14 sites (1 used only as a healthy reference)." in high.text
+    assert "Device coverage: 5 of 14 sites (1 used only as a comparison reference)." in high.text
     assert (
         "Not examined (no device information): upper and lower lip mucosa, ventral tongue / "
         "floor of mouth, hard and soft palate, upper and lower gingiva, both retromolar areas."

@@ -12,16 +12,18 @@ from dataclasses import dataclass
 
 from mukha_pipeline.config import LoadedConfig
 from mukha_pipeline.fusion.factors import POINT_DECIMALS, total_points
-from mukha_pipeline.fusion.lesions import build_lesion_drafts, site_readable
+from mukha_pipeline.fusion.lesions import build_lesion_drafts, site_analysed, site_readable
 from mukha_pipeline.fusion.narrative import (
     action_from_template,
     build_limitations,
     dynamic_steps,
     explanation,
+    lesion_action,
     lesion_summary,
 )
 from mukha_pipeline.fusion.overrides import (
     ClinicalContext,
+    any_lesion_seen,
     matching_overrides,
     override_factor,
     site_appearances,
@@ -31,6 +33,7 @@ from mukha_pipeline.fusion.patient import (
     patient_factors,
     risk_factor_factors,
     risk_items,
+    symptom_factors,
 )
 from mukha_pipeline.fusion.rules import TriageRules, parse_triage_rules
 from mukha_pipeline.fusion.scoring import ScoredLesion, score_lesion
@@ -67,7 +70,7 @@ class TriageOutput:
     limitations: list[Limitation]
 
 
-def _assessment(s: ScoredLesion, rules: TriageRules) -> LesionAssessment:
+def _assessment(s: ScoredLesion, rules: TriageRules, overall: RiskLevel) -> LesionAssessment:
     d = s.draft
     return LesionAssessment(
         lesion_id=s.lesion_id,
@@ -80,7 +83,7 @@ def _assessment(s: ScoredLesion, rules: TriageRules) -> LesionAssessment:
         score=s.score,
         contributing_factors=list(s.factors),
         confounders=list(d.region.confounders) if d.region is not None else [],
-        recommended_action=action_from_template(s.level, rules),
+        recommended_action=lesion_action(s, overall, rules),
         summary=lesion_summary(s, rules),
     )
 
@@ -88,7 +91,11 @@ def _assessment(s: ScoredLesion, rules: TriageRules) -> LesionAssessment:
 def site_levels(
     sites: Sequence[SiteResult], lesions: Sequence[ScoredLesion]
 ) -> dict[OralSite, RiskLevel]:
-    """Per site: the most severe lesion there; else LOW if readable, INCONCLUSIVE if not."""
+    """Per site: the most severe lesion there; else LOW if readable, INCONCLUSIVE if not.
+
+    These are the lesions' own levels: a site is not raised because patient-level red flags or
+    habits raised the overall level (the explanation says when that happened).
+    """
     out: dict[OralSite, RiskLevel] = {}
 
     def raise_to(site: OralSite, level: RiskLevel) -> None:
@@ -139,10 +146,15 @@ def run_triage(
 
     items = risk_items(risk_factors, patient, tr)
     rf_factors = risk_factor_factors(items, tr, lesion_present=bool(scored))
-    factors = patient_factors(scored, rf_factors)
+    factors = patient_factors(scored, rf_factors) + symptom_factors(risk_factors)
     score = round(total_points(factors), POINT_DECIMALS)
 
-    ctx = ClinicalContext(risk_factors, site_appearances(sites), any_lesion=bool(scored))
+    ctx = ClinicalContext(
+        risk_factors,
+        site_appearances(sites),
+        any_lesion=bool(scored),
+        lesion_seen=any_lesion_seen(sites),
+    )
     floors = matching_overrides(tr.overrides, ctx)
     # Lesion-only floors (e.g. a red area with FVL) must also hold for the patient: the overall
     # level is never lower than any lesion's level.
@@ -159,6 +171,7 @@ def run_triage(
         floors,
         examined_readable=readable,
         examined_unreadable=len(examined) - readable,
+        examined_analysed=sum(1 for s in examined if site_analysed(s)),
         lesions=scored,
         rules=tr,
     )
@@ -196,7 +209,7 @@ def run_triage(
         sites=sites, lesions=scored, spectral=spectral, decision=decision, rules=tr
     )
     return TriageOutput(
-        lesions=[_assessment(s, tr) for s in scored],
+        lesions=[_assessment(s, tr, decision.level) for s in scored],
         triage=triage,
         site_levels=site_levels(sites, scored),
         limitations=limitations,

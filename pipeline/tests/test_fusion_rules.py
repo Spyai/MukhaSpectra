@@ -22,7 +22,9 @@ def test_bundled_rules_parse():
     assert rules.actions[RiskLevel.HIGH].code == ActionCode.URGENT_REFERRAL
     assert rules.actions[RiskLevel.INCONCLUSIVE].referral_urgency == ReferralUrgency.RETAKE
     assert OralSite.LOWER_GINGIVA in rules.site.high_risk_sites
-    assert OralSite.LOWER_GINGIVA in rules.site.af_low_specificity_sites
+    # Gingivobuccal complex: high-risk, and not discounted as a low-specificity AF site.
+    assert OralSite.LOWER_GINGIVA not in rules.site.af_low_specificity_sites
+    assert rules.version == "1.1.0"
     assert {o.code for o in rules.overrides} >= {"visual.red_patch", "symptom.non_healing_ulcer"}
 
 

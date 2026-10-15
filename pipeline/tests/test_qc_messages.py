@@ -35,6 +35,9 @@ REQUIRED_CODES = {
     "probe_no_contact",
     "spectral_poor_repeatability",
     "spectral_signal_low",
+    "af_auto_white_balance",
+    "segmentation_failed",
+    "segmentation_low_confidence",
 }
 
 
@@ -75,6 +78,15 @@ def test_severity_defaults_match_clinical_intent():
     assert {"probe_no_contact", "spectral_saturated", "ambient_light"} <= errors
     assert {"glare_minor", "no_dark_frame", "alignment_marginal", "clipping_dark"} <= warnings
     assert {"spectral_few_readings", "spectral_poor_repeatability"} <= warnings
+    assert {"segmentation_failed"} <= errors
+    assert {"af_auto_white_balance", "segmentation_low_confidence"} <= warnings
+
+
+def test_qc_config_version_records_the_review_fixes(qc_cfg):
+    assert qc_cfg["version"] == "1.1.0"
+    assert qc_cfg["autofluorescence"]["green_dominance_min"] > 0
+    assert 0 < qc_cfg["limitations"]["white_area_not_analysed_fraction_max"] < 0.2
+    assert 0.5 < qc_cfg["limitations"]["paired_reference_dimmer_ratio"] < 1.0
 
 
 def test_make_issue_fills_from_catalogue():

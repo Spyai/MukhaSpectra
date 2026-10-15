@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.services.analysis import AnalysisService
 from app.services.demo import DemoService
+from app.services.erasure import ErasureService
 from app.services.ingest import IngestService
 from app.services.inputs import CaptureStore
 from app.services.pipeline_bridge import DEFAULT_BRIDGE, PipelineBridge
@@ -27,6 +28,7 @@ class Services:
     ingest: IngestService
     demo: DemoService
     reports: ReportService
+    erasure: ErasureService
 
 
 def build_services(
@@ -48,9 +50,10 @@ def build_services(
         bridge=bridge,
         capture_store=capture_store,
         analysis=analysis,
-        ingest=IngestService(storage, bridge, capture_store, analysis),
+        ingest=IngestService(storage, bridge, capture_store, analysis, settings),
         demo=DemoService(storage, bridge, capture_store, analysis),
         reports=ReportService(settings, storage, report_renderer or AppReportsRenderer()),
+        erasure=ErasureService(storage, analysis),
     )
 
 

@@ -2,8 +2,15 @@
 
 Evidence sources, in order: AF fluorescence-loss regions, the health worker's own visual flag,
 the white-light model, and lesion-role probe readings. Nothing is dropped: reference-only sites
-and sites whose images failed QC still contribute whatever evidence they have, because the worst
-failure for a screening aid is ignoring a finding.
+and sites whose images failed QC still contribute whatever evidence they have, and every probe
+reading the health worker took as a lesion reading becomes (part of) a lesion whatever the
+placeholder classifier says, because the worst failure for a screening aid is ignoring a finding.
+
+Two levels of "the device could look" are kept apart:
+
+* ``site_analysed``: the AF step ran and its fluorescence-loss regions are real findings.
+* ``site_readable``: additionally, the mucosa outline (segmentation) was reliable, so the
+  absence of findings can be trusted. Only readable sites allow a LOW result.
 """
 
 from __future__ import annotations
@@ -23,8 +30,6 @@ from mukha_pipeline.schema.models import (
 )
 from mukha_pipeline.sites import OralSite
 
-SPECTRAL_LESION_LABELS: frozenset[str] = frozenset({"suspicious", "indeterminate"})
-
 
 @dataclass
 class LesionDraft:
@@ -43,14 +48,44 @@ class LesionDraft:
             self.origins.append(origin)
 
 
-def site_readable(site: SiteResult) -> bool:
-    """True when the device could actually look for fluorescence loss at this site.
+def site_analysed(site: SiteResult) -> bool:
+    """True when the AF step ran at this site, so its fluorescence-loss regions are findings.
 
     Stricter than ``analysis_status == "analysed"``: a site whose AF step reported
-    insufficient mucosa or no reference produced no FVL regions, and treating that silence as
-    "nothing found" would be false reassurance.
+    insufficient mucosa or no reference produced no FVL regions.
     """
     return site.analysis_status == "analysed" and site.af is not None and site.af.status == "ok"
+
+
+def site_software_error(site: SiteResult) -> bool:
+    """True when the site was not analysed because the analysis crashed (``not_analysed``).
+
+    That is a software problem, not a capture-quality one: the photos may be fine, so the worker
+    is not sent to retake them; the site is examined clinically and the problem reported. It is
+    still unreadable, so LOW stays impossible.
+    """
+    return site.analysis_status == "not_analysed"
+
+
+def segmentation_reliable(site: SiteResult) -> bool:
+    """False when segmentation reported low confidence or failure.
+
+    Tissue the segmenter could not classify (blanched submucous-fibrosis mucosa, a grey-white
+    plaque at the frame edge, a colour cast) is left out of the mucosa mask and never checked
+    for fluorescence loss. A result built without a segmentation summary (not produced by the
+    orchestrator, which always records one for an analysed site) is taken as reliable.
+    """
+    return site.segmentation is None or site.segmentation.status == "ok"
+
+
+def site_readable(site: SiteResult) -> bool:
+    """True when the device could look for fluorescence loss across the whole site.
+
+    Treating silence as "nothing found" at a site that was not fully checked would be false
+    reassurance, so only readable sites allow LOW; findings at analysed but unreadable sites
+    still count.
+    """
+    return site_analysed(site) and segmentation_reliable(site)
 
 
 def visual_seen(flag: VisualFlag) -> bool:
@@ -76,6 +111,18 @@ def wl_finding(site: SiteResult, rules: WLRules) -> WLPrediction | None:
     return top
 
 
+def probe_only_unchecked(draft: LesionDraft) -> bool:
+    """A lesion known only from probe readings, none of which passed quality checks: the
+    device has no usable measurement of the spot the health worker pointed at."""
+    return (
+        draft.region is None
+        and draft.visual is None
+        and draft.wl is None
+        and bool(draft.spectral)
+        and not any(r.qc.passed for r in draft.spectral)
+    )
+
+
 def primary_draft(drafts: list[LesionDraft]) -> LesionDraft | None:
     """The darkest FVL region at a site, else the first non-region lesion there."""
     regions = [d for d in drafts if d.region is not None]
@@ -86,7 +133,7 @@ def primary_draft(drafts: list[LesionDraft]) -> LesionDraft | None:
 
 def _site_drafts(site: SiteResult, wl_rules: WLRules) -> list[LesionDraft]:
     drafts: list[LesionDraft] = []
-    if site_readable(site) and site.af is not None:
+    if site_analysed(site) and site.af is not None:
         for region in site.af.regions:
             drafts.append(LesionDraft(site.site, site, [LesionOrigin.AF_FVL], region=region))
     if visual_seen(site.visual_flag):
@@ -121,9 +168,8 @@ def _attach_spectral(
     if target is None:
         target = primary_draft(drafts)
     if target is None:
-        label = reading.classifier.label if reading.classifier else None
-        if label not in SPECTRAL_LESION_LABELS:
-            return
+        # The reading's role is the health worker's designation, so it is a lesion whatever the
+        # unvalidated placeholder classifier says (or when its QC failed and there is no label).
         target = LesionDraft(reading.site, site_results.get(reading.site))
         by_site.setdefault(reading.site, []).append(target)
     target.spectral.append(reading)

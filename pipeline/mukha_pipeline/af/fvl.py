@@ -139,19 +139,40 @@ def _surround_contrast(
     return float(np.clip(surround / region_mean, 0.0, MAX_CONTRAST))
 
 
+def border_irregularity(region_filled: np.ndarray) -> float:
+    """Border raggedness in [0, 1]: ``1 - convex hull perimeter / perimeter``.
+
+    0 for any convex outline, whatever its elongation: a smooth ellipse scores ~0 at 1:1 and at
+    6:1 (lesions along the linea alba or the lateral tongue are often long and smooth). The score
+    rises with notches, lobes and jagged edges, because each indentation adds perimeter that the
+    hull bridges. The outline is first simplified with a 1 px tolerance so the pixel staircase of
+    a smooth edge does not count as roughness. Aspect ratio is a separate property and is not
+    scored here.
+    """
+    mask = np.ascontiguousarray(region_filled, dtype=np.uint8)
+    if not mask.any():
+        return 0.0
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    perimeter = hull_perimeter = 0.0
+    for contour in contours:
+        poly = cv2.approxPolyDP(contour, 1.0, True)
+        perimeter += float(cv2.arcLength(poly, True))
+        hull_perimeter += float(cv2.arcLength(cv2.convexHull(poly), True))
+    if perimeter <= 0:
+        return 0.0
+    return _unit(1.0 - hull_perimeter / perimeter)
+
+
 def _shape_metrics(region_filled: np.ndarray) -> tuple[float, float]:
     """(border_irregularity, solidity) of a hole-filled region.
 
     Holes (e.g. specular dots punched out of the mucosa) are filled first so they do not count
-    as border. Irregularity = 1 - 4*pi*A/P^2 (0 for a disc, higher for ragged outlines).
+    as border. See :func:`border_irregularity`.
     """
     props = regionprops(region_filled.astype(np.uint8))
     if not props:
         return 0.0, 1.0
-    p = props[0]
-    perim = float(p.perimeter)
-    irregularity = 1.0 - 4.0 * math.pi * float(p.area) / (perim**2) if perim > 0 else 0.0
-    return _unit(irregularity), _unit(float(p.solidity))
+    return border_irregularity(region_filled), _unit(float(props[0].solidity))
 
 
 def _measure_regions(

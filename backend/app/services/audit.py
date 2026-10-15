@@ -24,6 +24,8 @@ class AuditAction(StrEnum):
     RESULT_VIEWED = "result_viewed"
     REPORT_GENERATED = "report_generated"
     REPORT_VIEWED = "report_viewed"
+    SCREENING_ERASED = "screening_erased"
+    PATIENT_ERASED = "patient_erased"
 
 
 def record_event(

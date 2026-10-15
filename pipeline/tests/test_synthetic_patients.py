@@ -96,6 +96,7 @@ def test_consent_and_calibrations_are_valid_at_now(patients, kind: str) -> None:
     assert cal.created_at <= inp.now < cal.expires_at
     assert cal.flat_field is not None and cal.flat_field.shape == SMALL
     assert np.allclose(cal.flat_field, 1.0) and np.allclose(cal.color_matrix, np.eye(3))
+    assert cal.af_flat_field is not None and np.allclose(cal.af_flat_field, 1.0)
     assert cal.af_scale == 1.0
     for s in inp.sites:
         assert s.wl.meta.calibration_id == cal.calibration_id

@@ -4,13 +4,24 @@ The manifest reuses the pipeline's ScreeningResult building blocks (consent, ris
 context, visual flag, enums) so the upload contract cannot drift from the result contract.
 Identity fields (``patient.name``, ``patient.external_id``) are the only PII the API accepts; they
 are stored in the separate ``patient_identities`` table and never appear in any response below.
+
+Every free-text field has a length limit that matches its database column, so oversized input is
+a 422 with the field's name rather than a database error. NaN / Infinity are rejected.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from mukha_pipeline.schema.models import (
     ConfigRef,
@@ -29,10 +40,18 @@ from mukha_pipeline.schema.models import (
 from mukha_pipeline.sites import OralSite
 
 _FIELD_NAME_PATTERN = r"^[A-Za-z0-9_.\-]{1,100}$"
+CONSENT_METHODS: tuple[str, ...] = ("checkbox", "signature", "thumbprint")
+CONSENT_METHOD_REQUIRED = (
+    "Recorded consent needs its method: 'checkbox', 'signature' or 'thumbprint'."
+)
+MAX_LIST_ITEMS = 32
+
+DeviceId = Annotated[str, StringConstraints(max_length=100)]
+FirmwareVersion = Annotated[str, StringConstraints(max_length=50)]
 
 
 class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 # --------------------------------------------------------------------------------------------
@@ -57,6 +76,37 @@ class ManifestPatient(_Strict):
         return value or None
 
 
+class ManifestConsent(ConsentInfo):
+    """``ConsentInfo`` with upload rules: recorded consent must say how it was given."""
+
+    consent_id: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def _method_when_recorded(self) -> ManifestConsent:
+        if self.consent_recorded and self.method not in CONSENT_METHODS:
+            raise ValueError(CONSENT_METHOD_REQUIRED)
+        return self
+
+
+class ManifestContext(ScreeningContext):
+    """``ScreeningContext`` with the length limits of the ``screenings`` columns.
+
+    A ``captured_at`` without a UTC offset is camp-local time (settings.default_timezone); it is
+    stored converted to UTC.
+    """
+
+    screening_site_name: str | None = Field(
+        default=None, max_length=200, description="Camp or clinic name."
+    )
+    camp_id: str | None = Field(default=None, max_length=100)
+    health_worker_id: str | None = Field(default=None, max_length=100)
+    health_worker_name: str | None = Field(default=None, max_length=200)
+    device_ids: list[DeviceId] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    firmware_versions: list[FirmwareVersion] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS
+    )
+
+
 class ManifestSite(_Strict):
     site: OralSite
     role: SiteRole = SiteRole.EXAMINED
@@ -74,9 +124,9 @@ class ManifestSite(_Strict):
 
 class UploadManifest(_Strict):
     patient: ManifestPatient = Field(default_factory=ManifestPatient)
-    consent: ConsentInfo
+    consent: ManifestConsent
     risk_factors: RiskFactors = Field(default_factory=RiskFactors)
-    context: ScreeningContext = Field(default_factory=ScreeningContext)
+    context: ManifestContext = Field(default_factory=ManifestContext)
     data_provenance: DataProvenance = DataProvenance.REAL
     sites: list[ManifestSite] = Field(min_length=1, max_length=len(OralSite))
     spectral_file: str | None = Field(default=None, pattern=_FIELD_NAME_PATTERN)
@@ -179,13 +229,29 @@ class ConfigInfo(ConfigRef):
 class VersionResponse(BaseModel):
     service: str
     api_version: str
-    software: str
+    software: str = Field(description="Backend version + build id, as recorded in results.")
+    build: str = Field(description="Build identifier (git commit or MUKHA_BUILD_ID).")
     pipeline: str
     schema_version: str
     configs: dict[str, ConfigInfo]
     models: list[ModelInfo]
     prototype_banner: str
     disclaimer: str
+    authentication: Literal["none", "api_key"] = Field(
+        description="'none': no authentication is configured on this server."
+    )
+    access_notice: str
+
+
+class ErasureResponse(BaseModel):
+    """What an erasure request removed (database rows, stored files, cached reports)."""
+
+    erased_screening_ids: list[str]
+    patient_record_erased: bool = Field(
+        description="True when the patient row and the identity (name, external id) were "
+        "removed; False when another screening still uses them."
+    )
+    stored_objects_deleted: int
 
 
 class SiteShape(BaseModel):

@@ -39,6 +39,7 @@ from mukha_pipeline.schema.models import (
     ReferenceType,
     RiskFactors,
     RiskLevel,
+    SegmentationSummary,
     SiteResult,
     SiteRole,
     SourceAdapter,
@@ -188,6 +189,18 @@ def wl_ok(label: WLLabel, prob: float, *, set_top: bool = True) -> WLAnalysis:
     )
 
 
+def segmentation(status: str = "ok") -> SegmentationSummary:
+    return SegmentationSummary(
+        method="test",
+        version="0",
+        status=status,  # type: ignore[arg-type]
+        mucosa_fraction=0.5,
+        teeth_fraction=0.1,
+        specular_fraction=0.01,
+        confidence={"ok": 0.9, "low_confidence": 0.3}.get(status, 0.0),
+    )
+
+
 def site(
     oral_site: OralSite = S.BUCCAL_MUCOSA_LEFT,
     regions: Iterable[FVLRegion] = (),
@@ -200,8 +213,14 @@ def site(
     lesion_seen: bool | None = None,
     diascopy: Diascopy = Diascopy.NOT_DONE,
     wl: WLAnalysis | None = None,
+    seg_status: str | None = None,
+    threshold: float = 0.75,
 ) -> SiteResult:
-    """A site result. ``analysed=False`` means the images failed QC (no AF analysis)."""
+    """A site result. ``analysed=False`` means the images failed QC (no AF analysis).
+
+    ``seg_status`` records a segmentation summary with that status (``None``: no summary, as for
+    results built outside the orchestrator).
+    """
     appearance = list(appearance or [])
     seen = bool(appearance) if lesion_seen is None else lesion_seen
     paired, pairing = reference_site_for(oral_site)
@@ -216,7 +235,12 @@ def site(
         qc=qc(analysed),
         analysis_status="analysed" if analysed else "inconclusive_qc_failed",
         calibration=calibration(),
-        af=af(oral_site, regions, status=af_status, ref_type=ref_type) if analysed else None,
+        segmentation=segmentation(seg_status) if seg_status is not None and analysed else None,
+        af=(
+            af(oral_site, regions, status=af_status, ref_type=ref_type, threshold=threshold)
+            if analysed
+            else None
+        ),
         wl=(wl or wl_unavailable()) if analysed else None,
         site_risk_level=RiskLevel.INCONCLUSIVE,
     )

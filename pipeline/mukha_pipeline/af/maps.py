@@ -48,16 +48,29 @@ def compute_af_maps(
 def reference_green(maps: AFMaps, mucosa: np.ndarray, cfg: dict | None) -> float | None:
     """Robust "normal tissue" green level of this image (cfg = analysis.af).
 
-    Mean of the smoothed mucosa green between two percentiles (default 25th-90th): FVL patches
-    sit below the lower cut and glare or teeth fluorescence above the upper cut, so neither drags
-    the reference. Smoothing matches what :func:`detect_fvl` divides by, so normal tissue lands
-    at a relative AF close to 1. Returns None when there is too little usable mucosa.
+    Mean of the smoothed mucosa green between two percentiles (default 50th-95th). The estimate
+    comes from the upper half of the distribution because a health worker centres the lesion in
+    a close-up: fluorescence loss can cover up to about half of the mucosa, and a lower cut
+    below that share would let the loss drag the reference down (depth under-reported, moderate
+    losses missed). Glare or teeth fluorescence sits above the upper cut. Erring high only makes
+    the analysis more sensitive. Smoothing matches what :func:`detect_fvl` divides by, so normal
+    tissue lands at a relative AF close to 1. Returns None when there is too little usable mucosa.
+
+    Because the estimate comes from the bright half, isolated AF highlights (glare in the
+    AF frame that the WL specular mask does not cover) are set aside first: pixels brighter than
+    ``reference_outlier_ratio`` x the 90th percentile of mucosa green. The cut is relative to a
+    high percentile, so even a loss covering most of the field never removes healthy tissue.
     """
     shape = maps.green.shape
     m = as_bool_mask(mucosa, shape, "mucosa") & np.isfinite(maps.green)
     min_px = int(get(cfg, "reference_min_pixels", AF_DEFAULTS))
     if int(m.sum()) < min_px:
         return None
+    outlier = float(get(cfg, "reference_outlier_ratio", AF_DEFAULTS))
+    if outlier > 0:
+        p90 = float(np.percentile(maps.green[m], 90))
+        if np.isfinite(p90) and p90 > EPS:
+            m &= maps.green <= outlier * p90
     sigma = float(get(cfg, "smoothing_sigma_px", AF_DEFAULTS))
     vals = masked_smooth(maps.green, m, sigma)[m]
     vals = vals[np.isfinite(vals)]

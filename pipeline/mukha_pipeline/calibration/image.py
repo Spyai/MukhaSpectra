@@ -10,11 +10,23 @@ from a uniform white target, (b) a colour matrix for the WL photo, and (c) a sca
 fluorescence reference card of known green emission. The colour matrix is for WL captures only:
 white-balancing an AF image would distort the green/red ratio that separates tissue green from
 ~635 nm porphyrin red (plaque, bacteria).
+
+Two illumination profiles. The white LEDs and the 405 nm violet LEDs sit at different places on
+the clip, so they light the field differently. The white-target flat field corrects WL only. AF
+gets its own flat field from the fluorescence card (a uniform emitter under the violet light):
+dividing AF by the white profile would leave the violet fall-off in place, and a dim rim then
+reads as fluorescence loss.
+
+Transfer function. AF analysis runs in LINEAR light (see ``preprocess.correction``), so the
+fluorescence card is linearised (sRGB, the default ``card_encoding``) before its green level and
+profile are measured; ``expected_card_green`` is therefore a linear-light level. The white target
+serves the WL photo, which stays sRGB-encoded, so it is used as captured.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 import cv2
 import numpy as np
@@ -28,7 +40,10 @@ from mukha_pipeline.calibration.common import (
     new_calibration_id,
     validity_window,
 )
+from mukha_pipeline.preprocess.correction import srgb_to_linear
 from mukha_pipeline.types import ImageCalibration
+
+CardEncoding = Literal["srgb", "linear"]
 
 FLAT_MIN = 0.2  # below 20 % of mean illumination the target is not filling the field;
 FLAT_MAX = 5.0  # correcting harder would mostly amplify noise.
@@ -37,6 +52,8 @@ GAIN_MAX = 5.0
 SATURATED = 0.98  # channel value treated as clipped by the sensor / ISP
 EPS = 1e-6
 AF_CARD_SIGNAL_MIN = 1e-3  # median green below this is sensor noise, not card emission
+
+AF_FLAT_BLUR_SIGMA_PX = 50.0  # heavier than the white flat: the card is dimmer (noisier)
 
 # Calibration-time acceptance limits (``create_image_calibration`` raises below these).
 WHITE_TARGET_MIN_LEVEL = 0.05
@@ -67,6 +84,38 @@ def compute_flat_field(white_target: np.ndarray, blur_sigma_px: float = 25) -> n
     if not np.isfinite(mean) or mean <= EPS:
         return np.ones(gray.shape, dtype=np.float32)
     return np.clip(gray / mean, FLAT_MIN, FLAT_MAX).astype(np.float32)
+
+
+def _card_green(card: np.ndarray, encoding: CardEncoding) -> np.ndarray:
+    """Green channel (luma for single-channel input) of a card capture, in linear light."""
+    img = as_float_image(card)
+    green = img[..., 1] if img.ndim == 3 and img.shape[2] >= 2 else luminance(img)
+    if encoding == "srgb" and green.size:
+        finite = np.isfinite(green)
+        green = np.where(finite, srgb_to_linear(np.where(finite, green, 0.0)), np.nan)
+    return green.astype(np.float32)
+
+
+def compute_af_flat_field(
+    fluorescence_card: np.ndarray,
+    blur_sigma_px: float = AF_FLAT_BLUR_SIGMA_PX,
+    *,
+    encoding: CardEncoding = "srgb",
+) -> np.ndarray:
+    """Violet-LED excitation profile from a fluorescence-card capture, float32 (H, W), mean 1.
+
+    The card is a uniform green emitter, so its (linear) green channel under 405 nm light is the
+    excitation profile x vignetting that the AF photo of tissue also carries. Green channel ->
+    linear light (``encoding="srgb"``, the phone default) -> heavy Gaussian blur -> divide by the
+    mean -> clip to [0.2, 5]; the same robust handling as :func:`compute_flat_field`. A dark or
+    empty capture yields all ones.
+    """
+    green = _card_green(fluorescence_card, encoding)
+    if green.ndim != 2 or green.size == 0:
+        h = green.shape[0] if green.ndim >= 1 else 1
+        w = green.shape[1] if green.ndim >= 2 else 1
+        return np.ones((max(h, 1), max(w, 1)), dtype=np.float32)
+    return compute_flat_field(green, blur_sigma_px)
 
 
 def compute_color_matrix(
@@ -169,18 +218,30 @@ def create_image_calibration(
     chart_measured: np.ndarray | None = None,
     chart_reference: np.ndarray | None = None,
     flat_blur_sigma_px: float = 25,
+    af_flat_blur_sigma_px: float = AF_FLAT_BLUR_SIGMA_PX,
+    card_encoding: CardEncoding = "srgb",
 ) -> ImageCalibration:
     """Build a daily image calibration record from calibration captures.
 
     Raises ``CalibrationError`` (plain-language message) when a capture is unusable, so the
     operator repeats it instead of the device silently claiming standardised intensities. A
-    missing fluorescence card gives ``af_scale = 1.0`` (flat field and colour still apply).
+    missing fluorescence card gives ``af_scale = 1.0`` and ``af_flat_field = None`` (AF is then
+    not flat-fielded; the white flat field and colour matrix still apply to WL).
+
+    ``card_encoding`` says how the card capture stores light: ``"srgb"`` (phone JPEG/HEIC/PNG,
+    the default) is linearised before the AF scale and the AF flat field are measured, because
+    both are applied to linear AF; ``"linear"`` for raw/linear captures.
     """
     _check_white_target(white_target)
+    if card_encoding not in ("srgb", "linear"):
+        raise CalibrationError("Card encoding must be 'srgb' or 'linear'.")
     af_scale = 1.0
+    af_flat = None
     if fluorescence_card is not None:
         _check_fluorescence_card(fluorescence_card)
-        af_scale = compute_af_scale(fluorescence_card, expected_card_green)
+        card_green = _card_green(fluorescence_card, card_encoding)
+        af_scale = compute_af_scale(card_green, expected_card_green)
+        af_flat = compute_af_flat_field(card_green, af_flat_blur_sigma_px, encoding="linear")
     created_at, expires_at = validity_window(now, valid_hours)
     return ImageCalibration(
         calibration_id=new_calibration_id(),
@@ -191,6 +252,7 @@ def create_image_calibration(
         color_matrix=compute_color_matrix(white_target, chart_measured, chart_reference),
         af_scale=af_scale,
         synthetic=synthetic,
+        af_flat_field=af_flat,
     )
 
 

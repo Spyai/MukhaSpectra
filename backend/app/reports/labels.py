@@ -75,7 +75,8 @@ CALIBRATION_TEXT: dict[CalibrationStatus, str] = {
 ANALYSIS_STATUS_TEXT: dict[str, str] = {
     "analysed": "Analysed",
     "inconclusive_qc_failed": "Not analysed — QC failed",
-    "not_analysed": "Not analysed",
+    # A software error, not a QC failure: the site still needs a clinical look.
+    "not_analysed": "Not analysed (software error) — examine clinically",
 }
 
 REFERENCE_TEXT: dict[ReferenceType, str] = {
@@ -132,14 +133,16 @@ WL_LABEL_TEXT: dict[WLLabel, str] = {
     WLLabel.OTHER: "Other change",
 }
 
+# The Phase 1 spectral classifier is a rule-based placeholder: its "not suspicious" label must
+# never read as reassurance.
 SPECTRAL_LABEL_TEXT: dict[str, str] = {
-    "not_suspicious": "Not suspicious (heuristic)",
+    "not_suspicious": "No spectral difference detected (does not rule out disease)",
     "indeterminate": "Indeterminate",
     "suspicious": "Suspicious (heuristic)",
 }
 
 URGENCY_TEXT: dict[ReferralUrgency, str] = {
-    ReferralUrgency.NONE: "No referral needed by this screen",
+    ReferralUrgency.NONE: "Routine re-screening — clinician review required",
     ReferralUrgency.REEXAMINE: "Re-examine, refer if persistent",
     ReferralUrgency.URGENT: "Urgent referral",
     ReferralUrgency.RETAKE: "Retake, or refer for clinical examination",
@@ -167,6 +170,14 @@ PROVENANCE_TEXT: dict[str, str] = {
     "volunteer": "Volunteer",
     "mixed": "Mixed (includes synthetic)",
 }
+
+# The pipeline's lesion-vs-reference delta divides the lesion by the reference band by band, so
+# the probe's own LED / filter / sensor gains cancel (spectral/features.py reference_delta):
+# ratios are a relative change, the Hb dip is the dip of the quotient, slopes subtract.
+SPECTRAL_DELTA_NOTE = (
+    "Δ: lesion ÷ reference, band by band (the probe's own gains cancel): ratios as % change, "
+    "Hb dip of the quotient, slopes as difference."
+)
 
 SPECTRAL_FEATURE_TEXT: dict[str, str] = {
     "hb_absorption_proxy": "Hb dip (540–580 nm)",
@@ -233,6 +244,14 @@ def signed(x: float | None, digits: int = 1) -> str:
     if abs(x) < 0.5 * 10**-digits:
         return f"{0:.{digits}f}"
     return f"+{x:.{digits}f}" if x > 0 else f"{MINUS}{abs(x):.{digits}f}"
+
+
+def signed_pct(fraction: float | None, digits: int = 1) -> str:
+    """A relative change with an explicit sign: +4.2 %, −6.4 %, 0.0 %."""
+    if not _finite(fraction):
+        return DASH
+    assert fraction is not None
+    return f"{signed(fraction * 100, digits)} %"
 
 
 def pct(fraction: float | None, digits: int = 1) -> str:

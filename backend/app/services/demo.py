@@ -133,6 +133,10 @@ class DemoService:
             raise InvalidInputError(
                 f"Unknown demo patient '{kind}'. Use one of: {', '.join(DEMO_KINDS)}."
             )
+        with self.analysis.analysis_slot():
+            return self._create(session, kind)
+
+    def _create(self, session: Session, kind: str) -> tuple[str, AnalysisResult, ScreeningResult]:
         try:
             inp = self.bridge.make_demo_patient(kind)
         except ImportError as exc:
@@ -180,6 +184,7 @@ class DemoService:
                             "source_adapter": SourceAdapter.SYNTHETIC.value,
                             "demo_kind": kind,
                         },
+                        synthetic=True,
                     )
                     refs[slot] = row.id
                 site_entries.append(site_input_entry(site_input, refs))
@@ -200,6 +205,7 @@ class DemoService:
                         ],
                         "demo_kind": kind,
                     },
+                    synthetic=True,
                 )
 
             calibration_ids = [

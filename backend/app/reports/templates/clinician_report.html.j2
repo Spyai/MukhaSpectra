@@ -165,11 +165,14 @@
           <span class="f risk-{{ l.badge.css }}"><span class="no">{{ l.number }}</span>{{ l.site }} {{ pill(l.badge) }}</span>
           {%- endfor %}
         </div>
+        {%- if findings_note %}
+        <div class="level-context">{{ findings_note }}</div>
+        {%- endif %}
         {%- endif %}
         <div class="coverage">
           <b>{{ coverage.summary }}</b>
           {%- if coverage.not_examined %} Not examined (no device information): {{ coverage.not_examined | join(', ') }}.{% endif %}
-          {%- if coverage.not_assessed and not triage.clinician_note %} <span class="bad-text">Not assessed (QC failed): {{ coverage.not_assessed | join(', ') }} — examine clinically.</span>{% endif %}
+          {%- if coverage.not_assessed and not triage.clinician_note %} <span class="bad-text">Not assessed ({{ coverage.not_assessed_reason }}): {{ coverage.not_assessed | join(', ') }} — examine clinically.</span>{% endif %}
         </div>
       </div>
     </div>
@@ -212,7 +215,7 @@
     {%- else %}No suspicious finding was flagged at the sites that could be analysed. Sites that failed quality control ({{ qc.sites_failed | join(', ') if qc.sites_failed else 'see section 5' }}) were not assessed, so this does not rule out disease: follow the recommended action above.{% endif %}
   </div>
   {%- else %}
-  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }} by risk level{% if compact_lesions %}; full evidence for the top {{ max_detailed }}, the rest in the table below (all findings are in the secure record){% endif %}. <b>Relative AF</b> = green fluorescence ÷ the patient's healthy reference (1.00 = same, lower = loss). <b>Contrast</b> above 1 = darker than surroundings. <b>Border irreg.</b> 0 = smooth round edge, 1 = very irregular. Photos are cropped to the frame around the flagged region; brackets (outline on the heatmap) mark the region.</div>
+  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }} by risk level{% if compact_lesions %}; full evidence for the top {{ max_detailed }}, the rest in the table below (all findings are in the screening record){% endif %}. <b>Relative AF</b> = green fluorescence ÷ the patient's comparison reference (assumed unaffected; the device does not check this. 1.00 = same, lower = loss). <b>Contrast</b> above 1 = darker than surroundings. <b>Border irreg.</b> 0 = smooth round edge, 1 = very irregular. Photos are cropped to the frame around the flagged region; brackets (outline on the heatmap) mark the region.</div>
   {%- endif %}
 
   {%- for l in lesions %}
@@ -226,6 +229,9 @@
       </div>
       <div class="right">{{ pill(l.badge) }}<div class="score">Lesion rule score {{ l.score }}</div></div>
     </div>
+    {%- if l.level_context %}
+    <div class="level-context">{{ l.level_context }}</div>
+    {%- endif %}
     <p class="summary">{{ l.summary }}</p>
 
     <div class="triptych">
@@ -284,6 +290,7 @@
           {%- endfor %}
           </tbody>
         </table>
+        {%- if s.delta_note %}<div class="tiny muted">{{ s.delta_note }}</div>{% endif %}
         {%- if s.features | selectattr('cited') | list %}<div class="tiny muted">Bold: features cited in the reasons.</div>{% endif %}
         {%- endif %}
         <div class="clf">
@@ -462,11 +469,11 @@
     </div>
     <div class="qr">
       {%- if referral.qr_uri %}
-      <img src="{{ referral.qr_uri }}" alt="QR code linking to the secure record">
-      <div class="hint">Scan to open the secure record (login required)</div>
+      <img src="{{ referral.qr_uri }}" alt="QR code linking to this screening record">
+      <div class="hint">Scan to open this screening record (access control arrives in a later release)</div>
       <div class="url">{{ referral.record_url }}</div>
       {%- else %}
-      <div class="noqr">QR code not included: no secure record link was configured for this report.</div>
+      <div class="noqr">QR code not included: no record link was configured for this report.</div>
       {%- endif %}
     </div>
   </div>

@@ -15,7 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY pipeline/ pipeline/
 COPY backend/ backend/
-RUN pip install ./pipeline[raw,onnx] ./backend
+# [postgres] installs psycopg so MUKHA_DATABASE_URL=postgresql+psycopg://... works (compose profile).
+RUN pip install './pipeline[raw,onnx]' './backend[postgres]'
+
+# Build identifier recorded in every result: docker build --build-arg MUKHA_BUILD_ID=$(git rev-parse --short HEAD)
+ARG MUKHA_BUILD_ID=""
+ENV MUKHA_BUILD_ID=${MUKHA_BUILD_ID}
 
 RUN useradd --create-home --uid 10001 mukha && mkdir -p /data && chown mukha /data
 USER mukha

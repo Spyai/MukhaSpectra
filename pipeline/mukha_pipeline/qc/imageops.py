@@ -27,6 +27,12 @@ MIN_SHARPNESS_SUPPORT = 0.25  # keep the mask only if >= 25 % of pixels remain
 MAX_NONFINITE_FRACTION = 0.01
 DEFAULT_METRIC_MAX_SIDE_PX = 512
 DEFAULT_MIN_IMAGE_SIDE_PX = 64
+# A colour photo stored as grey (R = G = B in every pixel): decoders expand single-channel files
+# to three equal channels, so the channel count alone cannot catch it. Judged on lit pixels
+# only (a black frame has equal channels too, and has its own exposure prompts).
+DEFAULT_GRAYSCALE_CHANNEL_DIFF_MAX = 0.01  # 99th pct of max(|R-G|, |G-B|), 0-1 scale
+GRAYSCALE_LIT_LEVEL = 0.05  # brightest channel at least this for a pixel to be judged
+GRAYSCALE_MIN_LIT_FRACTION = 0.01
 
 
 @dataclass
@@ -62,6 +68,21 @@ def _to_channels(arr: np.ndarray) -> tuple[np.ndarray | None, bool]:
     if channels in (3, 4):
         return arr[..., :3], False  # RGBA: alpha carries no optical information
     return None, False
+
+
+def channels_equal(rgb: np.ndarray, tolerance: float) -> tuple[bool, float | None]:
+    """(looks greyscale, 99th percentile channel difference over lit pixels).
+
+    ``None`` when too few pixels are lit to judge (the photo is then left to the exposure
+    checks). Measured on the metric-scale copy, whose area averaging suppresses JPEG noise.
+    """
+    lit = rgb.max(axis=2) >= GRAYSCALE_LIT_LEVEL
+    if float(lit.mean()) < GRAYSCALE_MIN_LIT_FRACTION:
+        return False, None
+    px = rgb[lit]
+    diff = np.maximum(np.abs(px[:, 0] - px[:, 1]), np.abs(px[:, 1] - px[:, 2]))
+    p99 = float(np.percentile(diff, 99))
+    return p99 <= tolerance, p99
 
 
 def resize_longest_side(img: np.ndarray, max_side: int) -> tuple[np.ndarray, float]:
@@ -133,6 +154,20 @@ def prepare_image(
     max_side = int(cfg.get("metric_max_side_px", DEFAULT_METRIC_MAX_SIDE_PX))
     out.rgb, scale = resize_longest_side(rgb, max_side)
     out.metrics[f"{prefix}.metric_scale"] = scale
+    if require_colour and not was_gray:
+        tol = float(cfg.get("grayscale_channel_diff_max", DEFAULT_GRAYSCALE_CHANNEL_DIFF_MAX))
+        grey, p99 = channels_equal(out.rgb, tol)
+        if p99 is not None:
+            out.metrics[f"{prefix}.channel_diff_p99"] = p99
+        if grey:
+            out.issues.append(
+                make_issue(
+                    "image_grayscale",
+                    metric=f"{prefix}.channel_diff_p99",
+                    value=p99,
+                    threshold=tol,
+                )
+            )
     return out
 
 

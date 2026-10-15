@@ -7,8 +7,12 @@ across devices and days. Expired calibrations are still applied (the optics rare
 day or two) but the status says ``expired`` so the report can flag it.
 
 Uncalibrated path: each frame's dark-subtracted signal is divided by its own sum over F1..F8.
-Absolute levels are lost, but band ratios survive and, because the lesion and its contralateral
-reference were lit by the same LED, the lesion-minus-reference comparison cancels the LED spectrum.
+Absolute levels are lost, and every channel still carries the probe's own gain (LED spectrum x
+filter response x sensor gain in that band), so absolute relative-signal values and their band
+ratios differ from probe to probe. The lesion-vs-reference comparison removes that gain by
+dividing the lesion by its reference channel by channel
+(:func:`mukha_pipeline.spectral.features.reference_delta`); both readings must come from the same
+probe and the same path.
 """
 
 from __future__ import annotations

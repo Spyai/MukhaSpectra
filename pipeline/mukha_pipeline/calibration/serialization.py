@@ -3,6 +3,10 @@
 Format: ``np.savez_compressed`` with float arrays plus a ``metadata`` entry holding UTF-8 JSON
 as a uint8 array. Loading uses ``allow_pickle=False``: a calibration blob may come from a device
 or an upload, and pickle would let it execute code.
+
+Members: ``metadata``, ``color_matrix`` and, when measured, ``flat_field`` (white LED, WL) and
+``af_flat_field`` (violet LED, AF). ``af_flat_field`` is an optional addition within format
+version 1: older blobs simply have no AF flat field, which the analysis treats as "not measured".
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ def image_calibration_to_bytes(cal: ImageCalibration) -> bytes:
         "af_scale": float(cal.af_scale),
         "synthetic": bool(cal.synthetic),
         "has_flat_field": cal.flat_field is not None,
+        "has_af_flat_field": cal.af_flat_field is not None,
     }
     arrays: dict[str, np.ndarray] = {
         "metadata": np.frombuffer(json.dumps(meta).encode("utf-8"), dtype=np.uint8),
@@ -41,6 +46,8 @@ def image_calibration_to_bytes(cal: ImageCalibration) -> bytes:
     }
     if cal.flat_field is not None:
         arrays["flat_field"] = np.asarray(cal.flat_field, dtype=np.float32)
+    if cal.af_flat_field is not None:
+        arrays["af_flat_field"] = np.asarray(cal.af_flat_field, dtype=np.float32)
     buf = io.BytesIO()
     np.savez_compressed(buf, **arrays)
     return buf.getvalue()
@@ -53,6 +60,11 @@ def image_calibration_from_bytes(data: bytes) -> ImageCalibration:
             meta = json.loads(bytes(npz["metadata"].astype(np.uint8)).decode("utf-8"))
             color_matrix = np.asarray(npz["color_matrix"], dtype=np.float64).reshape(3, 3)
             flat = np.asarray(npz["flat_field"], dtype=np.float32) if "flat_field" in npz else None
+            af_flat = (
+                np.asarray(npz["af_flat_field"], dtype=np.float32)
+                if "af_flat_field" in npz
+                else None
+            )
     except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile, UnicodeDecodeError) as e:
         raise CalibrationError("Calibration file is damaged or not a calibration file.") from e
     if not isinstance(meta, dict) or meta.get("format") != FORMAT:
@@ -73,6 +85,7 @@ def image_calibration_from_bytes(data: bytes) -> ImageCalibration:
             color_matrix=color_matrix,
             af_scale=float(meta.get("af_scale", 1.0)),
             synthetic=bool(meta.get("synthetic", False)),
+            af_flat_field=af_flat,
         )
     except (KeyError, TypeError, ValueError) as e:
         raise CalibrationError("Calibration file metadata is incomplete.") from e

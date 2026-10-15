@@ -158,8 +158,10 @@ def report_display_id(screening_id: str, version: int) -> str:
     return f"MSR-{screening_id.replace('-', '')[:10].upper()}-V{version}"
 
 
-def report_file_name(screening_id: str, version: int) -> str:
-    return f"MukhaSpectra_{screening_id}_v{version}.pdf"
+def report_file_name(screening_id: str, version: int, *, synthetic: bool = False) -> str:
+    """Download name of the clinician PDF; synthetic reports are labelled in the name too."""
+    prefix = "SYNTHETIC_" if synthetic else ""
+    return f"{prefix}MukhaSpectra_{screening_id}_v{version}.pdf"
 
 
 class ReportService:

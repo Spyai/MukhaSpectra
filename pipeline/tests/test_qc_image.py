@@ -301,22 +301,81 @@ def test_white_light_photo_in_af_slot_is_blocked(qc_cfg, wl):
     assert codes(r) == ["af_white_light"] and not r.passed
 
 
-def test_auto_white_balance_af_is_a_warning(qc_cfg):
+def test_auto_white_balanced_af_is_blocked(qc_cfg):
+    """correctness.0: grey-world AWB neutralises the green glow; every pixel then looks like
+    red porphyrin to the analysis, so the site must not be analysed (error, not a warning)."""
     af = qh.make_af_image(np.random.default_rng(9), teeth=False)
     r = qc_autofluorescence(qh.grey_world(af), qc_cfg)
-    assert codes(r) == ["af_not_green"] and r.passed
-    assert r.issues[0].metric == "af.green_fraction"
+    assert codes(r) == ["af_not_green"] and not r.passed
+    issue = r.issues[0]
+    assert issue.severity == QCSeverity.ERROR and issue.metric == "af.green_dominance"
+    assert "retake" in issue.message.lower()
+    assert r.metrics["af.green_dominance"] <= qc_cfg["autofluorescence"]["green_dominance_min"]
 
 
-def test_white_light_through_filter_is_a_warning(qc_cfg, wl):
+def test_greyscale_af_expanded_to_rgb_is_blocked(qc_cfg, af):
+    """A greyscale AF (R = G = B), as decoders deliver it after expanding one channel to three,
+    must fail QC: the channel count no longer tells it apart from a colour photo."""
+    grey = np.repeat(af.mean(axis=2, keepdims=True), 3, axis=2)
+    r = qc_autofluorescence(grey, qc_cfg)
+    assert not r.passed
+    assert codes(r)[0] == "image_grayscale"
+    assert "af_not_green" not in codes(r)  # one plain retake prompt, not two for one cause
+    as_u8 = (grey * 255).round().astype(np.uint8)
+    assert codes(qc_autofluorescence(as_u8, qc_cfg))[0] == "image_grayscale"
+
+
+def test_greyscale_wl_expanded_to_rgb_is_blocked(qc_cfg, wl):
+    grey = np.repeat(wl.mean(axis=2, keepdims=True), 3, axis=2)
+    r = qc_white_light(grey, qc_cfg)
+    assert "image_grayscale" in codes(r) and not r.passed
+
+
+def test_partially_white_balanced_af_still_passes(qc_cfg):
+    """A milder colour shift keeps green clearly dominant: analysed (the AF analysis copes)."""
+    af = qh.make_af_image(np.random.default_rng(9), teeth=False)
+    means = af.reshape(-1, 3).mean(axis=0)
+    partial = np.clip(af * (means.mean() / means) ** 0.4, 0.0, 1.0).astype(np.float32)
+    r = qc_autofluorescence(partial, qc_cfg)
+    assert r.passed, codes(r)
+
+
+def test_white_light_through_filter_is_blocked(qc_cfg, wl):
     r = qc_autofluorescence(qh.through_emission_filter(wl), qc_cfg)
-    assert codes(r) == ["af_not_green"] and r.passed
-    assert r.issues[0].metric == "af.red_minus_green_fraction"
+    assert codes(r) == ["af_not_green"] and not r.passed
+    assert r.issues[0].metric == "af.green_dominance"
 
 
 def test_heavy_porphyrin_is_not_mistaken_for_white_light(qc_cfg, af):
+    """Red over the whole field: colour cannot tell porphyrin from white light through the
+    filter, and tissue green cannot be judged, so the site is blocked as 'not green'."""
     r = qc_autofluorescence(qh.add_porphyrin(af, 0.5), qc_cfg)
+    assert codes(r) == ["af_not_green"] and not r.passed
+
+
+def test_weakly_green_af_is_a_warning(qc_cfg):
+    """Green still the largest share, but only just: analysed, with a warning."""
+    img = qh.make_af_image(np.random.default_rng(10), teeth=False, green=0.52, red=0.46, blue=0.47)
+    r = qc_autofluorescence(img, qc_cfg)
     assert codes(r) == ["af_not_green"] and r.passed
+    assert r.issues[0].severity == QCSeverity.WARNING
+    assert r.issues[0].metric == "af.green_fraction"
+
+
+@pytest.mark.parametrize("wb", ["auto", "AUTO", " Auto "])
+def test_auto_white_balance_setting_is_a_warning(qc_cfg, af, wb):
+    r = qc_autofluorescence(af, qc_cfg, white_balance=wb)
+    assert codes(r) == ["af_auto_white_balance"] and r.passed
+    issue = r.issues[0]
+    assert issue.severity == QCSeverity.WARNING
+    assert issue.message == (
+        "Lock white balance for fluorescence photos — auto white balance alters colours."
+    )
+
+
+@pytest.mark.parametrize("wb", [None, "manual", "locked:5000K", ""])
+def test_locked_or_unknown_white_balance_adds_nothing(qc_cfg, af, wb):
+    assert codes(qc_autofluorescence(af, qc_cfg, white_balance=wb)) == []
 
 
 def test_some_porphyrin_spots_are_fine(qc_cfg, af):
@@ -384,6 +443,26 @@ def test_segmentation_mucosa_fraction(qc_cfg):
     assert ok.passed and ok.metrics["segmentation.mucosa_fraction"] == pytest.approx(floor + 0.2)
     low = qc_segmentation(qh.make_masks(floor / 2), qc_cfg)
     assert codes(low) == ["insufficient_mucosa"] and not low.passed
+
+
+def test_failed_segmentation_blocks_the_site(qc_cfg):
+    """correctness.1: status 'failed' means the tissue could not be outlined at all."""
+    floor = qc_cfg["segmentation"]["mucosa_fraction_min"]
+    r = qc_segmentation(qh.make_masks(floor + 0.2), qc_cfg, status="failed")
+    assert codes(r) == ["segmentation_failed"] and not r.passed
+    assert r.issues[0].severity == QCSeverity.ERROR
+    # Too little mucosa already says it: no second prompt for the same cause.
+    low = qc_segmentation(qh.make_masks(floor / 2), qc_cfg, status="failed")
+    assert codes(low) == ["insufficient_mucosa"]
+
+
+def test_low_confidence_segmentation_is_a_warning(qc_cfg):
+    floor = qc_cfg["segmentation"]["mucosa_fraction_min"]
+    r = qc_segmentation(qh.make_masks(floor + 0.2), qc_cfg, status="low_confidence")
+    assert codes(r) == ["segmentation_low_confidence"] and r.passed
+    assert r.issues[0].severity == QCSeverity.WARNING
+    assert codes(qc_segmentation(qh.make_masks(floor + 0.2), qc_cfg, status="ok")) == []
+    assert codes(qc_segmentation(qh.make_masks(floor + 0.2), qc_cfg)) == []
 
 
 def test_segmentation_handles_empty_and_odd_masks(qc_cfg):

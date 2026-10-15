@@ -8,10 +8,11 @@ import numpy as np
 import pytest
 from af_helpers import make_af_scene, uniform_maps
 
-from mukha_pipeline.af import compute_af_maps, reference_green, resolve_reference
+from mukha_pipeline.af import compute_af_maps, detect_fvl, reference_green, resolve_reference
 from mukha_pipeline.positioning import find_positioning_violations
 from mukha_pipeline.schema.models import ReferenceType
 from mukha_pipeline.sites import OralSite
+from mukha_pipeline.types import AFMaps
 
 
 @pytest.fixture
@@ -84,6 +85,29 @@ def test_reference_green_is_robust_to_fvl_and_glare(rng, af_cfg: dict) -> None:
     assert reference_green(maps, lesion.mucosa, af_cfg) == pytest.approx(ref_clean, rel=0.04)
 
 
+@pytest.mark.parametrize("true_rel", [0.60, 0.70])
+def test_reference_green_survives_a_lesion_covering_40_percent(af_cfg: dict, true_rel) -> None:
+    """A close-up centred on a lesion: the loss covers 40% of the mucosa. The in-image reference
+    must still read the healthy level, or the loss is under-reported or missed (science.7)."""
+    rng = np.random.default_rng(7)
+    h, w = 400, 600
+    g = (0.42 * (1 + 0.04 * rng.standard_normal((h, w)))).astype(np.float32)
+    lesion = np.zeros((h, w), bool)
+    lesion[:, : int(0.40 * w)] = True
+    g[lesion] *= true_rel
+    r = 0.33 * g
+    maps = AFMaps(green=g, red=r, blue=0.1 * g, gr_ratio=g / (r + 1e-3), af_index=g / (1.43 * g))
+    muc = np.ones((h, w), bool)
+    own = reference_green(maps, muc, af_cfg)
+    assert own == pytest.approx(0.42, rel=0.03)
+    ref = resolve_reference(OralSite.HARD_PALATE, own, {})  # no paired site: in-image
+    out = detect_fvl(maps, muc, ref, af_cfg)
+    assert len(out.analysis.regions) == 1
+    region = out.analysis.regions[0]
+    assert region.mean_relative_af == pytest.approx(true_rel, abs=0.03)
+    assert region.area_fraction_of_mucosa == pytest.approx(0.40, abs=0.03)
+
+
 def test_reference_green_none_for_tiny_or_dark_mucosa(af_cfg: dict) -> None:
     maps = uniform_maps((40, 40))
     tiny = np.zeros((40, 40), bool)
@@ -135,8 +159,8 @@ def test_unpaired_site_uses_in_image() -> None:
     assert ref.reference_site is None
     assert ref.reference_green == pytest.approx(0.33)
     assert ref.note == (
-        "No paired site captured; compared with the brightest healthy-looking tissue in the same "
-        "image — less reliable."
+        "No paired site captured; compared with the brighter mucosa in the same image — less "
+        "reliable."
     )
 
 
@@ -152,24 +176,60 @@ def test_paired_site_missing_or_unusable_falls_back_to_in_image() -> None:
         assert "right buccal mucosa" in (ref.note or "")
 
 
-def test_much_dimmer_paired_site_is_not_used() -> None:
-    """Dividing by a too-dim reference inflates relative AF and could hide a real loss."""
+@pytest.mark.parametrize("paired", [0.20, 0.30, 0.36, 0.38])  # 0.5x .. 0.95x own
+def test_dimmer_paired_site_never_lowers_the_reference(paired: float) -> None:
+    """Dividing by a dimmer reference inflates relative AF and could hide a real loss here, so a
+    paired site can only raise the reference (review clinical.2)."""
     ref = resolve_reference(
-        OralSite.LATERAL_TONGUE_RIGHT, 0.40, {OralSite.LATERAL_TONGUE_LEFT: 0.20}
+        OralSite.LATERAL_TONGUE_RIGHT, 0.40, {OralSite.LATERAL_TONGUE_LEFT: paired}
     )
-    assert ref.type == ReferenceType.IN_IMAGE_AUTO
-    assert "dimmer" in (ref.note or "")
+    assert ref.type == ReferenceType.CONTRALATERAL
+    assert ref.reference_site == OralSite.LATERAL_TONGUE_LEFT
+    assert ref.reference_green == pytest.approx(0.40)
+    assert "dimmer" in (ref.note or "") and "this site" in (ref.note or "")
+    # The old ratio guard keyword is still accepted but no longer changes anything.
+    for ratio in (0.0, 0.4, 0.67, 0.99):
+        assert (
+            resolve_reference(
+                OralSite.LATERAL_TONGUE_RIGHT,
+                0.40,
+                {OralSite.LATERAL_TONGUE_LEFT: paired},
+                min_paired_ratio=ratio,
+            )
+            == ref
+        )
+
+
+def test_brighter_paired_site_is_used() -> None:
     brighter = resolve_reference(
         OralSite.LATERAL_TONGUE_RIGHT, 0.20, {OralSite.LATERAL_TONGUE_LEFT: 0.40}
     )
     assert brighter.type == ReferenceType.CONTRALATERAL
-    lenient = resolve_reference(
-        OralSite.LATERAL_TONGUE_RIGHT,
-        0.40,
-        {OralSite.LATERAL_TONGUE_LEFT: 0.20},
-        min_paired_ratio=0.4,
+    assert brighter.reference_green == pytest.approx(0.40)
+    assert brighter.note == "Compared with the patient's own left lateral tongue."
+
+
+def test_dimmer_analogous_site_keeps_own_level() -> None:
+    ref = resolve_reference(OralSite.UPPER_LIP_MUCOSA, 0.40, {OralSite.LOWER_LIP_MUCOSA: 0.30})
+    assert ref.type == ReferenceType.ANALOGOUS_SITE
+    assert ref.reference_site == OralSite.LOWER_LIP_MUCOSA
+    assert ref.reference_green == pytest.approx(0.40)
+    assert "lower lip mucosa" in (ref.note or "") and "dimmer" in (ref.note or "")
+
+
+def test_slightly_dimmer_contralateral_does_not_hide_a_patch(rng, af_cfg: dict) -> None:
+    """A patch at 0.70 of the site's own tissue vanished when the other side read 8% dimmer."""
+    sc = make_af_scene(rng, fvl_discs=((0.45, 0.4, 0.11, 0.3),))
+    maps = compute_af_maps(sc.af, None)
+    own = reference_green(maps, sc.mucosa, af_cfg)
+    assert own is not None
+    ref = resolve_reference(
+        OralSite.BUCCAL_MUCOSA_LEFT, own, {OralSite.BUCCAL_MUCOSA_RIGHT: 0.92 * own}
     )
-    assert lenient.type == ReferenceType.CONTRALATERAL
+    assert ref.type == ReferenceType.CONTRALATERAL
+    out = detect_fvl(maps, sc.mucosa, ref, af_cfg)
+    assert len(out.analysis.regions) == 1
+    assert out.analysis.regions[0].mean_relative_af == pytest.approx(0.70, abs=0.05)
 
 
 def test_paired_site_used_when_own_reference_missing() -> None:
@@ -192,6 +252,7 @@ def test_reference_notes_respect_positioning() -> None:
         resolve_reference(OralSite.TONGUE_DORSUM, 0.4, {}),
         resolve_reference(OralSite.BUCCAL_MUCOSA_LEFT, 0.4, {}),
         resolve_reference(OralSite.BUCCAL_MUCOSA_LEFT, 0.4, {OralSite.BUCCAL_MUCOSA_RIGHT: 0.1}),
+        resolve_reference(OralSite.UPPER_LIP_MUCOSA, 0.4, {OralSite.LOWER_LIP_MUCOSA: 0.1}),
         resolve_reference(OralSite.TONGUE_DORSUM, None, {}),
     ]
     for ref in notes:

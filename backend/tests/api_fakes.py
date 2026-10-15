@@ -22,6 +22,7 @@ from PIL import Image
 
 from app.errors import InputDecodeError
 from app.services.pipeline_bridge import PipelineBridge
+from mukha_pipeline.capture.upload import is_synthetic_file_name
 from mukha_pipeline.config import PipelineConfig
 from mukha_pipeline.schema.models import (
     AS7341_CHANNELS,
@@ -256,6 +257,7 @@ class FakeUploadAdapter:
         dark: bytes | None = None,
         *,
         filenames: dict[str, str | None],
+        source_filenames: dict[str, str | None] | None = None,
         role: Any,
         visual_flag: Any,
         diascopy: Any,
@@ -265,14 +267,32 @@ class FakeUploadAdapter:
         synthetic: bool = False,
     ) -> SiteInput:
         site = OralSite(site)
-        self.calls.append({"site": site, "filenames": dict(filenames), "synthetic": synthetic})
-        args = (device_id, firmware_version, synthetic)
+        sources = dict(source_filenames or {})
+        self.calls.append(
+            {
+                "site": site,
+                "filenames": dict(filenames),
+                "source_filenames": sources,
+                "synthetic": synthetic,
+            }
+        )
+
+        def flagged(slot: str) -> bool:  # same rule as the real UploadAdapter
+            return synthetic or is_synthetic_file_name(sources.get(slot))
+
+        def args(slot: str) -> tuple[str | None, str | None, bool]:
+            return (device_id, firmware_version, flagged(slot))
+
         return SiteInput(
             site=site,
-            wl=self._capture(wl, CaptureKind.WHITE_LIGHT, site, filenames.get("wl"), *args),
-            af=self._capture(af, CaptureKind.AUTOFLUORESCENCE, site, filenames.get("af"), *args),
+            wl=self._capture(wl, CaptureKind.WHITE_LIGHT, site, filenames.get("wl"), *args("wl")),
+            af=self._capture(
+                af, CaptureKind.AUTOFLUORESCENCE, site, filenames.get("af"), *args("af")
+            ),
             dark=(
-                self._capture(dark, CaptureKind.DARK_FRAME, site, filenames.get("dark"), *args)
+                self._capture(
+                    dark, CaptureKind.DARK_FRAME, site, filenames.get("dark"), *args("dark")
+                )
                 if dark
                 else None
             ),
@@ -382,8 +402,13 @@ class FakeClassifier:
     )
 
 
-def build_result(inp: ScreeningInput, classifier: Any = None) -> ScreeningResult:
-    """A valid ScreeningResult derived from the input (no image analysis)."""
+def build_result(
+    inp: ScreeningInput, classifier: Any = None, software_version: str | None = None
+) -> ScreeningResult:
+    """A valid ScreeningResult derived from the input (no image analysis).
+
+    Like the orchestrator, any capture marked synthetic makes the result synthetic.
+    """
     cfg = PipelineConfig.default()
     lesion_sites = [s for s in inp.sites if s.visual_flag.lesion_seen]
     high = bool(lesion_sites)
@@ -399,7 +424,13 @@ def build_result(inp: ScreeningInput, classifier: Any = None) -> ScreeningResult
         timeline_days=14 if high else 365,
         referral_urgency=ReferralUrgency.URGENT if high else ReferralUrgency.NONE,
     )
-    synthetic = DataProvenance(inp.data_provenance) == DataProvenance.SYNTHETIC
+    any_synthetic = any(
+        c.meta.synthetic for s in inp.sites for c in (s.wl, s.af, s.dark) if c is not None
+    ) or any(r.meta.synthetic for r in inp.spectral)
+    provenance = DataProvenance(inp.data_provenance)
+    synthetic = provenance == DataProvenance.SYNTHETIC or any_synthetic
+    if synthetic and provenance == DataProvenance.REAL:
+        provenance = DataProvenance.MIXED
     sites = []
     for s in inp.sites:
         key = f"sites/{s.site.value}"
@@ -452,11 +483,11 @@ def build_result(inp: ScreeningInput, classifier: Any = None) -> ScreeningResult
         result_version=inp.result_version,
         supersedes_result_id=inp.supersedes_result_id,
         created_at=inp.now or FIXED_NOW,
-        data_provenance=inp.data_provenance,
+        data_provenance=provenance,
         synthetic=synthetic,
         notices=Notices(synthetic_notice=SYNTHETIC_NOTICE if synthetic else None),
         versions=VersionInfo(
-            software="mukhaspectra-test",
+            software=software_version or "mukhaspectra-test",
             pipeline="0.0.0-fake",
             rule_config=cfg.triage.ref,
             qc_config=cfg.qc.ref,
@@ -512,16 +543,20 @@ class FakePipeline:
     adapter_calls: list[dict[str, Any]] = field(default_factory=list)
     spectral_calls: list[dict[str, Any]] = field(default_factory=list)
     demo_calls: list[str] = field(default_factory=list)
+    software_versions: list[str | None] = field(default_factory=list)
     fail: bool = False
     extra_artifacts: dict[str, bytes] = field(default_factory=dict)
 
-    def analyze(self, inp: ScreeningInput, *, classifier: Any = None) -> AnalysisOutput:
+    def analyze(
+        self, inp: ScreeningInput, *, classifier: Any = None, software_version: str | None = None
+    ) -> AnalysisOutput:
         self.analyses.append(inp)
+        self.software_versions.append(software_version)
         if self.fail:
             raise RuntimeError("simulated pipeline crash")
         for s in inp.sites:
             assert s.wl.image.dtype == np.float32 and s.wl.image.ndim == 3
-        result = build_result(inp, classifier)
+        result = build_result(inp, classifier, software_version)
         return AnalysisOutput(
             result=result, artifacts={**fake_artifacts(result), **self.extra_artifacts}
         )
@@ -535,7 +570,7 @@ class FakePipeline:
             analyze=self.analyze,
             upload_adapter_factory=lambda: FakeUploadAdapter(self.adapter_calls),
             parse_spectral=self.parse_spectral,
-            load_image=lambda data, filename: decode_png(data),
+            load_image=lambda data, filename, **kwargs: decode_png(data),
             make_demo_patient=self.make_demo_patient,
             load_classifier=lambda model_dir, cfg: FakeClassifier(),
             spectral_classifier_info=lambda: ModelInfo(

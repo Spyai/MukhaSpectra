@@ -2,7 +2,8 @@
 
 Patient score = highest lesion score + capped risk-factor points, and only when a lesion exists:
 habits change counselling, not triage. The patient's factors are the top-scoring lesion's factors
-followed by the risk-factor factors, so the patient score is also the exact sum of its factors.
+followed by the risk-factor factors and zero-point notes for every reported symptom, so the
+patient score is also the exact sum of its factors.
 """
 
 from __future__ import annotations
@@ -11,10 +12,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 from mukha_pipeline.fusion.factors import Ledger, make_factor
+from mukha_pipeline.fusion.habits import current_use, former_use
 from mukha_pipeline.fusion.overrides import highest_floor
 from mukha_pipeline.fusion.rules import Override, TriageRules
 from mukha_pipeline.fusion.scoring import ScoredLesion
-from mukha_pipeline.fusion.text import SMOKELESS_NOUN, SMOKING_NOUN
+from mukha_pipeline.fusion.text import SMOKELESS_NOUN, SMOKING_NOUN, reported_symptoms
 from mukha_pipeline.schema.models import (
     RISK_ORDER,
     ContributingFactor,
@@ -54,7 +56,10 @@ class PatientDecision:
 def _use_item(
     key: str, uses: bool, former: bool, label: str, short: str, rules: TriageRules
 ) -> RiskItem | None:
-    """Current use scores fully; former use at ``former_use_fraction``."""
+    """Current use scores fully; former use at ``former_use_fraction``.
+
+    ``uses`` / ``former`` come from ``fusion.habits``: recorded details count as current use.
+    """
     points = rules.patient.risk_factor_points[key]
     if uses:
         return RiskItem(f"history.{key}", label, short, points)
@@ -75,11 +80,21 @@ def risk_items(rf: RiskFactors, patient: PatientInfo, rules: TriageRules) -> lis
     smoke = ", ".join(SMOKING_NOUN[t] for t in sm.types) or "smoking"
     candidates = [
         _use_item(
-            "smokeless_tobacco", st.uses, st.former, f"Smokeless tobacco ({chew})", chew, rules
+            "smokeless_tobacco",
+            current_use(st),
+            former_use(st),
+            f"Smokeless tobacco ({chew})",
+            chew,
+            rules,
         ),
-        _use_item("smoking", sm.uses, sm.former, f"Smoking ({smoke})", smoke, rules),
+        _use_item("smoking", current_use(sm), former_use(sm), f"Smoking ({smoke})", smoke, rules),
         _use_item(
-            "areca_nut", an.uses, an.former, "Areca nut (supari) chewing", "areca nut", rules
+            "areca_nut",
+            current_use(an),
+            former_use(an),
+            "Areca nut (supari) chewing",
+            "areca nut",
+            rules,
         ),
     ]
     items = [c for c in candidates if c is not None]
@@ -134,6 +149,20 @@ def risk_factor_factors(
     return led.factors
 
 
+def symptom_factors(rf: RiskFactors) -> list[ContributingFactor]:
+    """Zero-point notes for every symptom the patient reports, so none is ever dropped from the
+    record. Whether a symptom changes the level is decided by the override floors."""
+    led = Ledger()
+    for key, noun in reported_symptoms(rf):
+        led.note(
+            f"symptom.reported.{key}",
+            f"Patient reports {noun}",
+            FactorSource.SYMPTOM,
+            "Reported symptom; any floor it sets is listed with the clinical red flags.",
+        )
+    return led.factors
+
+
 def top_scoring(lesions: list[ScoredLesion]) -> ScoredLesion | None:
     return max(lesions, key=lambda s: s.score, default=None)
 
@@ -162,25 +191,34 @@ def decide_level(
     examined_unreadable: int,
     lesions: list[ScoredLesion],
     rules: TriageRules,
+    examined_analysed: int | None = None,
 ) -> PatientDecision:
     """Combine score, floors and the INCONCLUSIVE safety rule into the overall level.
 
     * Floors only ever raise the level.
-    * Too few readable examined sites: INCONCLUSIVE, unless a clinical floor gives MODERATE/HIGH
-      or the score alone reaches HIGH (an urgent referral is never downgraded to a retake).
-    * LOW needs every examined site readable and every lesion assessed; otherwise INCONCLUSIVE.
+    * Too few analysed examined sites: INCONCLUSIVE, unless a clinical floor gives
+      MODERATE/HIGH or the score alone reaches HIGH (an urgent referral is never downgraded to
+      a retake).
+    * Analysed sites whose segmentation was unreliable count for that rule (their findings are
+      real) but not as readable: LOW needs enough readable sites, every examined site readable
+      and every lesion assessed; otherwise INCONCLUSIVE.
     """
+    analysed = examined_readable if examined_analysed is None else examined_analysed
+    min_sites = rules.inconclusive.min_sites_analysed
     score_level = rules.level_for_score(score)
     level = score_level
     floor = highest_floor(floors)
     if floor is not None and RISK_ORDER[floor] > RISK_ORDER[level]:
         level = floor
-    if examined_readable < rules.inconclusive.min_sites_analysed:
-        none = examined_readable == 0
+    if analysed < min_sites:
+        none = analysed == 0
         if floor is not None or score_level == RiskLevel.HIGH:
             return PatientDecision(level, score_level, None, none)
         reason: InconclusiveReason = "no_sites_analysed" if none else "too_few_sites"
         return PatientDecision(RiskLevel.INCONCLUSIVE, score_level, reason, none)
+    if level == RiskLevel.LOW and examined_readable < min_sites:
+        reason = "no_sites_analysed" if examined_readable == 0 else "too_few_sites"
+        return PatientDecision(RiskLevel.INCONCLUSIVE, score_level, reason, False)
     if level == RiskLevel.LOW and rules.inconclusive.low_requires_all_examined_sites_analysed:
         if examined_unreadable:
             return PatientDecision(RiskLevel.INCONCLUSIVE, score_level, "sites_unreadable", False)

@@ -18,13 +18,19 @@ class ApiError(Exception):
     status_code: int = 500
 
     def __init__(
-        self, detail: str, *, status_code: int | None = None, extra: dict[str, Any] | None = None
+        self,
+        detail: str,
+        *,
+        status_code: int | None = None,
+        extra: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.detail = detail
         if status_code is not None:
             self.status_code = status_code
         self.extra = extra or {}
+        self.headers = headers or {}
 
 
 class NotFoundError(ApiError):
@@ -33,6 +39,10 @@ class NotFoundError(ApiError):
 
 class BadRequestError(ApiError):
     status_code = 400
+
+
+class UnauthorizedError(ApiError):
+    status_code = 401
 
 
 class InvalidInputError(ApiError):
@@ -53,6 +63,19 @@ class ServiceUnavailableError(ApiError):
     status_code = 503
 
 
+SERVER_BUSY_MESSAGE = "Server busy, try again shortly."
+SERVER_BUSY_RETRY_AFTER_S = 15
+
+
+class ServerBusyError(ServiceUnavailableError):
+    """Too many analyses are already running (settings.max_concurrent_analyses)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            SERVER_BUSY_MESSAGE, headers={"Retry-After": str(SERVER_BUSY_RETRY_AFTER_S)}
+        )
+
+
 class AnalysisFailedError(ApiError):
     status_code = 500
 
@@ -68,9 +91,15 @@ class InputDecodeError(ValueError):
 
 def _api_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
-    if exc.status_code >= 500:
+    if isinstance(exc, ServerBusyError):
+        logger.info("Refused a request: %s", exc.detail)
+    elif exc.status_code >= 500:
         logger.error("API error %s: %s", exc.status_code, exc.detail)
-    return JSONResponse({"detail": exc.detail, **exc.extra}, status_code=exc.status_code)
+    return JSONResponse(
+        {"detail": exc.detail, **exc.extra},
+        status_code=exc.status_code,
+        headers=exc.headers or None,
+    )
 
 
 def _unexpected_error_handler(_request: Request, exc: Exception) -> JSONResponse:

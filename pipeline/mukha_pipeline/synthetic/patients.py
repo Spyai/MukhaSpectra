@@ -389,7 +389,8 @@ def _site_input(
 
 
 def _image_calibration(created_at: datetime, size: tuple[int, int]) -> ImageCalibration:
-    """SYNTHETIC daily Scout calibration: neutral flat field and colour, unit AF scale."""
+    """SYNTHETIC daily Scout calibration: neutral white and violet flat fields, neutral colour,
+    unit AF scale (the generator's torch profiles are gentle, so neutral flats fit them)."""
     return ImageCalibration(
         calibration_id=f"SYN-IMGCAL-{SYNTHETIC_SCOUT_ID}-{created_at:%Y%m%dT%H%M}",
         device_id=SYNTHETIC_SCOUT_ID,
@@ -399,6 +400,7 @@ def _image_calibration(created_at: datetime, size: tuple[int, int]) -> ImageCali
         color_matrix=np.eye(3, dtype=np.float64),
         af_scale=1.0,
         synthetic=True,
+        af_flat_field=np.ones(size, np.float32),
     )
 
 

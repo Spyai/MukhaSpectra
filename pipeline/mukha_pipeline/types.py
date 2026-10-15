@@ -79,7 +79,15 @@ class SpectralInput:
 
 @dataclass
 class ImageCalibration:
-    """Per-device daily image calibration from a white target and a fluorescence reference card."""
+    """Per-device daily image calibration from a white target and a fluorescence reference card.
+
+    ``flat_field`` is the WHITE-LED illumination profile (white target) and is applied to WL
+    captures only. ``af_flat_field`` is the VIOLET-LED excitation profile (fluorescence card,
+    green emission, linear light) and is applied to linearised AF captures only: the 405 nm LEDs
+    sit elsewhere on the clip and light the field differently, so the white profile would leave
+    (or invent) an AF fall-off that reads as fluorescence loss. ``None`` means not measured; AF
+    is then not flat-fielded at all.
+    """
 
     calibration_id: str
     device_id: str
@@ -87,8 +95,9 @@ class ImageCalibration:
     expires_at: datetime
     flat_field: np.ndarray | None  # float32 (H, W), mean 1.0; resized to the image on use
     color_matrix: np.ndarray  # (3, 3); corrected = img @ color_matrix.T
-    af_scale: float = 1.0  # multiply AF intensities by this to reach the reference-card scale
+    af_scale: float = 1.0  # multiply LINEAR AF intensities by this to reach the card scale
     synthetic: bool = False
+    af_flat_field: np.ndarray | None = None  # float32 (H, W), mean 1.0, linear; AF only
 
 
 @dataclass

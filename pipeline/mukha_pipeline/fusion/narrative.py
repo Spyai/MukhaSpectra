@@ -1,9 +1,16 @@
 """Explanations, lesion summaries, recommended actions and limitations.
 
 The explanation names the top reasons with their numbers, in at most three sentences. A LOW
-result always says it does not rule out disease and that re-screening matters; an INCONCLUSIVE
-result always says why and what to do now. Dynamic action steps are appended after the mandated
-YAML steps and never contradict them (for HIGH, a retake must not delay the referral).
+result always says it does not rule out disease and that re-screening matters, and names every
+symptom or oral history the patient reported; an INCONCLUSIVE result always says why and what to
+do now. When the overall level is above every lesion's own level (raised by a clinical red flag
+or by habits and history), the explanation says so plainly. Dynamic action steps are appended
+after the mandated YAML steps and never contradict them (for HIGH, a retake must not delay the
+referral).
+
+Wording rules: the comparison tissue is "the opposite side" or "the reference site", never
+"healthy" (the device does not check that it is); a placeholder classifier's "not suspicious"
+label is never repeated as reassurance.
 """
 
 from __future__ import annotations
@@ -11,7 +18,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mukha_pipeline.fusion.lesions import site_readable
+from mukha_pipeline.fusion.lesions import (
+    probe_only_unchecked,
+    segmentation_reliable,
+    site_analysed,
+    site_readable,
+    site_software_error,
+    visual_seen,
+)
 from mukha_pipeline.fusion.overrides import highest_floor
 from mukha_pipeline.fusion.patient import PatientDecision
 from mukha_pipeline.fusion.rules import Override, TriageRules
@@ -24,11 +38,14 @@ from mukha_pipeline.fusion.text import (
     habit_names,
     join_words,
     reference_phrase,
+    reported_history,
+    reported_symptoms,
     site_list,
     site_phrase,
 )
 from mukha_pipeline.schema.models import (
     RISK_ORDER,
+    ConfounderType,
     Diascopy,
     FactorSource,
     Limitation,
@@ -50,21 +67,58 @@ OVERRIDE_PHRASE: dict[str, str] = {
     "symptom.red_patch_reported": "a red patch reported by the patient",
     "symptom.white_patch_reported": "a white patch reported by the patient",
     "symptom.bleeding": "unexplained bleeding in the mouth",
+    "symptom.lump": "a lump in the mouth reported by the patient",
+    "symptom.burning_sensation": (
+        "a burning sensation in the mouth (possible early submucous fibrosis)"
+    ),
+    "symptom.pain": "persistent pain in the mouth reported by the patient",
+    "history.prior_oral_cancer": "previous oral cancer (needs regular specialist follow-up)",
+    "af.strong_fvl_floor": "strong or extensive loss of fluorescence at another finding",
+}
+
+# Lesion floors that the lesion's own evidence already describes ("strong loss of fluorescence
+# at ..."): not repeated in the explanation for the lesion that carries them.
+SELF_DESCRIBING_FLOORS: frozenset[str] = frozenset({"af.strong_fvl_floor"})
+
+# Extra steps for symptoms and history that set a floor without a device finding: the
+# template's "re-examine the same site" does not say what to look at.
+SYMPTOM_STEP: dict[str, str] = {
+    "lump": "The patient reports a lump in the mouth: look at and feel the whole mouth and the "
+    "neck, including sites that were not photographed.",
+    "pain": "The patient reports pain in the mouth: persistent pain needs clinical examination "
+    "of the whole mouth, including sites that were not photographed.",
+    "burning_sensation": "The patient reports a burning sensation (possible early submucous "
+    "fibrosis): check how wide the mouth opens and look for pale, stiff mucosa or bands.",
+}
+HISTORY_STEP: dict[str, str] = {
+    "prior_oral_cancer": "Previous oral cancer: the patient needs regular specialist follow-up; "
+    "routine re-screening alone is not enough.",
+}
+
+CLEAN_NOUN: dict[ConfounderType, str] = {
+    ConfounderType.PORPHYRIN_RED: "plaque fluorescence",
+    ConfounderType.GLARE: "glare",
 }
 
 LIMITATION_TEXT: dict[str, str] = {
     "sites_failed_qc": "{sites} could not be analysed (images failed quality checks or showed "
     "too little usable tissue).",
+    "analysis_error": "{sites}: software error while analysing — not a problem with the photos. "
+    "Examine clinically and report the problem.",
     "device_analysis_unavailable": "No examined site could be analysed by the device; this "
     "result rests on the health worker's observation and the reported symptoms.",
-    "reference_in_image": "At {sites}, no matching healthy site was available, so fluorescence "
-    "was compared with surrounding tissue in the same photo, which is less reliable.",
+    "segmentation_unreliable": "At {sites}, the device could not reliably outline the mucosa, "
+    "so part of the tissue may not have been checked for loss of fluorescence; a low result "
+    "cannot be given until the photos are retaken.",
+    "reference_in_image": "At {sites}, no opposite-side or similar site was available for "
+    "comparison, so fluorescence was compared with surrounding tissue in the same photo, which "
+    "is less reliable.",
     "reference_site_fvl": "The reference site also showed loss of fluorescence; comparisons may "
     "be less reliable.",
     "wl_model_unavailable": "The white-light photo model is not available yet, so it did not "
     "contribute to this result.",
-    "spectral_no_reference": "A probe reading had no reference reading from the healthy side, "
-    "so it was not scored.",
+    "spectral_no_reference": "A probe reading had no reference reading from the opposite side "
+    "or a comparison site, so it was not scored.",
     "spectral_qc_failed": "A probe reading failed quality checks and was not scored.",
     "triage_rules_unvalidated": "The triage rules are a baseline heuristic that has not been "
     "clinically validated; a clinician must review every result.",
@@ -102,7 +156,7 @@ def lesion_evidence(s: ScoredLesion, rules: TriageRules) -> list[Evidence]:
         else:
             size = f", {r.area_fraction_of_mucosa:.0%} of the visible mucosa"
         resolved = ""
-        if d.site_result.diascopy == Diascopy.FVL_RESOLVES:
+        if s.diascopy_applied == Diascopy.FVL_RESOLVES:
             resolved = " that returned under glass-slide pressure"
         loss = f"{strength} loss of fluorescence"
         rel = f"relative AF {r.mean_relative_af:.2f}"
@@ -138,17 +192,36 @@ def lesion_evidence(s: ScoredLesion, rules: TriageRules) -> list[Evidence]:
     if d.spectral:
         pts = _points_by_source(s, FactorSource.SPECTRAL)
         if pts > 0:
-            short = "a deeper blood-absorption dip on the probe than on the healthy side"
-            long = "a deeper blood-absorption dip on the probe reading than on the healthy side"
+            short = "a deeper blood-absorption dip on the probe than on the reference reading"
+            long = (
+                "a deeper blood-absorption dip on the probe reading than on the reference reading"
+            )
             at = f"a deeper blood-absorption dip on the probe reading at {where}"
         else:
-            labels = [r.classifier.label for r in d.spectral if r.classifier and r.classifier.label]
-            mark = labels[0].replace("_", " ") if labels else "not scored"
-            short = f"probe reading marked {mark}"
-            long = f"a probe reading marked {mark}"
-            at = f"a probe reading marked {mark} at {where}"
+            rest = _unscored_probe_phrase(d.spectral)
+            short = f"probe reading {rest}"
+            long = f"a probe reading {rest}"
+            at = f"a probe reading at {where} {rest}"
         out.append(Evidence(pts, short, long, at))
     return sorted(out, key=lambda e: -e.points)
+
+
+def _unscored_probe_phrase(readings: Sequence[SpectralReadingResult]) -> str:
+    """Neutral words for probe readings that added no points.
+
+    The placeholder classifier is unvalidated, so its "not suspicious" label is never repeated:
+    it would read as reassurance about a spot the health worker chose to measure.
+    """
+    passed = [r for r in readings if r.qc.passed]
+    if not passed:
+        return "that failed quality checks"
+    labels = {r.classifier.label for r in passed if r.classifier is not None}
+    for mark in ("suspicious", "indeterminate"):
+        if mark in labels:
+            return f"marked {mark} by the placeholder classifier"
+    if all(r.delta_vs_reference is None for r in passed):
+        return "that could not be scored (no reference reading)"
+    return "that added no points"
 
 
 def lesion_summary(s: ScoredLesion, rules: TriageRules) -> str:
@@ -161,9 +234,14 @@ def lesion_summary(s: ScoredLesion, rules: TriageRules) -> str:
                 f"Finding at {where} with no analysed photos ({join_words(evidence)}); take "
                 "photos or examine clinically."
             )
+        if s.readable and probe_only_unchecked(s.draft):
+            return (
+                f"Finding at {where} that the probe could not measure ({join_words(evidence)}); "
+                "retake the probe reading or examine clinically."
+            )
         return (
-            f"Finding at {where} that the device could not check ({join_words(evidence)}); "
-            "retake or examine clinically."
+            f"Finding at {where} that the device could not fully check "
+            f"({join_words(evidence)}); retake or examine clinically."
         )
     return f"{s.level.value} risk at {where}: {join_words(evidence)}."
 
@@ -176,17 +254,23 @@ def lesion_summary(s: ScoredLesion, rules: TriageRules) -> str:
 def _override_phrase(
     o: Override, top: ScoredLesion | None, sites: Sequence[SiteResult]
 ) -> str | None:
-    """Phrase for a floor, or None when the top lesion's visual evidence already says it."""
-    if o.visual_appearance is None:
+    """Phrase for a floor, or None when the top lesion's evidence already says it."""
+    if o.code in SELF_DESCRIBING_FLOORS and top is not None and o in top.floors:
+        return None
+    if not o.lesion_scoped:
         return OVERRIDE_PHRASE.get(o.code, o.label[:1].lower() + o.label[1:])
     top_visual = top.draft.visual if top is not None else None
-    if top_visual is not None and o.visual_appearance & set(top_visual.appearance):
+    if top_visual is not None and (
+        o.visual_lesion_seen or (o.visual_appearance or set()) & set(top_visual.appearance)
+    ):
         return None
     for site in sites:
-        matched = [a for a in site.visual_flag.appearance if a in o.visual_appearance]
+        where = site_phrase(site.site)
+        matched = [a for a in site.visual_flag.appearance if a in (o.visual_appearance or ())]
         if matched:
-            where = site_phrase(site.site)
             return f"{APPEARANCE_NOUN[matched[0]]} seen by the health worker at {where}"
+        if o.visual_lesion_seen and visual_seen(site.visual_flag):
+            return f"an abnormality seen by the health worker at {where}"
     return o.label[:1].lower() + o.label[1:]  # pragma: no cover - floors only hold with a site
 
 
@@ -223,6 +307,111 @@ def _months(days: int | None) -> str:
     return f"re-screening in {months} month{'s' if months != 1 else ''} matters"
 
 
+def _rank_level(s: ScoredLesion) -> RiskLevel:
+    """A lesion's own level for comparisons: INCONCLUSIVE lesions scored LOW."""
+    return RiskLevel.LOW if s.level == RiskLevel.INCONCLUSIVE else s.level
+
+
+def outranks(overall: RiskLevel, lesion_level: RiskLevel) -> bool:
+    """True when a MODERATE/HIGH overall level is above a lesion's own level."""
+    if overall not in (RiskLevel.MODERATE, RiskLevel.HIGH):
+        return False
+    own = RiskLevel.LOW if lesion_level == RiskLevel.INCONCLUSIVE else lesion_level
+    return RISK_ORDER[overall] > RISK_ORDER[own]
+
+
+def _raised_sentence(
+    decision: PatientDecision,
+    top: ScoredLesion | None,
+    floors: list[Override],
+    sites: Sequence[SiteResult],
+    rf_points: float,
+    rf_names: Sequence[str],
+) -> tuple[str | None, bool]:
+    """Say plainly when the overall level is above the strongest finding's own level.
+
+    Returns (sentence, raised_by_habits). Lesion levels are never changed for this: the finding
+    keeps its own level and the explanation says where the overall level came from.
+    """
+    level = decision.level
+    if top is None or not outranks(level, top.level):
+        return None, False
+    own = _rank_level(top)
+    where = site_phrase(top.draft.site)
+    tail = f", even though the finding at {where} scored {own.value} on its own."
+    decisive = [o for o in floors if o.floor == level and RISK_ORDER[o.floor] > RISK_ORDER[own]]
+    phrases = [p for p in (_override_phrase(o, None, sites) for o in decisive) if p]
+    if phrases:
+        return f"Overall {level.value} because of {join_words(phrases)}{tail}", False
+    if rf_points > 0:
+        return (
+            f"Overall {level.value} because habits and history ({join_words(rf_names)}) added "
+            f"{rf_points:.1f} points{tail}",
+            True,
+        )
+    return f"Overall {level.value}{tail}", False  # pragma: no cover - level needs a cause
+
+
+def _concerns(rf: RiskFactors) -> list[str]:
+    """Reported symptoms and oral history, as phrases."""
+    return [noun for _, noun in reported_symptoms(rf)] + reported_history(rf)
+
+
+def _low_explanation(
+    *,
+    examined: Sequence[SiteResult],
+    lesions: list[ScoredLesion],
+    top: ScoredLesion | None,
+    rf: RiskFactors,
+    rules: TriageRules,
+) -> str:
+    sentences: list[str] = []
+    if top is None:
+        n = len(examined)
+        sentences.append(
+            f"No high-risk features were found by this screen at the {n} examined "
+            f"site{'s' if n != 1 else ''}."
+        )
+    else:
+        phrase = lesion_evidence(top, rules)[0].long_at_site  # every lesion has evidence
+        if len(lesions) == 1:
+            sentences.append(f"The only finding scored low on this screen: {phrase}.")
+        else:
+            sentences.append(f"All findings scored low on this screen; the strongest is {phrase}.")
+    concerns = _concerns(rf)
+    habits = habit_names(rf, current_only=True)
+    rescreen = (
+        f"This does not rule out disease; {_months(rules.actions[RiskLevel.LOW].timeline_days)}"
+    )
+    if concerns:
+        # A reported symptom is never answered with "come back if symptoms appear".
+        sentences.append(
+            f"The patient reports {join_words(concerns)}: examine the whole mouth and neck "
+            "clinically."
+        )
+        if habits:
+            rescreen += (
+                f", and stopping {join_words(habits)} is the most important step to lower "
+                "future risk"
+            )
+        sentences.append(f"{rescreen}.")
+        return " ".join(sentences)
+    sentences.append(f"{rescreen}, sooner if any symptom appears.")
+    if habits:
+        sentences.append(
+            f"Stopping {join_words(habits)} is the most important step to lower future risk."
+        )
+    return " ".join(sentences)
+
+
+def _software_error_sentence(errored: Sequence[OralSite]) -> str:
+    verb = "was" if len(errored) == 1 else "were"
+    return (
+        f"{site_list(errored)} {verb} not analysed because of a software error (not a problem "
+        "with the photos): examine clinically and report the problem."
+    )
+
+
 def explanation(
     decision: PatientDecision,
     *,
@@ -238,7 +427,8 @@ def explanation(
     """1-3 plain-language sentences explaining the overall level."""
     examined = [s for s in sites if s.role == SiteRole.EXAMINED]
     unreadable = [s.site for s in examined if not site_readable(s)]
-    habits = habit_names(rf, current_only=True)
+    errored = [s.site for s in examined if site_software_error(s)]
+    retakeable = [x for x in unreadable if x not in errored]
     sentences: list[str] = []
     level = decision.level
 
@@ -270,7 +460,17 @@ def explanation(
                 "The result is inconclusive because the finding at "
                 f"{site_phrase(unassessed[0])} could not be checked by the device."
             )
-        sentences.append("A low result needs every site to be readable, so retake the images now.")
+        if decision.inconclusive_reason == "lesion_unassessed":
+            sentences.append(
+                "A low result needs every finding to be checked by the device, so take the "
+                "missing photos or probe readings now."
+            )
+        elif retakeable:
+            sentences.append(
+                "A low result needs every site to be readable, so retake the images now."
+            )
+        if errored:
+            sentences.append(_software_error_sentence(errored))
         seen = [s.draft.site for s in lesions if s.draft.visual is not None and not s.readable]
         if seen:
             sentences.append(
@@ -280,39 +480,23 @@ def explanation(
         return " ".join(sentences)
 
     if level == RiskLevel.LOW:
-        if top is None:
-            n = len(examined)
-            sentences.append(
-                f"No high-risk features were found by this screen at the {n} examined "
-                f"site{'s' if n != 1 else ''}."
-            )
-        else:
-            phrase = lesion_evidence(top, rules)[0].long_at_site  # every lesion has evidence
-            sentences.append(
-                f"Only a low-scoring finding was seen: {phrase}, below the level that needs "
-                "re-examination."
-            )
-        sentences.append(
-            "This does not rule out disease; "
-            f"{_months(rules.actions[RiskLevel.LOW].timeline_days)}, sooner if any symptom "
-            "appears."
-        )
-        if habits:
-            sentences.append(
-                f"Stopping {join_words(habits)} is the most important step to lower future risk."
-            )
-        return " ".join(sentences)
+        return _low_explanation(examined=examined, lesions=lesions, top=top, rf=rf, rules=rules)
 
     reasons = _reasons(decision, top, floors, sites, rules)
     sentences.append(f"{level.value} risk: {join_words(reasons)}.")
+    raised, by_habits = _raised_sentence(decision, top, floors, sites, rf_points, rf_names)
+    if raised:
+        sentences.append(raised)
     if decision.device_analysis_unavailable:
         sentences.append(
             "The device could not analyse the images, so this level rests on the clinical "
             "findings; retake if possible, without delaying the next step."
         )
-    elif unreadable:
-        sentences.append(f"{site_list(unreadable)} could not be analysed and should be retaken.")
-    if rf_points > 0:
+    elif retakeable:
+        sentences.append(f"{site_list(retakeable)} could not be analysed and should be retaken.")
+    elif errored:
+        sentences.append(_software_error_sentence(errored))
+    if rf_points > 0 and not by_habits:
         sentences.append(
             f"Habits and history ({join_words(rf_names)}) added {rf_points:.1f} points."
         )
@@ -349,6 +533,68 @@ def action_from_template(
     )
 
 
+def _retake_step(what: str, sites: Sequence[OralSite], urgent: bool, why: str) -> str:
+    """'<What> at <sites>: <why>.', or, when a referral is urgent, a step that never delays it."""
+    if urgent:
+        return (
+            f"If the patient is still here, {what[:1].lower()}{what[1:]} {site_list(sites)}; "
+            "do not delay the referral for this."
+        )
+    return f"{what} {site_list(sites)}: {why}."
+
+
+def _clean_step(lesions: Sequence[ScoredLesion], urgent: bool) -> str | None:
+    """Plaque fluorescence or glare discounted a dark area: cleaning and retaking may show
+    what is underneath (necrotic or ulcerated surfaces often carry plaque)."""
+    sites = list(dict.fromkeys(s.draft.site for s in lesions if s.cleanable))
+    if not sites:
+        return None
+    nouns = list(dict.fromkeys(CLEAN_NOUN[c] for s in lesions for c in s.cleanable))
+    return _retake_step(
+        "Clean the area (gauze/rinse) and retake the photos of",
+        sites,
+        urgent,
+        f"{join_words(nouns)} overlapped a dark area and may hide what is underneath",
+    )
+
+
+def _probe_retake_step(lesions: Sequence[ScoredLesion], urgent: bool) -> str | None:
+    """A lesion probe reading failed quality checks: the probe never measured that spot."""
+    sites = list(
+        dict.fromkeys(s.draft.site for s in lesions for r in s.draft.spectral if not r.qc.passed)
+    )
+    if not sites:
+        return None
+    return _retake_step(
+        "Retake the probe reading at", sites, urgent, "the lesion reading failed quality checks"
+    )
+
+
+def lesion_action(s: ScoredLesion, overall: RiskLevel, rules: TriageRules) -> RecommendedAction:
+    """The lesion's action, consistent with the overall result.
+
+    The lesion keeps its own level. When the overall level is above it, a LOW lesion does not
+    carry the routine re-screening action (it would contradict the overall result): it carries
+    the overall action with a summary saying it scored low on its own. Other lesions below the
+    overall level point to the overall action.
+    """
+    urgent = RiskLevel.HIGH in (s.level, overall)
+    extra = [step for step in (_clean_step([s], urgent), _probe_retake_step([s], urgent)) if step]
+    if outranks(overall, s.level):
+        if s.level == RiskLevel.LOW:
+            action = action_from_template(overall, rules, extra)
+            summary = (
+                f"This finding scored LOW on its own; the overall result is {overall.value}. "
+                f"{action.summary}"
+            )
+            return action.model_copy(update={"summary": summary})
+        extra.append(
+            f"The patient's overall result is {overall.value}: follow the overall recommended "
+            "action first."
+        )
+    return action_from_template(s.level, rules, extra)
+
+
 def dynamic_steps(
     level: RiskLevel,
     *,
@@ -358,7 +604,17 @@ def dynamic_steps(
 ) -> list[str]:
     """Patient-specific steps added after the mandated ones."""
     steps: list[str] = []
-    unreadable = list(dict.fromkeys(s.site for s in sites if not site_readable(s)))
+    urgent = level == RiskLevel.HIGH
+    # A software error is not fixed by retaking the photos: examine clinically, report it.
+    errored = list(dict.fromkeys(s.site for s in sites if site_software_error(s)))
+    unreadable = list(
+        dict.fromkeys(s.site for s in sites if not site_readable(s) and s.site not in errored)
+    )
+    if errored:
+        steps.append(
+            f"{site_list(errored)}: not analysed because of a software error (not a problem with "
+            "the photos) — examine clinically and report the problem."
+        )
     if unreadable:
         if level == RiskLevel.HIGH:
             steps.append(
@@ -371,13 +627,16 @@ def dynamic_steps(
             steps.append(
                 f"Retake the captures that could not be analysed: {site_list(unreadable)}."
             )
+    for step in (_clean_step(lesions, urgent), _probe_retake_step(lesions, urgent)):
+        if step:
+            steps.append(step)
     unimaged: list[OralSite] = list(
         dict.fromkeys(s.draft.site for s in lesions if s.draft.site_result is None)
     )
     if unimaged:
         steps.append(
-            f"Take white-light and violet-light photos of {site_list(unimaged)}, where the probe "
-            "reading was flagged."
+            f"Take white-light and violet-light photos of {site_list(unimaged)}, where a lesion "
+            "probe reading was taken."
         )
     seen = list(
         dict.fromkeys(
@@ -391,6 +650,15 @@ def dynamic_steps(
             f"A lesion was seen at {site_list(seen)}: if a retake is not possible today, refer "
             "for clinical examination."
         )
+    concerns = _concerns(rf)
+    if level == RiskLevel.LOW and concerns:
+        steps.append(
+            f"The patient reports {join_words(concerns)}: examine the whole mouth and neck "
+            "clinically, including sites that were not photographed."
+        )
+    elif level != RiskLevel.LOW:
+        steps.extend(SYMPTOM_STEP[k] for k, _ in reported_symptoms(rf) if k in SYMPTOM_STEP)
+        steps.extend(step for key, step in HISTORY_STEP.items() if getattr(rf, key))
     prefix = "Alongside the referral, " if level == RiskLevel.HIGH else ""
     if rf.irritants.sharp_tooth:
         steps.append(
@@ -433,7 +701,7 @@ def _reference_sites_with_fvl(sites: Sequence[SiteResult]) -> list[OralSite]:
     """Reference tissue that itself showed FVL: a reference-only site with FVL regions, or a
     site with FVL whose own comparison site also has FVL (bilateral loss, common in long-term
     gutka and areca users). Either way relative AF may understate the loss."""
-    with_fvl = {s.site for s in sites if site_readable(s) and s.af is not None and s.af.regions}
+    with_fvl = {s.site for s in sites if site_analysed(s) and s.af is not None and s.af.regions}
     out = []
     for s in sites:
         if s.site not in with_fvl or s.af is None:
@@ -456,9 +724,19 @@ def build_limitations(
     def add(code: str, **fmt: str) -> None:
         out.append(Limitation(code=code, message=LIMITATION_TEXT[code].format(**fmt)))
 
-    unreadable = list(dict.fromkeys(s.site for s in sites if not site_readable(s)))
-    if unreadable:
-        add("sites_failed_qc", sites=site_list(unreadable))
+    errored = list(dict.fromkeys(s.site for s in sites if site_software_error(s)))
+    if errored:
+        add("analysis_error", sites=site_list(errored))
+    failed = list(
+        dict.fromkeys(s.site for s in sites if not site_analysed(s) and s.site not in errored)
+    )
+    if failed:
+        add("sites_failed_qc", sites=site_list(failed))
+    unreliable = list(
+        dict.fromkeys(s.site for s in sites if site_analysed(s) and not segmentation_reliable(s))
+    )
+    if unreliable:
+        add("segmentation_unreliable", sites=site_list(unreliable))
     if decision.device_analysis_unavailable:
         add("device_analysis_unavailable")
     in_image = list(

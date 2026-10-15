@@ -3,23 +3,30 @@
 Re-analysis never overwrites: each run writes ``result_version = n + 1`` with
 ``supersedes_result_id`` pointing at version n, and its artifacts under
 ``screenings/{id}/results/v{n+1}/``.
+
+Every result records ``software = <backend version>+<build id>`` (see ``app.buildinfo``). At most
+``settings.max_concurrent_analyses`` uploads / demos / re-analyses run at once; more get 503.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.errors import AnalysisFailedError, ApiError, ConflictError
+from app.buildinfo import resolve_build_id, software_version
+from app.errors import AnalysisFailedError, ApiError, ConflictError, NotFoundError, ServerBusyError
 from app.models import AnalysisResult, Screening, ScreeningStatus, new_id, utcnow
 from app.services.audit import AuditAction, record_event
 from app.services.inputs import CaptureStore, StoredInputsError
 from app.services.pipeline_bridge import PipelineBridge
-from app.services.records import latest_result_row
+from app.services.records import SCREENING_NOT_FOUND, latest_result_row
 from app.settings import Settings
 from app.storage import Storage, join_key
 from mukha_pipeline.config import PipelineConfig
@@ -60,6 +67,25 @@ class AnalysisService:
         self._classifier_lock = threading.Lock()
         self._screening_locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
+        self._slots = threading.BoundedSemaphore(settings.max_concurrent_analyses)
+        self.build_id = resolve_build_id(settings.build_id)
+        self.software_version = software_version(self.build_id)
+
+    def check_capacity(self) -> None:
+        """Early 503 (before a large upload is read) when every slot is taken right now. The
+        slot itself is taken later by :meth:`analysis_slot`; this check only saves bandwidth."""
+        with self.analysis_slot():
+            pass
+
+    @contextmanager
+    def analysis_slot(self) -> Iterator[None]:
+        """Hold one of the ``max_concurrent_analyses`` slots; 503 when all are taken."""
+        if not self._slots.acquire(blocking=False):
+            raise ServerBusyError()
+        try:
+            yield
+        finally:
+            self._slots.release()
 
     # -- models --------------------------------------------------------------------------------
 
@@ -117,7 +143,7 @@ class AnalysisService:
             method = config.analysis.data.get("spectral", {}).get("classifier", {})
             spectral_info = ModelInfo(
                 component=ModelComponent.SPECTRAL_CLASSIFIER,
-                name=str(method.get("method", "rules_v1")),
+                name=str(method.get("method", "rules_v2")),
                 version=config.analysis.ref.version,
                 status=ModelStatus.PLACEHOLDER,
             )
@@ -140,15 +166,23 @@ class AnalysisService:
 
     # -- running -------------------------------------------------------------------------------
 
-    def _lock_for(self, screening_id: str) -> threading.Lock:
+    def lock_for(self, screening_id: str) -> threading.Lock:
+        """The lock serialising analyses (and erasure) of one screening."""
         with self._locks_guard:
             return self._screening_locks.setdefault(screening_id, threading.Lock())
+
+    def forget_lock(self, screening_id: str) -> None:
+        with self._locks_guard:
+            self._screening_locks.pop(screening_id, None)
 
     def run(
         self, session: Session, screening: Screening, inp: ScreeningInput, *, reanalysis: bool
     ) -> tuple[AnalysisResult, ScreeningResult]:
         """Analyse ``inp`` as the next result version of ``screening`` and store it."""
-        with self._lock_for(screening.id):
+        with self.lock_for(screening.id):
+            # The screening may have been erased while this request waited for the lock.
+            if session.scalar(select(Screening.id).where(Screening.id == screening.id)) is None:
+                raise NotFoundError(SCREENING_NOT_FOUND)
             previous = latest_result_row(session, screening.id)
             version = previous.version + 1 if previous is not None else 1
             supersedes = previous.id if previous is not None else None
@@ -158,7 +192,9 @@ class AnalysisService:
             prefix = results_prefix(screening.id, version)
 
             try:
-                output = self.bridge.analyze(inp, classifier=self.classifier())
+                output = self.bridge.analyze(
+                    inp, classifier=self.classifier(), software_version=self.software_version
+                )
                 result = self._normalise(output.result, screening.id, version, supersedes)
                 self.storage.delete_prefix(prefix)  # leftovers of an interrupted attempt
                 for key, data in (output.artifacts or {}).items():
@@ -224,12 +260,13 @@ class AnalysisService:
         self, session: Session, screening: Screening
     ) -> tuple[AnalysisResult, ScreeningResult]:
         """Rebuild the inputs from storage and analyse them as a new version."""
-        try:
-            inp = self.capture_store.rebuild_input(session, screening)
-        except StoredInputsError as exc:
-            logger.exception("Stored inputs of screening %s are unreadable", screening.id)
-            raise ApiError(STORED_INPUTS_UNREADABLE, status_code=500) from exc
-        return self.run(session, screening, inp, reanalysis=True)
+        with self.analysis_slot():
+            try:
+                inp = self.capture_store.rebuild_input(session, screening)
+            except StoredInputsError as exc:
+                logger.exception("Stored inputs of screening %s are unreadable", screening.id)
+                raise ApiError(STORED_INPUTS_UNREADABLE, status_code=500) from exc
+            return self.run(session, screening, inp, reanalysis=True)
 
     # -- helpers -------------------------------------------------------------------------------
 

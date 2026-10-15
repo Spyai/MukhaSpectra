@@ -9,6 +9,8 @@ from mukha_pipeline.preprocess.correction import (
     apply_color_matrix,
     apply_flat_field,
     exposure_factor,
+    linear_to_srgb,
+    srgb_to_linear,
     subtract_dark,
 )
 from mukha_pipeline.schema.models import CaptureKind, CaptureMetadata, SourceAdapter
@@ -169,3 +171,66 @@ def test_exposure_factor_unvalidated_metadata():
     """Metadata built without validation (e.g. model_construct) may carry junk; never raise."""
     junk = CaptureMetadata.model_construct(exposure_time_ms="fast", iso=None)
     assert exposure_factor(junk, meta(100.0, 100.0)) == 1.0
+
+
+# --------------------------------------------------------------------------------------------
+# sRGB transfer function (IEC 61966-2-1)
+# --------------------------------------------------------------------------------------------
+
+
+def test_srgb_to_linear_matches_iec_61966_2_1_piecewise():
+    encoded = np.array([0.0, 0.02, 0.04045, 0.0405, 0.2, 0.5, 0.735, 1.0], np.float32)
+    expected = np.where(
+        encoded <= 0.04045, encoded / 12.92, ((encoded.astype(np.float64) + 0.055) / 1.055) ** 2.4
+    )
+    out = srgb_to_linear(encoded)
+    assert out.dtype == np.float32
+    np.testing.assert_allclose(out, expected, rtol=1e-6, atol=1e-7)
+    # Mid-grey 0.5 encoded is only ~21 % of full linear light: exactly why encoded values must
+    # never be dark-subtracted, flat-fielded or exposure-scaled directly.
+    assert float(srgb_to_linear(np.float32(0.5))) == pytest.approx(0.2140, abs=1e-4)
+
+
+def test_linear_to_srgb_matches_iec_61966_2_1_piecewise():
+    linear = np.array([0.0, 0.001, 0.0031308, 0.0032, 0.05, 0.214, 0.5, 1.0], np.float32)
+    lin64 = linear.astype(np.float64)
+    expected = np.where(lin64 <= 0.0031308, lin64 * 12.92, 1.055 * lin64 ** (1 / 2.4) - 0.055)
+    out = linear_to_srgb(linear)
+    assert out.dtype == np.float32
+    np.testing.assert_allclose(out, expected, rtol=1e-6, atol=1e-7)
+
+
+def test_srgb_round_trip_and_monotonic():
+    x = np.linspace(0.0, 1.0, 1001, dtype=np.float32)
+    np.testing.assert_allclose(linear_to_srgb(srgb_to_linear(x)), x, atol=2e-6)
+    np.testing.assert_allclose(srgb_to_linear(linear_to_srgb(x)), x, atol=2e-6)
+    assert np.all(np.diff(srgb_to_linear(x)) >= 0) and np.all(np.diff(linear_to_srgb(x)) >= 0)
+
+
+def test_srgb_conversions_handle_odd_input_and_do_not_modify_it():
+    img = np.array([[[-0.2, np.nan, 1.5], [np.inf, -np.inf, 0.5]]], np.float32)
+    keep = img.copy()
+    lin = srgb_to_linear(img)
+    enc = linear_to_srgb(img)
+    np.testing.assert_array_equal(img, keep)
+    for out in (lin, enc):
+        assert out.shape == img.shape and np.all(np.isfinite(out))
+        assert out.min() >= 0.0 and out.max() <= 1.0
+    # uint8 / uint16 inputs are scaled by their full range first.
+    u8 = np.array([0, 128, 255], np.uint8)
+    np.testing.assert_allclose(srgb_to_linear(u8), srgb_to_linear(u8 / np.float32(255)), atol=1e-6)
+    u16 = np.array([0, 32768, 65535], np.uint16)
+    np.testing.assert_allclose(
+        srgb_to_linear(u16), srgb_to_linear(u16 / np.float32(65535)), atol=1e-6
+    )
+    assert srgb_to_linear(np.zeros((0, 0, 3), np.float32)).shape == (0, 0, 3)
+
+
+def test_exposure_scaling_is_exact_only_in_linear_light():
+    """A 2x exposure doubles linear signal; the encoded value grows by only ~1.37x."""
+    scene = np.array([0.05, 0.1, 0.2], np.float32)
+    short = linear_to_srgb(scene)
+    long = linear_to_srgb(scene * 2)
+    factor = exposure_factor(meta(20.0, 100.0), meta(10.0, 100.0))  # long -> short exposure
+    np.testing.assert_allclose(srgb_to_linear(long) * factor, srgb_to_linear(short), rtol=1e-5)
+    assert not np.allclose(long * factor, short, rtol=0.05)  # encoded values: wrong by ~30 %

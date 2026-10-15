@@ -95,3 +95,33 @@ def test_image_calibration_without_flat_field_round_trips():
     assert np.allclose(back.color_matrix, cal.color_matrix)
     assert back.af_scale == 2.0 and back.calibration_id == "c1"
     assert back.created_at == now and back.expires_at is None
+
+
+def test_image_calibration_keeps_the_violet_flat_field():
+    """The AF (violet-LED) flat field must survive storage, or every re-analysis of a stored
+    calibration loses it and reports ``af_flat_field_missing``."""
+    now = datetime(2026, 10, 14, tzinfo=UTC)
+    rng = np.random.default_rng(3)
+    cal = ImageCalibration(
+        calibration_id="c2",
+        device_id="scout-1",
+        created_at=now,
+        expires_at=now + timedelta(hours=24),
+        flat_field=np.ones((8, 10), np.float32),
+        color_matrix=np.eye(3),
+        af_scale=1.5,
+        af_flat_field=(0.8 + 0.4 * rng.random((8, 10))).astype(np.float32),
+    )
+    record = CalibrationRecord(
+        id="r2",
+        device_id="scout-1",
+        kind="image",
+        created_at=now.replace(tzinfo=None),
+        expires_at=None,
+        synthetic=False,
+        data={"calibration_id": "c2", "af_scale": 1.5},
+    )
+    back = image_calibration_from_record(record, image_calibration_to_npz(cal))
+    assert back.af_flat_field is not None
+    assert np.allclose(back.af_flat_field, cal.af_flat_field)
+    assert np.allclose(back.flat_field, cal.flat_field)

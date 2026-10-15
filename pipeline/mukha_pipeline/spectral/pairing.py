@@ -1,9 +1,10 @@
 """Pair each lesion reading with the same patient's reference reading.
 
-Comparing a lesion with the patient's own healthy mucosa cancels most between-patient variation
-(pigmentation, epithelial thickness, probe pressure) and, for uncalibrated readings, the LED
-spectrum. The preferred reference is the mirror-image (contralateral) site, else the analogous
-site from ``sites.reference_site_for``.
+Comparing a lesion with the patient's own reference mucosa cancels most between-patient variation
+(pigmentation, epithelial thickness, probe pressure) and, because the comparison divides lesion by
+reference channel by channel, the probe's LED spectrum and filter responses (see
+``features.reference_delta``). The preferred reference is the mirror-image (contralateral) site,
+else the analogous site from ``sites.reference_site_for``.
 """
 
 from __future__ import annotations

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from fusion_helpers import (
+    all_texts,
     assert_invariants,
     default_rules,
     patient,
@@ -16,9 +17,10 @@ from fusion_helpers import (
 )
 
 from mukha_pipeline.fusion import run_triage
-from mukha_pipeline.fusion.lesions import site_readable
+from mukha_pipeline.fusion.lesions import site_readable, visual_seen
 from mukha_pipeline.schema.models import (
     RISK_ORDER,
+    ActionCode,
     ConfounderType,
     Diascopy,
     ReferenceType,
@@ -69,6 +71,7 @@ def _random_site(rng: np.random.Generator, oral_site: OralSite):
         lesion_seen=bool(appearance) or rng.random() < 0.05,
         diascopy=Diascopy(rng.choice(list(Diascopy))),
         wl=wl if rng.random() < 0.3 else wl_unavailable(),
+        seg_status=[None, "ok", "ok", "low_confidence", "failed"][int(rng.integers(0, 5))],
     )
 
 
@@ -79,7 +82,8 @@ def _random_rf(rng: np.random.Generator):
     return risk(
         smokeless_tobacco={"uses": flag(0.4), "former": flag(), "types": ["gutka"]},
         smoking={"uses": flag(), "types": ["bidi"]},
-        areca_nut={"uses": flag(0.3), "former": flag()},
+        # details without the "uses" box count as current use
+        areca_nut={"uses": flag(0.3), "former": flag(), "years": 5.0 if flag(0.1) else None},
         alcohol={"frequency": "daily" if flag() else "never"},
         prior_oral_lesion=flag(0.1),
         prior_oral_cancer=flag(0.05),
@@ -94,6 +98,7 @@ def _random_rf(rng: np.random.Generator):
                 "bleeding",
                 "neck_lump",
                 "pain",
+                "burning_sensation",
             ]
         },
         irritants={"sharp_tooth": flag(), "ill_fitting_denture": flag(0.1)},
@@ -139,3 +144,31 @@ def test_random_scenarios_keep_invariants(rng):
                 RiskLevel.HIGH,
             )
         assert [x.lesion_id for x in out.lesions] == [f"L{i + 1}" for i in range(len(out.lesions))]
+        _assert_safety_floors(out, sites, spectral)
+
+
+def _assert_safety_floors(out, sites, spectral) -> None:
+    """Review findings clinical.0/4/5/7 and honesty.0/11, for any combination of inputs."""
+    t = out.triage
+    covered = {rid for x in out.lesions for rid in x.spectral_reading_ids}
+    assert {r.reading_id for r in spectral if r.role == "lesion"} <= covered
+    imaged = {s.site for s in sites if site_readable(s)}
+    for lesion in out.lesions:
+        if lesion.site not in imaged:  # no photos, or the device could not look properly
+            assert lesion.risk_level != RiskLevel.LOW
+        if "visual" in lesion.origins:
+            assert lesion.risk_level in (RiskLevel.MODERATE, RiskLevel.HIGH)
+        regions = [
+            r for s in sites if s.af is not None for r in s.af.regions if s.site == lesion.site
+        ]
+        deep = [
+            r for r in regions if r.region_id in lesion.region_ids and r.mean_relative_af <= 0.55
+        ]
+        if deep:
+            assert lesion.risk_level in (RiskLevel.MODERATE, RiskLevel.HIGH)
+        if t.overall_risk_level in (RiskLevel.MODERATE, RiskLevel.HIGH):
+            assert lesion.recommended_action.code != ActionCode.ROUTINE_RESCREEN
+    if any(visual_seen(s.visual_flag) for s in sites):
+        assert t.overall_risk_level in (RiskLevel.MODERATE, RiskLevel.HIGH)
+    texts = [x.lower() for x in all_texts(out)]
+    assert not [x for x in texts if "healthy" in x or "not suspicious" in x or "no referral" in x]

@@ -13,6 +13,7 @@ from mukha_pipeline.calibration import (
     UNCALIBRATED_NOTE,
     CalibrationError,
     as_utc,
+    compute_af_flat_field,
     compute_af_scale,
     compute_color_matrix,
     compute_flat_field,
@@ -26,6 +27,7 @@ from mukha_pipeline.calibration import (
 )
 from mukha_pipeline.calibration.common import central_region, finite_median, luminance
 from mukha_pipeline.positioning import find_positioning_violations
+from mukha_pipeline.preprocess.correction import linear_to_srgb, srgb_to_linear
 from mukha_pipeline.schema.models import CalibrationStatus
 from mukha_pipeline.types import ImageCalibration, SpectralCalibration
 
@@ -272,7 +274,12 @@ def test_af_scale_guards(card, expected):
 
 def test_create_image_calibration(fixed_now):
     cal = create_image_calibration(
-        "scout-01", vignetted_white(), fluorescence_card(0.25), now=fixed_now, synthetic=True
+        "scout-01",
+        vignetted_white(),
+        fluorescence_card(0.25),
+        now=fixed_now,
+        synthetic=True,
+        card_encoding="linear",
     )
     assert cal.calibration_id.startswith("cal-") and len(cal.calibration_id) > 10
     assert cal.device_id == "scout-01"
@@ -281,14 +288,70 @@ def test_create_image_calibration(fixed_now):
     assert cal.af_scale == pytest.approx(2.0)
     assert cal.synthetic is True
     assert cal.flat_field.shape == (120, 160)
+    assert cal.af_flat_field is not None and cal.af_flat_field.shape == (80, 100)
     assert cal.color_matrix.shape == (3, 3)
     other = create_image_calibration(
         "scout-01", vignetted_white(), None, now=fixed_now, valid_hours=8
     )
     assert other.calibration_id != cal.calibration_id
     assert other.af_scale == 1.0
+    assert other.af_flat_field is None  # no card: the violet profile is unknown, never guessed
     assert other.expires_at - other.created_at == timedelta(hours=8)
     assert image_calibration_status(cal, fixed_now).status is CalibrationStatus.CALIBRATED
+
+
+def violet_profile(h: int = 120, w: int = 160, drop: float = 0.4) -> np.ndarray:
+    """Violet-LED excitation profile: off-centre, ``drop`` lower at the corners (linear)."""
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    r2 = ((xx - 0.6 * w) / w) ** 2 + ((yy - 0.45 * h) / h) ** 2
+    return (1.0 - drop * r2 / r2.max()).astype(np.float32)
+
+
+def test_af_flat_field_is_the_violet_profile_not_the_white_one():
+    """science.4: AF is flat-fielded with the fluorescence card's own (violet) profile."""
+    profile = violet_profile()
+    card_linear = np.zeros((*profile.shape, 3), np.float32)
+    card_linear[..., 1] = 0.3 * profile
+    card_linear[..., 0] = 0.02 * profile
+    flat = compute_af_flat_field(linear_to_srgb(card_linear), blur_sigma_px=3)
+    assert flat.dtype == np.float32 and flat.shape == profile.shape
+    assert float(flat.mean()) == pytest.approx(1.0, abs=1e-3)
+    # The encoded card is linearised first, so the flat matches the LINEAR profile, and dividing
+    # linear AF by it removes the fall-off.
+    inner = (slice(8, -8), slice(8, -8))  # the blur flattens the outermost pixels slightly
+    np.testing.assert_allclose(flat[inner], (profile / profile.mean())[inner], rtol=0.02)
+    corrected = (0.25 * profile) / flat
+    assert float(corrected[inner].std() / corrected[inner].mean()) < 0.01
+    # The same card treated as already linear gives the encoded (too shallow) profile instead.
+    shallow = compute_af_flat_field(linear_to_srgb(card_linear), 3, encoding="linear")
+    assert float(shallow.min()) > float(flat.min()) + 0.05
+
+
+def test_af_flat_field_guards():
+    assert np.all(compute_af_flat_field(np.zeros((20, 30, 3), np.float32)) == 1.0)
+    assert np.all(compute_af_flat_field(np.full((20, 30, 3), np.nan, np.float32)) == 1.0)
+    assert compute_af_flat_field(np.zeros((0, 0, 3), np.float32)).shape == (1, 1)
+    gray = np.full((20, 30), 0.4, np.float32)
+    np.testing.assert_allclose(compute_af_flat_field(gray), 1.0, atol=1e-5)
+
+
+def test_create_image_calibration_linearises_an_srgb_card(fixed_now):
+    """A phone card capture is sRGB-encoded; scale and flat must be in linear light."""
+    profile = violet_profile(80, 100)
+    card_linear = np.zeros((80, 100, 3), np.float32)
+    card_linear[..., 1] = 0.25 * profile
+    card_linear[..., 0] = 0.02
+    encoded = linear_to_srgb(card_linear)
+    cal = create_image_calibration(
+        "scout-01", vignetted_white(), encoded, now=fixed_now, af_flat_blur_sigma_px=3
+    )
+    measured = float(np.median(central_region(srgb_to_linear(encoded)[..., 1])))
+    assert cal.af_scale == pytest.approx(0.5 / measured, rel=1e-4)
+    assert cal.af_flat_field is not None
+    centre = float(cal.af_flat_field[36, 60])
+    corner = float(cal.af_flat_field[79, 0])
+    expected = float(profile[79, 0] / profile[36, 60])
+    assert corner / centre == pytest.approx(expected, rel=0.08)
 
 
 def test_create_image_calibration_naive_now_is_utc():
@@ -398,10 +461,12 @@ def test_image_calibration_round_trip(fixed_now):
     assert back.af_scale == pytest.approx(cal.af_scale)
     assert back.synthetic is True
     np.testing.assert_array_equal(back.flat_field, cal.flat_field)
+    assert cal.af_flat_field is not None
+    np.testing.assert_array_equal(back.af_flat_field, cal.af_flat_field)
     np.testing.assert_array_equal(back.color_matrix, cal.color_matrix)
     # No pickled objects inside: every member loads with allow_pickle=False.
     with np.load(io.BytesIO(blob), allow_pickle=False) as npz:
-        assert {"metadata", "color_matrix", "flat_field"} <= set(npz.files)
+        assert {"metadata", "color_matrix", "flat_field", "af_flat_field"} <= set(npz.files)
 
 
 def test_image_calibration_round_trip_without_flat_and_naive_dates():
@@ -415,7 +480,7 @@ def test_image_calibration_round_trip_without_flat_and_naive_dates():
         af_scale=1.5,
     )
     back = image_calibration_from_bytes(image_calibration_to_bytes(cal))
-    assert back.flat_field is None
+    assert back.flat_field is None and back.af_flat_field is None
     assert back.created_at == datetime(2026, 1, 1, tzinfo=UTC)
     assert back.af_scale == 1.5 and back.synthetic is False
 

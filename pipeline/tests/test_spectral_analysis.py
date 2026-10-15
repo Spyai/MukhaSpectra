@@ -38,6 +38,7 @@ from mukha_pipeline.spectral import (
     calibration_info,
     compute_features,
     delta_features,
+    reference_delta,
     summarise_reading,
 )
 from mukha_pipeline.spectral import analyze as analyze_mod
@@ -129,17 +130,22 @@ def test_uncalibrated_relative_signal(rng, fixed_now):
 
 
 def test_relative_signal_ratios_match_reflectance_ratios_after_reference_comparison(rng, fixed_now):
-    """Uncalibrated deltas move in the same direction as calibrated deltas."""
+    """The lesion / reference quotient gives the same delta calibrated and uncalibrated."""
     cal = make_calibration(fixed_now)
     lo = make_reading(rng, "a", R, "reference", 1.0, noise=0.0)
     hi = make_reading(rng, "b", L, "lesion", 2.0, noise=0.0)
+    deltas = []
     for c in (cal, None):
-        f_lo = compute_features(summarise_reading(lo, c, fixed_now)[0])
-        f_hi = compute_features(summarise_reading(hi, c, fixed_now)[0])
-        d = delta_features(f_hi, f_lo)
+        d = reference_delta(
+            summarise_reading(hi, c, fixed_now)[0], summarise_reading(lo, c, fixed_now)[0]
+        )
+        assert d is not None
         assert d.hb_absorption_proxy > 0.05
         assert d.ratio_555_630 < -0.1
         assert d.ratio_415_555 < 0  # Soret band absorption
+        deltas.append(d)
+    for name in SpectralFeatures.model_fields:
+        assert getattr(deltas[1], name) == pytest.approx(getattr(deltas[0], name), abs=1e-9)
 
 
 def test_unusable_white_falls_back_to_relative(rng, fixed_now):
@@ -277,12 +283,15 @@ def test_classifier_model_info(clf):
     assert info.component == ModelComponent.SPECTRAL_CLASSIFIER
     assert (info.name, info.version, info.status) == (
         "spectral-rules",
-        "1.0.0",
+        "2.0.0",
         ModelStatus.PLACEHOLDER,
     )
     assert info.validated is False
-    assert info.notes == "Heuristic rules on lesion-vs-reference deltas; not trained or validated."
-    assert clf.method == "rules_v1"
+    assert info.notes == (
+        "Heuristic rules on lesion-vs-reference differences; placeholder, not a trained model, "
+        "not validated."
+    )
+    assert clf.method == "rules_v2"
 
 
 @pytest.mark.parametrize(
@@ -299,7 +308,7 @@ def test_classifier_model_info(clf):
 )
 def test_rules(clf, hb: float, ratio: float, label: str):
     out = clf.classify(ZERO, _delta(hb, ratio))
-    assert out.status == "ok" and out.method == "rules_v1" and out.label == label
+    assert out.status == "placeholder" and out.method == "rules_v2" and out.label == label
     assert out.suspicion_score is not None and 0.0 <= out.suspicion_score <= 1.0
     assert "not a calibrated probability" in out.reasons[-1]
     if label == "suspicious":

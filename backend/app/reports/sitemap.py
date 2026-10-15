@@ -14,7 +14,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from app.reports.charts import risk_icon_shapes
 from app.reports.labels import RISK_COLORS, RISK_TITLE
-from app.reports.ranking import ordered_lesions
+from app.reports.ranking import flagged_reference_sites, ordered_lesions
 from mukha_pipeline.schema.models import RiskLevel, ScreeningResult, SiteResult, SiteRole
 from mukha_pipeline.sites import SITE_MAP_VIEWBOX, SITES, OralSite
 
@@ -122,12 +122,14 @@ def _mouth_outline() -> str:
     )
 
 
-def _site_state(sr: SiteResult | None) -> tuple[str, str | None]:
+def _site_state(sr: SiteResult | None, flagged: bool = False) -> tuple[str, str | None]:
+    """Drawing state; a flagged reference site (visual flag, finding, MODERATE/HIGH level) is
+    drawn with its level, never as an unremarkable comparison side."""
     if sr is None:
         return "not_examined", None
     level = RiskLevel(sr.site_risk_level).value
     if sr.role == SiteRole.REFERENCE_ONLY:
-        return "reference_only", level
+        return ("reference_flagged" if flagged else "reference_only"), level
     return "examined", level
 
 
@@ -155,14 +157,16 @@ def _is_small(site: OralSite) -> bool:
     return SITES[site].shape.rx < 20 and not _is_narrow(site)
 
 
-def _site_group(site: OralSite, sr: SiteResult | None, n_lesions: int) -> str:
+def _site_group(
+    site: OralSite, sr: SiteResult | None, n_lesions: int, flagged: bool = False
+) -> str:
     info = SITES[site]
     e = info.shape
-    state, level = _site_state(sr)
+    state, level = _site_state(sr, flagged)
 
     dash = ""
     icon_color = INK
-    if state == "examined":
+    if state in ("examined", "reference_flagged"):
         assert level is not None
         colors = RISK_COLORS[RiskLevel(level)]
         fill = site_fill(level)
@@ -173,10 +177,16 @@ def _site_group(site: OralSite, sr: SiteResult | None, n_lesions: int) -> str:
         if level == RiskLevel.INCONCLUSIVE:
             dash = ' stroke-dasharray="3 2"'
         status = f"examined, {RISK_TITLE[RiskLevel(level)].lower()}"
+        if state == "reference_flagged":
+            # Risk fill and level icon, with the reference side's blue dashed outline.
+            stroke, dash = REFERENCE_STROKE, ' stroke-dasharray="4 3"'
+            width = max(width, 1.8)
+            status = f"reference side (comparison), {RISK_TITLE[RiskLevel(level)].lower()}"
     elif state == "reference_only":
         fill, stroke, width, text_fill = REFERENCE_FILL, REFERENCE_STROKE, 1.4, "#1e3a8a"
         dash = ' stroke-dasharray="4 3"'
-        status = "reference only (healthy comparison)"
+        # The device never checks that the reference is unaffected: never call it healthy.
+        status = "reference only (comparison side)"
     else:
         fill, stroke, width, text_fill = NOT_EXAMINED_FILL, NOT_EXAMINED_STROKE, 1.0, "#7a8494"
         status = "not examined"
@@ -189,7 +199,7 @@ def _site_group(site: OralSite, sr: SiteResult | None, n_lesions: int) -> str:
     narrow, small = _is_narrow(site), _is_small(site)
     size = NARROW_LABEL_FONT if (narrow or small) else LABEL_FONT
     weight = "600" if state != "not_examined" else "400"
-    with_icon = state == "examined"
+    with_icon = state in ("examined", "reference_flagged")
     cap = 0.72 * size
     tx, ty = e.cx, e.cy + cap / 2
     icon = ""
@@ -325,9 +335,11 @@ def render_site_map_svg(
 
     Examined sites are filled by ``site_risk_level`` (LOW teal, MODERATE amber, HIGH red,
     INCONCLUSIVE grey hatched) and carry the level icon (1/2/3 bars, "?"), so the map also reads
-    in black and white; reference-only sites have a blue dashed outline; sites not in the result
-    are light grey outlines. Flagged findings carry numbered markers that match the finding
-    numbers in the report. ``result=None`` draws an empty map (all sites not examined).
+    in black and white; reference-only sites have a blue dashed outline (a reference site with a
+    visual flag, a finding or a MODERATE/HIGH level keeps that outline but is filled by its level
+    and carries the icon); sites not in the result are light grey outlines. Flagged findings carry
+    numbered markers that match the finding numbers in the report. ``result=None`` draws an
+    empty map (all sites not examined).
     """
     vb_w = float(SITE_MAP_VIEWBOX[2])
     height_units = _TOP + _MAP_H + (_LEGEND_H if show_legend else 0.0)
@@ -335,8 +347,10 @@ def render_site_map_svg(
 
     by_site: dict[OralSite, SiteResult] = {}
     lesion_count: dict[OralSite, int] = {}
+    flagged: set[OralSite] = set()
     if result is not None:
         by_site = {OralSite(s.site): s for s in result.sites}
+        flagged = flagged_reference_sites(result)
         for lesion in result.lesions:
             site = OralSite(lesion.site)
             lesion_count[site] = lesion_count.get(site, 0) + 1
@@ -344,7 +358,8 @@ def render_site_map_svg(
     # Draw large shapes first so small ones (retromolar, lateral tongue) stay on top.
     order = sorted(SITES, key=lambda s: -(SITES[s].shape.rx * SITES[s].shape.ry))
     sites_svg = "".join(
-        _site_group(site, by_site.get(site), lesion_count.get(site, 0)) for site in order
+        _site_group(site, by_site.get(site), lesion_count.get(site, 0), site in flagged)
+        for site in order
     )
     markers = _lesion_markers(result) if result is not None else ""
     legend = _legend(_TOP + _MAP_H + 2) if show_legend else ""

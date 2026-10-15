@@ -53,6 +53,20 @@ def test_synthetic_af_passes_and_degraded_fails(qc_cfg, site):
     assert "af_filter_leak" in [i.code for i in qc_autofluorescence(leak, qc_cfg).issues]
 
 
+@pytest.mark.parametrize("site", SITES, ids=lambda s: s.value)
+def test_synthetic_af_after_auto_white_balance_or_greyscale_is_blocked(qc_cfg, site):
+    """correctness.0: the (sRGB-encoded) synthetic AF passes, but the same capture neutralised
+    by grey-world auto white balance, or saved as greyscale, must not be analysed."""
+    generate_af_from_wl = _af_generator()
+    af = generate_af_from_wl(_wl(site), np.random.default_rng(1), misalign=False)
+    means = af.reshape(-1, 3).mean(axis=0)
+    awb = np.clip(af * (means.mean() / means), 0.0, 1.0).astype(np.float32)
+    r = qc_autofluorescence(awb, qc_cfg)
+    assert not r.passed and "af_not_green" in [i.code for i in r.issues]
+    grey = np.repeat(af.mean(axis=2, keepdims=True), 3, axis=2)
+    assert "image_grayscale" in [i.code for i in qc_autofluorescence(grey, qc_cfg).issues]
+
+
 def test_synthetic_dark_frame_passes(qc_cfg):
     try:
         from mukha_pipeline.synthetic import generate_dark_frame

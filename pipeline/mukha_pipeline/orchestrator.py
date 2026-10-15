@@ -1,13 +1,21 @@
 """Orchestrator: one ``ScreeningInput`` in, one ``ScreeningResult`` (+ artifacts) out.
 
-Per site: QC → calibration and corrections → AF→WL registration → mucosa segmentation → AF
-maps. Then, once every site's own reference level is known, AF is normalised against the
-patient's contralateral (or analogous, or in-image) reference, FVL regions and confounders are
-found, and the heatmap is drawn. Spectral readings are analysed separately, and the rule engine
-fuses everything into lesion and patient risk levels with reasons.
+Per site: QC → calibration and corrections → AF→WL registration → mucosa segmentation (with an
+AF cross-check for white areas) → AF maps. Then, once every site's own reference level is known,
+AF is normalised against the patient's contralateral (or analogous, or in-image) reference, FVL
+regions and confounders are found, and the heatmap is drawn. Spectral readings are analysed
+separately, and the rule engine fuses everything into lesion and patient risk levels with
+reasons.
+
+Light, not file values. Uploaded photos store sRGB-encoded values. QC judges the captures as
+stored, but every AF radiometric step (dark subtraction, violet flat field, exposure scaling,
+relative AF) runs on LINEAR light: AF and dark captures are linearised first, and AF images
+shown to people are re-encoded. WL stays sRGB, the space its colour rules are defined in.
 
 A site whose captures fail QC is never analysed as if it were good: it is marked
-``inconclusive_qc_failed`` and the triage cannot return LOW while it stays that way.
+``inconclusive_qc_failed`` and the triage cannot return LOW while it stays that way. A site
+whose analysis crashed is marked ``not_analysed`` and reported as a software problem, not as a
+capture-quality one.
 """
 
 from __future__ import annotations
@@ -43,12 +51,15 @@ from mukha_pipeline.preprocess.correction import (
     apply_color_matrix,
     apply_flat_field,
     exposure_factor,
+    linear_to_srgb,
+    srgb_to_linear,
     subtract_dark,
 )
 from mukha_pipeline.preprocess.registration import register_af_to_wl
 from mukha_pipeline.preprocess.segmentation import (
     ClassicalSegmenter,
     Segmenter,
+    refine_masks_with_af,
     segmentation_summary,
 )
 from mukha_pipeline.qc import (
@@ -86,12 +97,13 @@ from mukha_pipeline.schema.models import (
     SegmentationSummary,
     SiteArtifacts,
     SiteResult,
+    SiteRole,
     StageTiming,
     VersionInfo,
     WLAnalysis,
     WorkingResolution,
 )
-from mukha_pipeline.sites import OralSite, site_info
+from mukha_pipeline.sites import OralSite, reference_site_for, site_info
 from mukha_pipeline.spectral import (
     RuleBasedSpectralClassifier,
     SpectralClassifier,
@@ -112,8 +124,20 @@ log = logging.getLogger(__name__)
 
 JPEG_QUALITY = 90
 
-ANALYSIS_ERROR_MESSAGE = "This site could not be analysed — retake, or examine clinically."
+ANALYSIS_ERROR_MESSAGE = (
+    "Software error while analysing this site — examine clinically and report the problem."
+)
+ANALYSIS_ERROR_NOTE = (
+    "Not analysed because of a software error, not a problem with the photos. Examine this site "
+    "clinically and report the problem."
+)
 REFERENCE_SITE_SKIPPED_NOTE = "Site not analysed because its captures did not pass quality checks."
+
+# Defaults for the qc.v1.yaml ``limitations`` section (older configs without it keep working).
+LIMITATION_DEFAULTS = {
+    "white_area_not_analysed_fraction_max": 0.03,
+    "paired_reference_dimmer_ratio": 0.9,
+}
 
 
 # --------------------------------------------------------------------------------------------
@@ -125,8 +149,8 @@ REFERENCE_SITE_SKIPPED_NOTE = "Site not analysed because its captures did not pa
 class _SiteState:
     inp: SiteInput
     scale: float = 1.0
-    wl: np.ndarray | None = None  # corrected WL, working resolution
-    af: np.ndarray | None = None  # corrected AF, working resolution (own frame)
+    wl: np.ndarray | None = None  # corrected WL, working resolution, sRGB-encoded
+    af: np.ndarray | None = None  # corrected AF, working resolution (own frame), LINEAR light
     qc_parts: list[QCResult] = field(default_factory=list)
     captures: list[CaptureRecord] = field(default_factory=list)
     calibration: CalibrationInfo | None = None
@@ -139,6 +163,9 @@ class _SiteState:
     own_reference: float | None = None
     analysable: bool = False
     error: bool = False
+    af_flat_missing: bool = False  # calibration present but no violet (AF) flat field
+    excluded_white_fraction: float = 0.0  # whitish area left out as teeth after the AF check
+    paired_reference_dimmer: bool = False  # paired site >10 % dimmer than this site's own level
     af_analysis: AFAnalysis | None = None
     wl_analysis: WLAnalysis | None = None
     artifacts: SiteArtifacts = field(default_factory=SiteArtifacts)
@@ -223,16 +250,25 @@ def analyze_screening(
             ),
         )
 
-    # Pass 2: reference normalisation needs every other site's reference level.
+    # Pass 2: reference normalisation needs every other site's reference level. A site where
+    # the health worker recorded a lesion (or any appearance at an examined site) is not
+    # "healthy" tissue and must never serve as another site's reference.
     available = {
-        st.site: st.own_reference for st in states if st.analysable and st.own_reference is not None
+        st.site: st.own_reference
+        for st in states
+        if st.analysable and st.own_reference is not None and _usable_as_reference(st)
     }
+    dimmer_ratio = float(_limit_cfg(qc_cfg, "paired_reference_dimmer_ratio"))
     for st in states:
         _guarded(
             st,
             strict,
-            lambda st=st: _analyse_site(st, available, an_cfg, classifier, timer, artifacts),
+            lambda st=st: _analyse_site(
+                st, available, an_cfg, classifier, timer, artifacts, dimmer_ratio
+            ),
         )
+        if st.error:  # a crash in pass 2 leaves partial analyses: report it as not analysed
+            _skip_site(st, an_cfg.get("af", {}), classifier)
 
     # Spectral readings (Confirm probe).
     spectral_results = []
@@ -275,7 +311,13 @@ def analyze_screening(
         + [r.calibration.status for r in spectral_results]
     )
     limitations = _limitations(
-        triage_out.limitations, site_results, calibration_status, synthetic, cfg
+        triage_out.limitations,
+        site_results,
+        calibration_status,
+        synthetic,
+        cfg,
+        states=states,
+        qc_cfg=qc_cfg,
     )
 
     models = [
@@ -366,8 +408,9 @@ def _prepare_site(
             )
 
     with timer.stage("quality_check", site):
+        # QC judges the captures as stored (encoded file values, as its thresholds are).
         wl_qc = qc_white_light(wl, qc_cfg)
-        af_qc = qc_autofluorescence(af, qc_cfg)
+        af_qc = qc_autofluorescence(af, qc_cfg, white_balance=st.inp.af.meta.white_balance)
         if dark is not None:
             dark_qc = qc_dark_frame(dark, qc_cfg)
         else:
@@ -376,20 +419,30 @@ def _prepare_site(
     with timer.stage("calibration", site):
         cal = _image_calibration(st.inp, inp.image_calibrations)
         st.calibration = image_calibration_status(cal, now)
+        # AF radiometry needs light, not file values: linearise AF and dark BEFORE subtracting,
+        # flat-fielding or exposure scaling (on encoded values a 2x exposure reads as ~1.37x and
+        # relative AF 0.75 would mean ~0.53 of the light).
+        af_lin = srgb_to_linear(af)
         if dark is not None:
-            af = subtract_dark(af, dark)
+            af_lin = subtract_dark(af_lin, srgb_to_linear(dark))
         if cal is not None:
-            wl = apply_flat_field(wl, cal.flat_field)
+            wl = apply_flat_field(wl, cal.flat_field)  # white-LED profile: WL only
             wl = apply_color_matrix(wl, cal.color_matrix)  # colour correction is WL-only
-            af = apply_flat_field(af, cal.flat_field)
+            if cal.af_flat_field is not None:
+                af_lin = apply_flat_field(af_lin, cal.af_flat_field)  # violet-LED profile
+            else:
+                # Never divide AF by the white profile: the violet LEDs light the field
+                # differently, and the residual rim would read as fluorescence loss.
+                st.af_flat_missing = True
         st.intensity_scale = exposure_factor(st.inp.af.meta, ref_af_meta) * (
             float(cal.af_scale) if cal is not None else 1.0
         )
-    st.wl, st.af = wl, af
+    st.wl, st.af = wl, af_lin
+    af_shown = linear_to_srgb(af_lin)  # corrected AF, encoded again for people and registration
 
     wl_key, af_key = f"{prefix}/wl.jpg", f"{prefix}/af.jpg"
     artifacts[wl_key] = _encode_jpeg(wl)
-    artifacts[af_key] = _encode_jpeg(af)
+    artifacts[af_key] = _encode_jpeg(af_shown)
     st.artifacts = st.artifacts.model_copy(update={"wl_image": wl_key, "af_image": af_key})
     st.captures = [
         CaptureRecord(metadata=st.inp.wl.meta, qc=wl_qc, artifact=wl_key),
@@ -402,7 +455,10 @@ def _prepare_site(
         return
 
     with timer.stage("registration", site):
-        st.registration = register_af_to_wl(wl, af, an_cfg.get("registration"))
+        # Structure for alignment comes from the encoded image (the same value space as WL, in
+        # which camera-fixed labels match pixel for pixel); the warped result is linearised
+        # again for the AF maps.
+        st.registration = register_af_to_wl(wl, af_shown, an_cfg.get("registration"))
         st.registration_qc = qc_registration(st.registration, qc_cfg)
     st.qc_parts.append(st.registration_qc)
     reg_key = f"{prefix}/af_registered.jpg"
@@ -410,11 +466,18 @@ def _prepare_site(
     st.artifacts = st.artifacts.model_copy(update={"af_registered": reg_key})
     if not st.registration_qc.passed:
         return
+    af_registered = srgb_to_linear(st.registration.registered)
 
     with timer.stage("segmentation", site):
-        st.masks = segmenter.segment(wl)
-        seg_qc = qc_segmentation(st.masks, qc_cfg)
-        st.segmentation = segmentation_summary(st.masks, segmenter, an_cfg.get("segmentation", {}))
+        seg_cfg = an_cfg.get("segmentation", {}) or {}
+        masks = segmenter.segment(wl)
+        # Colour rules call a white patch running out of frame "teeth"; teeth fluoresce
+        # brightly, a white patch does not, so the AF decides (linear green, WL frame).
+        st.masks, st.excluded_white_fraction = refine_masks_with_af(
+            masks, af_registered[..., 1], st.registration.valid, seg_cfg
+        )
+        st.segmentation = segmentation_summary(st.masks, segmenter, seg_cfg)
+        seg_qc = qc_segmentation(st.masks, qc_cfg, status=st.segmentation.status)
     st.qc_parts.append(seg_qc)
     mask_key = f"{prefix}/mucosa_mask.png"
     artifacts[mask_key] = encode_png(st.masks.mucosa.astype(np.uint8) * 255)
@@ -424,7 +487,7 @@ def _prepare_site(
 
     with timer.stage("af_maps", site):
         st.maps = compute_af_maps(
-            st.registration.registered, st.registration.valid, intensity_scale=st.intensity_scale
+            af_registered, st.registration.valid, intensity_scale=st.intensity_scale
         )
         st.own_reference = reference_green(st.maps, st.masks.mucosa, an_cfg.get("af"))
     st.analysable = True
@@ -435,6 +498,30 @@ def _prepare_site(
 # --------------------------------------------------------------------------------------------
 
 
+def _usable_as_reference(st: _SiteState) -> bool:
+    """A site may be another site's "healthy" reference only if the health worker recorded no
+    lesion there (and no appearance at all at an examined site)."""
+    flag = st.inp.visual_flag
+    if flag.lesion_seen:
+        return False
+    return not (st.inp.role == SiteRole.EXAMINED and flag.appearance)
+
+
+def _skip_site(st: _SiteState, af_cfg: dict, classifier: LesionClassifier) -> None:
+    """Empty AF / WL analyses for a site that is not analysed (QC failure or software error)."""
+    shape = st.wl.shape[:2] if st.wl is not None else (1, 1)
+    note = ANALYSIS_ERROR_NOTE if st.error else REFERENCE_SITE_SKIPPED_NOTE
+    st.af_analysis = empty_fvl_output(
+        shape,
+        af_cfg,
+        status="skipped_qc_failed",
+        reference=AFReference(type=ReferenceType.NONE, note=note),
+    ).analysis
+    st.wl_analysis = WLAnalysis(
+        status="error" if st.error else "skipped_qc_failed", model=classifier.info, note=note
+    )
+
+
 def _analyse_site(
     st: _SiteState,
     available: dict[OralSite, float],
@@ -442,19 +529,11 @@ def _analyse_site(
     classifier: LesionClassifier,
     timer: _Timer,
     artifacts: dict[str, bytes],
+    dimmer_ratio: float = LIMITATION_DEFAULTS["paired_reference_dimmer_ratio"],
 ) -> None:
     af_cfg = an_cfg.get("af", {})
     if not st.analysable or st.error:
-        shape = st.wl.shape[:2] if st.wl is not None else (1, 1)
-        st.af_analysis = empty_fvl_output(
-            shape,
-            af_cfg,
-            status="skipped_qc_failed",
-            reference=AFReference(type=ReferenceType.NONE, note=REFERENCE_SITE_SKIPPED_NOTE),
-        ).analysis
-        st.wl_analysis = WLAnalysis(
-            status="skipped_qc_failed", model=classifier.info, note=REFERENCE_SITE_SKIPPED_NOTE
-        )
+        _skip_site(st, af_cfg, classifier)
         return
 
     assert st.maps is not None and st.masks is not None and st.wl is not None
@@ -463,15 +542,14 @@ def _analyse_site(
     others = {s: v for s, v in available.items() if s != site}
 
     with timer.stage("autofluorescence", site):
-        reference = resolve_reference(
-            site,
-            st.own_reference,
-            others,
-            min_paired_ratio=float(af_cfg.get("reference_min_paired_ratio", 0.67)),
-        )
+        # A paired site can only raise the reference (resolve_reference uses max(paired, own)).
+        reference = resolve_reference(site, st.own_reference, others)
+        st.paired_reference_dimmer = _paired_dimmer(st, reference, others, dimmer_ratio)
         px_per_mm = st.inp.px_per_mm * st.scale if st.inp.px_per_mm else None
         fvl = detect_fvl(st.maps, st.masks.mucosa, reference, af_cfg, px_per_mm=px_per_mm)
-        fvl = flag_confounders(fvl, st.wl, st.maps, st.masks, an_cfg)
+        fvl = flag_confounders(
+            fvl, st.wl, st.maps, st.masks, an_cfg, intensity_scale=st.intensity_scale
+        )
         st.af_analysis = fvl.analysis
 
     with timer.stage("heatmap", site):
@@ -511,6 +589,23 @@ def _analyse_site(
     st.artifacts = st.artifacts.model_copy(update=updates)
 
 
+def _paired_dimmer(
+    st: _SiteState, reference: AFReference, others: dict[OralSite, float], ratio: float
+) -> bool:
+    """True when the opposite (contralateral) site read more than ``1 - ratio`` dimmer than
+    this site's own (brighter) mucosa: exposure or angle, or a change on both sides
+    (common in long-term gutka and areca users), which can hide a loss here. The reference
+    itself is already protected (``max(paired, own)``); this only feeds the limitation."""
+    if reference.type != ReferenceType.CONTRALATERAL:
+        return False
+    paired, _ = reference_site_for(st.site)
+    paired_level = others.get(paired) if paired is not None else None
+    own = st.own_reference
+    if paired_level is None or own is None or not np.isfinite(own) or own <= 0:
+        return False
+    return bool(float(paired_level) < ratio * float(own))
+
+
 # --------------------------------------------------------------------------------------------
 # Result assembly
 # --------------------------------------------------------------------------------------------
@@ -536,6 +631,12 @@ def _site_result(st: _SiteState, spectral_results: list, an_cfg: dict) -> SiteRe
         )
     qc = combine_qc(qc_parts) if qc_parts else QCResult(passed=False, score=0.0)
     analysed = st.analysable and not st.error
+    if analysed:
+        status = "analysed"
+    elif st.error:
+        status = "not_analysed"  # software problem, not a capture-quality failure
+    else:
+        status = "inconclusive_qc_failed"
     registration = None
     if st.registration is not None:
         registration = RegistrationSummary(
@@ -559,7 +660,7 @@ def _site_result(st: _SiteState, spectral_results: list, an_cfg: dict) -> SiteRe
         diascopy=st.inp.diascopy,
         captures=st.captures,
         qc=qc,
-        analysis_status="analysed" if analysed else "inconclusive_qc_failed",
+        analysis_status=status,
         calibration=st.calibration
         or CalibrationInfo(status=CalibrationStatus.UNCALIBRATED, note="Not assessed."),
         registration=registration,
@@ -583,7 +684,8 @@ def _qc_summary(sites: list[SiteResult], spectral: list) -> QCSummary:
     seen: set[tuple[str, str]] = set()
     for s in sites:
         for issue in s.qc.issues:
-            if issue.severity == QCSeverity.ERROR:
+            # A software error is not fixed by retaking photos (it would crash again).
+            if issue.severity == QCSeverity.ERROR and issue.code != "analysis_error":
                 retakes.append(f"{s.site_label}: {issue.message}")
             key = (issue.code, issue.message)
             if issue.severity != QCSeverity.INFO and key not in seen:
@@ -620,12 +722,92 @@ def _overall_calibration(statuses: list[CalibrationStatus]) -> CalibrationStatus
     return CalibrationStatus.PARTIAL
 
 
+def _limit_cfg(qc_cfg: dict, key: str) -> float:
+    section = qc_cfg.get("limitations") or {}
+    return float(section.get(key, LIMITATION_DEFAULTS[key]))
+
+
+def _labels(sites: list[SiteResult], wanted: set[OralSite]) -> str:
+    return ", ".join(s.site_label for s in sites if s.site in wanted)
+
+
+def _site_limitations(
+    sites: list[SiteResult], states: list[_SiteState], qc_cfg: dict
+) -> list[Limitation]:
+    """Per-site limitations the orchestrator knows about (software errors, calibration gaps,
+    references, white areas), one entry per code naming the sites."""
+    out: list[Limitation] = []
+    by_site = {st.site: st for st in states}
+    errored = {st.site for st in states if st.error}
+    if errored:
+        out.append(
+            Limitation(
+                code="analysis_error",
+                message=(
+                    f"{_labels(sites, errored)}: software error while analysing — not a problem "
+                    "with the photos. Examine clinically and report the problem."
+                ),
+            )
+        )
+    af_flat_missing = {
+        s.site
+        for s in sites
+        if by_site.get(s.site) is not None
+        and by_site[s.site].af_flat_missing
+        and s.calibration.status == CalibrationStatus.CALIBRATED
+    }
+    if af_flat_missing:
+        out.append(
+            Limitation(
+                code="af_flat_field_missing",
+                message=(
+                    f"{_labels(sites, af_flat_missing)}: the violet-light profile was not "
+                    "measured at calibration, so uneven violet lighting was not corrected; a "
+                    "dim image edge may read as loss of fluorescence. Recalibrate with the "
+                    "fluorescence card."
+                ),
+            )
+        )
+    analysed = {s.site for s in sites if s.analysis_status == "analysed"}
+    bilateral = {st.site for st in states if st.paired_reference_dimmer and st.site in analysed}
+    if bilateral:
+        out.append(
+            Limitation(
+                code="possible_bilateral_change",
+                message=(
+                    f"{_labels(sites, bilateral)}: the opposite side was dimmer than this side; "
+                    "changes on both sides can hide loss of fluorescence. Examine both sides "
+                    "clinically."
+                ),
+            )
+        )
+    white_max = _limit_cfg(qc_cfg, "white_area_not_analysed_fraction_max")
+    white = {
+        st.site for st in states if st.site in analysed and st.excluded_white_fraction > white_max
+    }
+    if white:
+        out.append(
+            Limitation(
+                code="white_area_not_analysed",
+                message=(
+                    f"{_labels(sites, white)}: white areas that looked and glowed like teeth "
+                    "were left out of the fluorescence check. If any of it is not a tooth (for "
+                    "example a white patch), examine it clinically."
+                ),
+            )
+        )
+    return out
+
+
 def _limitations(
     from_triage: list[Limitation],
     sites: list[SiteResult],
     calibration: CalibrationStatus,
     synthetic: bool,
     cfg: PipelineConfig,
+    *,
+    states: list[_SiteState] | None = None,
+    qc_cfg: dict | None = None,
 ) -> list[Limitation]:
     out: list[Limitation] = []
     if synthetic:
@@ -670,6 +852,7 @@ def _limitations(
                 ),
             )
         )
+    out.extend(_site_limitations(sites, states or [], qc_cfg or {}))
     out.extend(from_triage)
     deduped: list[Limitation] = []
     seen: set[str] = set()

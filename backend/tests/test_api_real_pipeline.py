@@ -213,6 +213,9 @@ def test_real_demo_end_to_end(real_client, kind):
     v2 = ScreeningResult.model_validate(again.json()["result"])
     assert v2.supersedes_result_id == result.result_id
     assert v2.triage.overall_risk_level == result.triage.overall_risk_level
+    # The stored calibration (incl. its violet-light flat field) is used again as it was.
+    assert [lim.code for lim in v2.limitations] == [lim.code for lim in result.limitations]
+    assert "af_flat_field_missing" not in {lim.code for lim in v2.limitations}
 
 
 def test_real_report_pdf_html_and_site_map(make_client):

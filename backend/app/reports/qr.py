@@ -1,4 +1,8 @@
-"""QR code linking the printed report to the secure (login-protected) online record."""
+"""QR code linking the printed report to the online screening record.
+
+Phase 1 has no authentication: the printed caption must not claim the record is secure or needs
+a login until the QR target sits behind access control (planned for Phase 5).
+"""
 
 from __future__ import annotations
 

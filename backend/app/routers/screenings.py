@@ -1,4 +1,4 @@
-"""Screenings: upload, list, results, re-analysis, artifacts, reports and the site map."""
+"""Screenings: upload, list, results, re-analysis, artifacts, reports, site map and erasure."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request, Response
 from starlette.concurrency import run_in_threadpool
-from starlette.datastructures import UploadFile
 
 from app.deps import ServicesDep, SessionDep
 from app.errors import BadRequestError, InvalidInputError, NotFoundError, PayloadTooLargeError
 from app.models import as_utc
 from app.schemas import (
+    ErasureResponse,
     ErrorResponse,
     ScreeningCreated,
     ScreeningDetail,
@@ -28,6 +28,7 @@ from app.services.records import (
 )
 from app.services.reports import ArtifactReader, report_file_name
 from app.storage import ObjectNotFoundError
+from app.upload_form import FormLimits, read_upload_form
 from mukha_pipeline.schema.models import ScreeningResult
 
 router = APIRouter(tags=["screenings"])
@@ -55,9 +56,13 @@ NO_STORE = "no-store, private"
 
 ERRORS_COMMON = {404: {"model": ErrorResponse, "description": "Unknown screening or version"}}
 ERRORS_UPLOAD = {
-    413: {"model": ErrorResponse, "description": "A file or the request is too large"},
+    413: {
+        "model": ErrorResponse,
+        "description": "A file, the manifest, the request or the decoded images are too large",
+    },
     422: {"model": ErrorResponse, "description": "Invalid manifest, missing consent or file"},
     500: {"model": ErrorResponse, "description": "Analysis failed; captures were stored"},
+    503: {"model": ErrorResponse, "description": "Server busy, try again shortly"},
 }
 
 UPLOAD_REQUEST_BODY = {
@@ -90,11 +95,27 @@ VersionQuery = Annotated[
 
 
 def _check_request_size(request: Request, limit: int) -> None:
+    """Early refusal from the declared size (the stream itself is counted as it arrives by
+    BodySizeLimitMiddleware and by the form reader, so chunked bodies are bounded too)."""
     length = request.headers.get("content-length")
     if length and length.isdigit() and int(length) > limit:
         raise PayloadTooLargeError(
             f"The upload is larger than the {limit // (1024 * 1024)} MB request limit."
         )
+
+
+def _form_limits(services: ServicesDep) -> FormLimits:
+    settings = services.settings
+    return FormLimits(
+        max_file_bytes=settings.max_upload_bytes,
+        max_field_bytes=MAX_MANIFEST_BYTES,
+        max_total_bytes=settings.max_request_bytes,
+        max_files=MAX_FORM_FILES,
+        max_fields=MAX_FORM_FIELDS,
+        file_limit_label=f"{settings.max_upload_mb} MB",
+        field_limit_label=f"{MAX_MANIFEST_BYTES // 1024} KB",
+        small_parts=frozenset({"manifest"}),
+    )
 
 
 @router.post(
@@ -110,44 +131,33 @@ async def create_screening(
 ) -> ScreeningCreated:
     settings = services.settings
     _check_request_size(request, settings.max_request_bytes)
-    form = await request.form(
-        max_files=MAX_FORM_FILES, max_fields=MAX_FORM_FIELDS, max_part_size=MAX_MANIFEST_BYTES
-    )
-    try:
-        raw = form.get("manifest")
-        if isinstance(raw, UploadFile):
-            raw = await raw.read()
-        manifest = services.ingest.parse_manifest(raw)
+    services.analysis.check_capacity()  # 503 before reading a large body when already busy
+    form = await read_upload_form(request, _form_limits(services))
 
-        limit = settings.max_upload_bytes
-        files: dict[str, FilePart] = {}
-        for name, location in manifest.file_fields():
-            if name in files:
-                continue
-            value = form.get(name)
-            if value is None:
-                raise InvalidInputError(
-                    f"The manifest refers to file field '{name}' ({location}), "
-                    "but no file with that name was uploaded."
-                )
-            if not isinstance(value, UploadFile):
-                raise InvalidInputError(f"Form field '{name}' ({location}) must be a file.")
-            if value.size is not None and value.size > limit:
-                raise PayloadTooLargeError(
-                    f"File '{name}' is larger than the {settings.max_upload_mb} MB limit."
-                )
-            data = await value.read()
-            if len(data) > limit:
-                raise PayloadTooLargeError(
-                    f"File '{name}' is larger than the {settings.max_upload_mb} MB limit."
-                )
-            if not data:
-                raise InvalidInputError(f"The file in field '{name}' ({location}) is empty.")
-            files[name] = FilePart(
-                field=name, filename=value.filename, content_type=value.content_type, data=data
+    raw = form.pop("manifest", None)
+    manifest = services.ingest.parse_manifest(bytes(raw.data) if raw is not None else None)
+
+    files: dict[str, FilePart] = {}
+    for name, location in manifest.file_fields():
+        if name in files:
+            continue
+        value = form.pop(name, None)  # copied below; drop the form's buffer as we go
+        if value is None:
+            raise InvalidInputError(
+                f"The manifest refers to file field '{name}' ({location}), "
+                "but no file with that name was uploaded."
             )
-    finally:
-        await form.close()
+        if not value.is_file:
+            raise InvalidInputError(f"Form field '{name}' ({location}) must be a file.")
+        if not value.data:
+            raise InvalidInputError(f"The file in field '{name}' ({location}) is empty.")
+        files[name] = FilePart(
+            field=name,
+            filename=value.filename,
+            content_type=value.content_type,
+            data=bytes(value.data),
+        )
+    form.clear()  # unreferenced parts are never stored or decoded
 
     screening_id, row, result = await run_in_threadpool(
         services.ingest.create_screening, session, manifest, files
@@ -199,6 +209,22 @@ def get_screening_detail(screening_id: str, session: SessionDep) -> ScreeningDet
     return detail
 
 
+@router.delete(
+    "/screenings/{screening_id}",
+    response_model=ErasureResponse,
+    responses={
+        **ERRORS_COMMON,
+        409: {"model": ErrorResponse, "description": "An analysis is running; try again"},
+    },
+    summary="Erase a screening: rows, stored inputs, artifacts, cached reports "
+    "(and the identity when no other screening uses it)",
+)
+async def erase_screening(
+    screening_id: str, services: ServicesDep, session: SessionDep
+) -> ErasureResponse:
+    return await run_in_threadpool(services.erasure.erase_screening, session, screening_id)
+
+
 @router.get(
     "/screenings/{screening_id}/results/{version}",
     response_model=ScreeningResult,
@@ -222,7 +248,7 @@ def get_result_version(
     "/screenings/{screening_id}/reanalyze",
     status_code=201,
     response_model=ScreeningCreated,
-    responses={**ERRORS_COMMON, 500: ERRORS_UPLOAD[500]},
+    responses={**ERRORS_COMMON, 500: ERRORS_UPLOAD[500], 503: ERRORS_UPLOAD[503]},
     summary="Re-analyse stored captures as a new result version",
 )
 def reanalyze_screening(
@@ -281,7 +307,9 @@ def get_report_pdf(
     screening = get_screening(session, screening_id)
     row = get_result_row(session, screening.id, version)
     pdf = services.reports.clinician_pdf(session, screening, row)
-    filename = report_file_name(screening.id, row.version)
+    filename = report_file_name(
+        screening.id, row.version, synthetic=bool(row.synthetic or screening.synthetic)
+    )
     return Response(
         content=pdf,
         media_type="application/pdf",

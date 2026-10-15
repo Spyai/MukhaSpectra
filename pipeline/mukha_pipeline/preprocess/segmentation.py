@@ -8,13 +8,23 @@ with a risk of progression) is whitish and low-saturation, exactly like teeth. N
 rules therefore label it "teeth" and silently drop the lesion from the AF analysis — the worst
 kind of false reassurance. We keep any non-mucosa blob that is enclosed (or almost enclosed) by
 mucosa *inside* the mucosa mask, while teeth, which reach the image border or the dark oral
-cavity, stay excluded. Specular highlights are removed from the analysable mucosa afterwards,
-because they carry no tissue signal, but they are reported in ``Masks.specular``.
+cavity, stay excluded. A white patch in a close-up can be large, so the size limit for a whitish
+hole is generous (``fill_holes_max_fraction``); a hole that contains dark cavity shadow (the
+mouth opening in a frontal view) keeps a smaller limit (``fill_holes_cavity_max_fraction``).
+
+Colour alone cannot rescue a white patch that runs out of the frame. After registration, the
+orchestrator therefore calls :func:`refine_masks_with_af`: tooth enamel and dentin fluoresce
+brightly under 405 nm, so a whitish "teeth" area whose AF is not tooth-bright is tissue.
+
+Specular highlights are small, near-white blobs. They are removed from the analysable mucosa,
+because they carry no tissue signal, and reported in ``Masks.specular``. A LARGE bright,
+low-saturation area is not glare (it is usually an over-exposed white patch): it is classified by
+colour like any other pixel and stays tissue unless it looks like teeth.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol, runtime_checkable
 
 import cv2
@@ -27,7 +37,7 @@ from mukha_pipeline.types import Masks
 METHOD_NAME = "classical_hsv_lab"
 
 _DEFAULTS: dict[str, Any] = {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "mucosa_hue_ranges": [[0, 22], [160, 180]],
     "mucosa_saturation_min": 0.18,
     "mucosa_value_min": 0.18,
@@ -39,7 +49,11 @@ _DEFAULTS: dict[str, Any] = {
     "specular_value_min": 0.96,
     "specular_saturation_max": 0.20,
     "specular_dilate_px": 1,
-    "fill_holes_max_fraction": 0.10,
+    "specular_max_blob_fraction": 0.002,
+    "specular_group_px": 2,
+    "fill_holes_max_fraction": 0.35,
+    "fill_holes_cavity_max_fraction": 0.10,
+    "fill_holes_cavity_min_share": 0.05,
     "partial_enclosure_min": 0.85,
     "min_component_fraction": 0.01,
     "morphology_kernel_px": 7,
@@ -47,6 +61,11 @@ _DEFAULTS: dict[str, Any] = {
     "confidence_ambiguous_max": 0.6,
     "failed_mucosa_fraction": 0.02,
     "low_confidence_below": 0.5,
+    "teeth_af_min_ratio": 1.0,
+    "teeth_af_smoothing_sigma_px": 3.0,
+    "teeth_af_open_px": 7,
+    "teeth_af_min_blob_fraction": 0.002,
+    "teeth_af_min_mucosa_pixels": 200,
 }
 
 
@@ -150,6 +169,24 @@ def _hue_in_ranges(hue180: np.ndarray, ranges: list[list[float]]) -> np.ndarray:
     return out
 
 
+def small_blobs(mask: np.ndarray, max_area: int, group_px: int) -> np.ndarray:
+    """Pixels of ``mask`` that belong to small blobs (<= ``max_area`` mask pixels per blob).
+
+    Pixels closer than about ``2 * group_px`` are grouped first, so a speckled bright area (an
+    over-exposed white patch with texture) counts as one large blob instead of many small ones.
+    """
+    if not mask.any():
+        return mask.copy()
+    grouped = mask
+    if group_px > 0:
+        grouped = cv2.dilate(mask.astype(np.uint8), ellipse_kernel(2 * group_px + 1)) > 0
+    labels, n = ndi.label(grouped, structure=np.ones((3, 3), dtype=bool))
+    counts = np.bincount(labels[mask], minlength=n + 1)
+    keep = counts <= max(int(max_area), 0)
+    keep[0] = False
+    return mask & keep[labels]
+
+
 def classify_pixels(wl: np.ndarray, cfg: dict | None) -> PixelClasses:
     """Per-pixel colour rules. ``wl`` must already be sanitised float32 RGB in [0, 1].
 
@@ -157,7 +194,9 @@ def classify_pixels(wl: np.ndarray, cfg: dict | None) -> PixelClasses:
     with enough saturation and brightness. Teeth are bright, unsaturated and not pinkish
     (a* < ``teeth_lab_a_max``); bright, unsaturated but pinkish pixels are pale mucosa (anaemia,
     blanched submucous fibrosis), not teeth. The oral cavity shadow is very dark. Specular
-    highlights are near-white (V high, S low).
+    highlights are near-white (V high, S low) AND small: a near-white blob larger than
+    ``specular_max_blob_fraction`` of the image is not glare (typically an over-exposed white
+    patch) and falls through to the teeth / mucosa colour rules instead.
     """
     hsv = cv2.cvtColor(wl, cv2.COLOR_RGB2HSV)  # float32: H 0-360, S 0-1, V 0-1
     hue = hsv[:, :, 0] / 2.0  # OpenCV 8-bit hue convention, matches the YAML ranges
@@ -165,9 +204,11 @@ def classify_pixels(wl: np.ndarray, cfg: dict | None) -> PixelClasses:
     lab_a = cv2.cvtColor(wl, cv2.COLOR_RGB2Lab)[:, :, 1]
 
     background = val <= float(_cfg(cfg, "background_value_max"))
-    specular = (val >= float(_cfg(cfg, "specular_value_min"))) & (
+    near_white = (val >= float(_cfg(cfg, "specular_value_min"))) & (
         sat <= float(_cfg(cfg, "specular_saturation_max"))
     )
+    max_blob = int(float(_cfg(cfg, "specular_max_blob_fraction")) * val.size)
+    specular = small_blobs(near_white, max_blob, int(_cfg(cfg, "specular_group_px")))
     bright = val >= float(_cfg(cfg, "teeth_value_min"))
     pinkish = lab_a >= float(_cfg(cfg, "teeth_lab_a_max"))
     teeth = (sat <= float(_cfg(cfg, "teeth_saturation_max"))) & bright & ~pinkish & ~specular
@@ -185,18 +226,32 @@ def classify_pixels(wl: np.ndarray, cfg: dict | None) -> PixelClasses:
     return PixelClasses(mucosa=mucosa, teeth=teeth, background=background, specular=specular)
 
 
-def fill_enclosed_holes(mucosa: np.ndarray, max_area: int) -> np.ndarray:
+def fill_enclosed_holes(
+    mucosa: np.ndarray,
+    max_area: int,
+    *,
+    dark: np.ndarray | None = None,
+    cavity_max_area: int | None = None,
+    cavity_min_share: float = 0.05,
+) -> np.ndarray:
     """Return the pixels of holes fully enclosed by mucosa with area <= ``max_area``.
 
     Holes touching the image border are not holes (binary_fill_holes semantics), so a band of
-    teeth along the border stays excluded.
+    teeth along the border stays excluded. When ``dark`` (the oral-cavity shadow class) is given,
+    a hole with at least ``cavity_min_share`` dark pixels is treated as the mouth opening rather
+    than a white patch and is limited to ``cavity_max_area`` instead.
     """
     holes = ndi.binary_fill_holes(mucosa) & ~mucosa
     if not holes.any():
         return holes
     labels, n = ndi.label(holes, structure=np.ones((3, 3), dtype=bool))
     areas = np.bincount(labels.ravel(), minlength=n + 1)
-    keep = areas <= max_area
+    limit = np.full(n + 1, max_area, dtype=np.int64)
+    if dark is not None and cavity_max_area is not None:
+        dark_px = np.bincount(labels[dark & holes], minlength=n + 1)
+        cavity = dark_px >= cavity_min_share * np.maximum(areas, 1)
+        limit[cavity] = min(int(cavity_max_area), int(max_area))
+    keep = areas <= limit
     keep[0] = False
     return keep[labels]
 
@@ -295,7 +350,13 @@ class ClassicalSegmenter:
         cleaned = mucosa.copy()
 
         max_hole = int(float(_cfg(cfg, "fill_holes_max_fraction")) * n_px)
-        filled = fill_enclosed_holes(mucosa, max_hole)
+        filled = fill_enclosed_holes(
+            mucosa,
+            max_hole,
+            dark=classes.background,
+            cavity_max_area=int(float(_cfg(cfg, "fill_holes_cavity_max_fraction")) * n_px),
+            cavity_min_share=float(_cfg(cfg, "fill_holes_cavity_min_share")),
+        )
         mucosa = mucosa | filled
         # Whitish / unclassified blobs (not dark shadow) that are almost surrounded by mucosa.
         candidates = ~mucosa & ~classes.background
@@ -352,12 +413,18 @@ def _fraction(mask: np.ndarray) -> float:
 
 
 def segmentation_summary(masks: Masks, segmenter: Segmenter, cfg: dict) -> SegmentationSummary:
-    """Summarise masks for the result. ``failed`` when almost no mucosa is visible,
-    ``low_confidence`` when the heuristic confidence is below the configured level."""
-    mucosa_fraction = _fraction(masks.mucosa)
+    """Summarise masks for the result.
+
+    ``failed`` when mucosa is effectively absent (no mucosa pixel at all, or less than
+    ``failed_mucosa_fraction`` of the image) or the confidence is zero; ``low_confidence`` when
+    the heuristic confidence is below ``low_confidence_below``; otherwise ``ok``.
+    """
+    mucosa = np.asarray(masks.mucosa, dtype=bool)
+    mucosa_fraction = _fraction(mucosa)
     conf = float(masks.confidence) if np.isfinite(masks.confidence) else 0.0
     conf = float(np.clip(conf, 0.0, 1.0))
-    if mucosa_fraction < float(_cfg(cfg, "failed_mucosa_fraction")) or conf <= 0.0:
+    absent = not mucosa.any() or mucosa_fraction < float(_cfg(cfg, "failed_mucosa_fraction"))
+    if absent or conf <= 0.0:
         status = "failed"
     elif conf < float(_cfg(cfg, "low_confidence_below")):
         status = "low_confidence"
@@ -372,3 +439,110 @@ def segmentation_summary(masks: Masks, segmenter: Segmenter, cfg: dict) -> Segme
         specular_fraction=_fraction(masks.specular),
         confidence=conf,
     )
+
+
+# --------------------------------------------------------------------------------------------
+# AF cross-check (called by the orchestrator after registration)
+# --------------------------------------------------------------------------------------------
+
+
+def _masked_gaussian(values: np.ndarray, mask: np.ndarray, sigma_px: float) -> np.ndarray:
+    """Normalised convolution blur(v * m) / blur(m) inside ``mask``; NaN elsewhere."""
+    out = np.full(values.shape, np.nan, dtype=np.float32)
+    if not mask.any():
+        return out
+    mf = mask.astype(np.float32)
+    v = np.where(mask, values, 0.0).astype(np.float32)
+    if sigma_px > 0:
+        num = cv2.GaussianBlur(v, (0, 0), float(sigma_px), borderType=cv2.BORDER_REFLECT)
+        den = cv2.GaussianBlur(mf, (0, 0), float(sigma_px), borderType=cv2.BORDER_REFLECT)
+    else:
+        num, den = v, mf
+    ok = mask & (den > 1e-6)
+    out[ok] = num[ok] / den[ok]
+    return out
+
+
+def _touching(blobs: np.ndarray, target: np.ndarray, gap_px: int = 2) -> np.ndarray:
+    """Pixels of the 8-connected components of ``blobs`` that come within ``gap_px`` of
+    ``target`` (a small gap tolerates the few pixels a morphological opening can shave off)."""
+    if not blobs.any() or not target.any():
+        return np.zeros_like(blobs)
+    labels, n = ndi.label(blobs, structure=np.ones((3, 3), dtype=bool))
+    near = cv2.dilate(target.astype(np.uint8), ellipse_kernel(2 * max(gap_px, 1) + 1)) > 0
+    hit = np.zeros(n + 1, dtype=bool)
+    hit[np.unique(labels[near & blobs])] = True
+    hit[0] = False
+    return hit[labels]
+
+
+def refine_masks_with_af(
+    masks: Masks, af_green: np.ndarray, valid: np.ndarray, cfg: dict
+) -> tuple[Masks, float]:
+    """Move whitish "teeth" areas that do not fluoresce like teeth back into the mucosa.
+
+    Physics: tooth enamel and dentin fluoresce brightly under 405 nm excitation, more than oral
+    mucosa. A whitish area that the colour rules called "teeth" but whose AF is no brighter than
+    ``teeth_af_min_ratio`` x the median mucosa green is therefore not tooth: it is most likely a
+    white patch (leukoplakia) or a coating, and dropping it from the AF analysis would be false
+    reassurance. This rescues the white patches that hole filling cannot: very large ones and
+    ones that run out of the frame.
+
+    ``af_green`` is the registered, LINEAR green channel in the WL frame and ``valid`` marks the
+    pixels the registered AF image covers (cfg = analysis.segmentation). Only pixels with valid AF
+    can be judged. The AF green inside the teeth mask is smoothed (Gaussian,
+    ``teeth_af_smoothing_sigma_px``, mucosa values do not bleed in), the dim pixels are opened
+    (``teeth_af_open_px``) so a few pixels of misregistration along a tooth edge do not count,
+    and each remaining connected blob of at least ``teeth_af_min_blob_fraction`` of the image that
+    touches the mucosa (within 2 px) moves into the mucosa (minus specular pixels). A whitish
+    object that does not touch the mucosa (an instrument, a glove) is never moved.
+
+    Returns the refined :class:`Masks` (a new object; the input is not modified; confidence
+    unchanged) and the fraction of the image still excluded as whitish / teeth in blobs that touch
+    the mucosa. Real teeth next to the gums count in that fraction too, so the caller should
+    judge it per site; a large value means "a large white area was not analysed".
+
+    Limitation: hyperkeratotic leukoplakia can fluoresce brightly (keratin), so a bright white
+    patch that colour rules call teeth stays excluded. It is only reported through the returned
+    fraction; a clinician must examine any white area.
+    """
+    mucosa = np.asarray(masks.mucosa, dtype=bool)
+    shape = mucosa.shape
+    green = np.asarray(af_green, dtype=np.float32)
+    if green.ndim == 3:
+        green = green[:, :, 1]
+    valid_m = np.asarray(valid, dtype=bool)
+    if green.shape != shape or valid_m.shape != shape:
+        raise ValueError(
+            f"af_green {green.shape} and valid {valid_m.shape} must match the masks {shape}"
+        )
+    teeth = np.asarray(masks.teeth, dtype=bool) & ~mucosa
+    specular = np.asarray(masks.specular, dtype=bool)
+    n_px = max(int(np.prod(shape)), 1)
+
+    def excluded_fraction(m: np.ndarray, t: np.ndarray) -> float:
+        return float(_touching(t, m).sum()) / n_px
+
+    finite = valid_m & np.isfinite(green)
+    ref_px = green[mucosa & finite]
+    min_ref = int(_cfg(cfg, "teeth_af_min_mucosa_pixels"))
+    if ref_px.size < max(min_ref, 1) or not teeth.any():
+        return replace(masks, teeth=teeth), excluded_fraction(mucosa, teeth)
+    mucosa_level = float(np.median(ref_px))
+    if not np.isfinite(mucosa_level) or mucosa_level <= 0:
+        return replace(masks, teeth=teeth), excluded_fraction(mucosa, teeth)
+
+    judged = teeth & finite
+    smoothed = _masked_gaussian(green, judged, float(_cfg(cfg, "teeth_af_smoothing_sigma_px")))
+    ratio = float(_cfg(cfg, "teeth_af_min_ratio"))
+    with np.errstate(invalid="ignore"):
+        dim = judged & np.isfinite(smoothed) & (smoothed < ratio * mucosa_level)
+    dim = _morph(dim, cv2.MORPH_OPEN, float(_cfg(cfg, "teeth_af_open_px")))
+    min_blob = int(np.ceil(float(_cfg(cfg, "teeth_af_min_blob_fraction")) * n_px))
+    dim = remove_small_components(dim & teeth, max(min_blob, 1))
+    moved = _touching(dim, mucosa)
+    new_mucosa = mucosa | (moved & ~specular)
+    new_teeth = teeth & ~moved
+    background = np.asarray(masks.background, dtype=bool) & ~new_mucosa
+    refined = replace(masks, mucosa=new_mucosa, teeth=new_teeth, background=background)
+    return refined, excluded_fraction(new_mucosa, new_teeth)

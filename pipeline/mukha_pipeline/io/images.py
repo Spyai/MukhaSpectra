@@ -7,19 +7,27 @@ PNG/TIFF keep their full precision, embedded colour profiles (e.g. Display P3 on
 converted to sRGB, and anything unreadable raises :class:`ImageDecodeError` with a message a
 health worker can act on.
 
-GPS and other identifying EXIF fields are deliberately never read.
+Memory is bounded: with ``max_side`` the image is shrunk DURING decoding (JPEG DCT scaling via
+``draft()``, Pillow ``reduce()`` / OpenCV INTER_AREA on integer pixels), so a 48 MP upload never
+becomes a full-resolution float32 array. Analysis runs at 1024 px, so uploads are decoded at
+2048 px (see ``capture.upload``). The original size and the decode scale are recorded.
+
+GPS and other identifying EXIF fields are deliberately never read (and ``io.sanitize`` removes
+them from stored files). The only free-text fields inspected are those that can carry the
+SYNTHETIC label written by ``mukha_pipeline.synthetic``.
 """
 
 from __future__ import annotations
 
 import hashlib
 import io
+import math
 import mimetypes
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePath
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import cv2
 import numpy as np
@@ -33,7 +41,9 @@ try:  # HEIC/HEIF (iPhone default) support
 except ImportError:  # pragma: no cover - pillow-heif is a core dependency
     HEIF_AVAILABLE = False
 
-MAX_IMAGE_PIXELS = 100_000_000  # ~100 MP: above any phone sensor, below decompression-bomb sizes
+# 50 MP: above the default output of phone cameras (12 MP binned, 48 MP full sensor) and small
+# enough that one decode cannot exhaust a camp laptop's memory.
+MAX_IMAGE_PIXELS = 50_000_000
 MIN_SIDE_PX = 64  # smaller images cannot carry enough mucosa detail for any analysis step
 
 # Pillow warns above MAX_IMAGE_PIXELS and raises DecompressionBombError above twice that. We also
@@ -56,6 +66,29 @@ _EXIF_OFFSET_TIME_ORIGINAL = 36881
 _TIFF_DATETIME = 306
 _TIFF_MAKE = 271
 _TIFF_MODEL = 272
+_TIFF_IMAGE_DESCRIPTION = 270
+_TIFF_SOFTWARE = 305
+_TIFF_ARTIST = 315
+_EXIF_USER_COMMENT = 37510
+
+# Free-text fields that the synthetic generator (or another tool) may use to label an image as
+# SYNTHETIC. Only the field names are recorded, never their content.
+_SYNTHETIC_EXIF_FIELDS: dict[int, str] = {
+    _TIFF_MAKE: "Make",
+    _TIFF_MODEL: "Model",
+    _TIFF_IMAGE_DESCRIPTION: "ImageDescription",
+    _TIFF_SOFTWARE: "Software",
+    _TIFF_ARTIST: "Artist",
+    _EXIF_USER_COMMENT: "UserComment",
+}
+SYNTHETIC_TOKEN = "synthetic"
+
+RawWhiteBalance = Literal["camera", "unity"]
+# LibRaw parameters: the sRGB transfer curve (power 2.4, toe slope 12.92), exactly what JPEG / PNG
+# captures carry, so the pipeline's sRGB linearisation treats every format alike; and no per-image
+# auto-brightening (it would rescale each capture by its own histogram and erase real exposure and
+# fluorescence differences between a site and its contralateral reference).
+RAW_GAMMA = (2.4, 12.92)
 
 
 class ImageDecodeError(ValueError):
@@ -82,6 +115,14 @@ class LoadedImage:
     height_px: int
     bit_depth: int = 8  # bits per channel of the decoded source
     notes: list[str] = field(default_factory=list)  # decoding decisions worth recording
+    # Size of the capture as stored in the file (EXIF orientation applied), before any
+    # decode-time downscaling; ``decode_scale`` = decoded width / original width.
+    original_width_px: int | None = None
+    original_height_px: int | None = None
+    decode_scale: float = 1.0
+    orientation: int = 1  # EXIF orientation that was applied (1 = none)
+    # Metadata fields that label the image SYNTHETIC (e.g. "exif:Make", "png:Description").
+    synthetic_markers: list[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------------------------
@@ -90,17 +131,31 @@ class LoadedImage:
 
 
 def load_image_bytes(
-    data: bytes, filename: str | None = None, *, max_pixels: int = MAX_IMAGE_PIXELS
+    data: bytes,
+    filename: str | None = None,
+    *,
+    max_pixels: int = MAX_IMAGE_PIXELS,
+    max_side: int | None = None,
+    raw_white_balance: RawWhiteBalance = "camera",
 ) -> LoadedImage:
     """Decode JPEG, PNG, TIFF, HEIC/HEIF or DNG bytes into float32 RGB in [0, 1].
 
+    ``max_side`` shrinks the image during decoding so its longest side is at most that many
+    pixels (never upscales). ``raw_white_balance`` applies to DNG only: ``"camera"`` uses the
+    camera's white balance (white-light photos), ``"unity"`` keeps the sensor's channel ratios
+    (autofluorescence and dark frames, whose green/red ratio is the measurement).
+
     Raises :class:`ImageDecodeError` with a plain-language message on any failure.
     """
+    if max_side is not None and max_side < MIN_SIDE_PX:
+        raise ValueError(f"max_side must be at least {MIN_SIDE_PX} px")
+    if raw_white_balance not in get_args(RawWhiteBalance):
+        raise ValueError(f"raw_white_balance must be one of {get_args(RawWhiteBalance)}")
     if not data:
         raise ImageDecodeError("The file is empty.")
     digest = hashlib.sha256(data).hexdigest()
     if _has_raw_extension(filename):
-        return _load_raw(data, digest, max_pixels)
+        return _load_raw(data, digest, max_pixels, max_side, raw_white_balance)
 
     try:
         with warnings.catch_warnings():
@@ -118,21 +173,29 @@ def load_image_bytes(
 
     with pil:
         if pil.format == "TIFF" and _is_dng(pil):
-            return _load_raw(data, digest, max_pixels)
+            return _load_raw(data, digest, max_pixels, max_side, raw_white_balance)
         _check_size(pil.width, pil.height, max_pixels)
         high_bit = _is_high_bit_colour(pil)  # before EXIF: reading PNG EXIF loads the pixels
         exif = exif_from_pil(pil)
+        orientation = _orientation(pil)
+        original_w, original_h = _oriented_size(pil.width, pil.height, orientation)
         mime = _mime_type(pil.format, filename)
         try:
-            image, bit_depth, notes = _decode_pil(pil, data, high_bit)
+            image, bit_depth, notes = _decode_pil(pil, data, high_bit, orientation, max_side)
         except ImageDecodeError:
             raise
         except Image.DecompressionBombError as err:
             raise ImageDecodeError(_too_large_message(None, None, max_pixels)) from err
         except Exception as err:
             raise ImageDecodeError(_DAMAGED_MESSAGE) from err
+        markers = synthetic_markers(pil)  # after decoding: PNG text after IDAT is read then
 
     h, w = image.shape[:2]
+    if (w, h) != (original_w, original_h):
+        notes.append(
+            f"Downscaled at decode from {original_w} x {original_h} to {w} x {h} px "
+            f"(longest side {max_side} px)."
+        )
     return LoadedImage(
         image=image,
         exif=exif,
@@ -142,6 +205,11 @@ def load_image_bytes(
         height_px=int(h),
         bit_depth=bit_depth,
         notes=notes,
+        original_width_px=int(original_w),
+        original_height_px=int(original_h),
+        decode_scale=float(w) / float(original_w) if original_w else 1.0,
+        orientation=orientation,
+        synthetic_markers=markers,
     )
 
 
@@ -185,19 +253,95 @@ def _mime_type(fmt: str | None, filename: str | None) -> str:
     return guessed or "application/octet-stream"
 
 
-def _decode_pil(pil: Image.Image, data: bytes, high_bit: bool) -> tuple[np.ndarray, int, list[str]]:
-    """Pixels -> float32 RGB [0, 1] with EXIF orientation applied."""
+def _oriented_size(width: int, height: int, orientation: int) -> tuple[int, int]:
+    return (height, width) if orientation in (5, 6, 7, 8) else (width, height)
+
+
+def _needs_shrink(width: int, height: int, max_side: int | None) -> bool:
+    return max_side is not None and max(width, height) > max_side
+
+
+def _target_size(width: int, height: int, max_side: int) -> tuple[int, int]:
+    """(width, height) after shrinking so the longest side is ``max_side`` (as resize_max_side)."""
+    if max(width, height) <= max_side:
+        return width, height
+    factor = max_side / float(max(width, height))
+    return (
+        max(1, min(max_side, int(round(width * factor)))),
+        max(1, min(max_side, int(round(height * factor)))),
+    )
+
+
+def _fit(arr: np.ndarray, original: tuple[int, int], max_side: int | None) -> np.ndarray:
+    """Bring a (possibly pre-reduced) decode to exactly the size a full decode + resize_max_side
+    would give, so every decoder path agrees on the working size."""
+    if max_side is None:
+        return arr
+    target = _target_size(original[0], original[1], max_side)
+    if (arr.shape[1], arr.shape[0]) == target:
+        return arr
+    out = cv2.resize(np.ascontiguousarray(arr), target, interpolation=cv2.INTER_AREA)
+    return out[..., None] if arr.ndim == 3 and out.ndim == 2 else out
+
+
+def _decode_pil(
+    pil: Image.Image,
+    data: bytes,
+    high_bit: bool,
+    orientation: int = 1,
+    max_side: int | None = None,
+) -> tuple[np.ndarray, int, list[str]]:
+    """Pixels -> float32 RGB [0, 1] with EXIF orientation applied, shrunk to ``max_side``."""
     notes: list[str] = []
+    original = _oriented_size(pil.width, pil.height, orientation)
     if high_bit:
         # Pillow truncates 16-bit colour to 8 bits; OpenCV keeps the full precision.
-        arr = _decode_high_bit_colour(data)
-        arr = apply_exif_orientation(arr, _orientation(pil))
-        return _finalise(arr), 16, notes
+        arr = _decode_high_bit_colour(data, max_side)
+        arr = apply_exif_orientation(arr, orientation)
+        return _finalise(_fit(arr, original, max_side)), 16, notes
 
+    if pil.format == "JPEG" and _needs_shrink(pil.width, pil.height, max_side):
+        # DCT-domain scaling (1/2, 1/4, 1/8): the decoder never produces the full-size image.
+        factor = float(max_side) / float(max(pil.width, pil.height))  # type: ignore[arg-type]
+        pil.draft(pil.mode, (math.ceil(pil.width * factor), math.ceil(pil.height * factor)))
     oriented = ImageOps.exif_transpose(pil)
+    forced_depth: int | None = None
+    if _needs_shrink(oriented.width, oriented.height, max_side):
+        oriented, forced_depth = _reduce_pil(oriented, max_side)  # type: ignore[arg-type]
     oriented = _to_srgb(oriented, notes)
+    if (
+        max_side is not None
+        and oriented.mode in ("RGB", "L")
+        and _needs_shrink(oriented.width, oriented.height, max_side)
+    ):
+        # Final INTER_AREA step on the 8-bit pixels, so no float copy is ever larger than the
+        # target size.
+        target = _target_size(original[0], original[1], max_side)
+        small = cv2.resize(np.asarray(oriented), target, interpolation=cv2.INTER_AREA)
+        oriented = Image.fromarray(small)
     arr, bit_depth = _pil_to_float_rgb(oriented)
-    return _finalise(arr), bit_depth, notes
+    return _finalise(_fit(arr, original, max_side)), forced_depth or bit_depth, notes
+
+
+def _reduce_pil(pil: Image.Image, max_side: int) -> tuple[Image.Image, int | None]:
+    """Integer box reduction in Pillow (8/16-bit pixels, before any float copy).
+
+    The result keeps a longest side >= ``max_side``; the exact size is reached afterwards with
+    INTER_AREA. Returns the image and the source bit depth when the mode had to be widened.
+    """
+    forced_depth: int | None = None
+    if pil.mode == "P":
+        pil = pil.convert("RGBA" if "transparency" in pil.info else "RGB")
+    elif pil.mode == "PA":
+        pil = pil.convert("RGBA")
+    elif pil.mode == "1":
+        pil = pil.convert("L")
+    elif pil.mode.startswith("I;16"):
+        pil, forced_depth = pil.convert("I"), 16
+    factor = max(pil.width, pil.height) // max_side
+    if factor >= 2:
+        pil = pil.reduce(factor)
+    return pil, forced_depth
 
 
 def _is_high_bit_colour(pil: Image.Image) -> bool:
@@ -206,14 +350,18 @@ def _is_high_bit_colour(pil: Image.Image) -> bool:
     return any(";16" in str(getattr(tile, "args", "")) for tile in (pil.tile or []))
 
 
-def _decode_high_bit_colour(data: bytes) -> np.ndarray:
+def _decode_high_bit_colour(data: bytes, max_side: int | None = None) -> np.ndarray:
     raw = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
     if raw is None or raw.ndim != 3 or raw.shape[2] not in (3, 4):
         raise ImageDecodeError(_DAMAGED_MESSAGE)
     scale = float(np.iinfo(raw.dtype).max) if np.issubdtype(raw.dtype, np.integer) else 1.0
+    if max_side is not None and raw.shape[2] == 3:
+        raw, _ = resize_max_side(raw, max_side)  # INTER_AREA on the 16-bit integers
     arr = raw.astype(np.float32) / scale
     if arr.shape[2] == 4:  # BGRA: composite onto black, like the 8-bit path
         arr = arr[..., :3] * arr[..., 3:4]
+        if max_side is not None:  # (rare) alpha images are composited before shrinking
+            arr, _ = resize_max_side(arr, max_side)
     return arr[..., ::-1]  # BGR -> RGB
 
 
@@ -294,8 +442,15 @@ def _finalise(arr: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.clip(out, 0.0, 1.0), dtype=np.float32)
 
 
-def _load_raw(data: bytes, digest: str, max_pixels: int) -> LoadedImage:
-    """Decode DNG with rawpy (LibRaw): camera white balance, 16-bit output, orientation applied."""
+def _load_raw(
+    data: bytes,
+    digest: str,
+    max_pixels: int,
+    max_side: int | None = None,
+    white_balance: RawWhiteBalance = "camera",
+) -> LoadedImage:
+    """Decode DNG with rawpy (LibRaw): 16-bit output, sRGB transfer curve, no auto-brightening,
+    orientation applied; camera white balance or none (``white_balance="unity"``)."""
     try:
         import rawpy
     except ImportError as err:
@@ -303,20 +458,42 @@ def _load_raw(data: bytes, digest: str, max_pixels: int) -> LoadedImage:
             "DNG support needs the optional 'raw' extra (pip install 'mukha-pipeline[raw]'). "
             "Please upload a JPEG, PNG or HEIC instead."
         ) from err
+    params: dict[str, Any] = {"output_bps": 16, "no_auto_bright": True, "gamma": RAW_GAMMA}
+    if white_balance == "camera":
+        params["use_camera_wb"] = True
+    else:
+        params.update(use_camera_wb=False, use_auto_wb=False, user_wb=[1.0, 1.0, 1.0, 1.0])
     try:
         with rawpy.imread(io.BytesIO(data)) as raw:
             sizes = raw.sizes
-            _check_size(int(sizes.width), int(sizes.height), max_pixels)
-            rgb = raw.postprocess(use_camera_wb=True, output_bps=16)
+            width, height = int(sizes.width), int(sizes.height)
+            _check_size(width, height, max_pixels)
+            original_w, original_h = _oriented_size(
+                width, height, 6 if int(getattr(sizes, "flip", 0) or 0) in (5, 6) else 1
+            )
+            # Demosaic at half resolution (2x2 binning) when that still covers the target size.
+            params["half_size"] = max_side is not None and max(width, height) >= 2 * max_side
+            rgb = raw.postprocess(**params)
     except ImageDecodeError:
         raise
     except Exception as err:
         raise ImageDecodeError(
             "The DNG file could not be decoded. It may be damaged or from an unsupported camera."
         ) from err
-    image = _finalise(np.asarray(rgb, dtype=np.float32) / 65535.0)
+    arr = _fit(np.asarray(rgb), (original_w, original_h), max_side)  # INTER_AREA on uint16
+    image = _finalise(arr.astype(np.float32) / 65535.0)
     h, w = image.shape[:2]
     _check_size(int(w), int(h), max_pixels)
+    if white_balance == "camera":
+        note = "Decoded from DNG raw with the camera's white balance"
+    else:
+        note = "Decoded from DNG raw without white balance (sensor channel ratios kept)"
+    notes = [f"{note}, sRGB transfer curve, no auto-brightening."]
+    if (w, h) != (original_w, original_h):
+        notes.append(
+            f"Downscaled at decode from {original_w} x {original_h} to {w} x {h} px "
+            f"(longest side {max_side} px)."
+        )
     return LoadedImage(
         image=image,
         exif=_exif_from_bytes(data),
@@ -325,7 +502,11 @@ def _load_raw(data: bytes, digest: str, max_pixels: int) -> LoadedImage:
         width_px=int(w),
         height_px=int(h),
         bit_depth=16,
-        notes=["Decoded from DNG raw with the camera's white balance."],
+        notes=notes,
+        original_width_px=int(original_w),
+        original_height_px=int(original_h),
+        decode_scale=float(w) / float(original_w) if original_w else 1.0,
+        synthetic_markers=_synthetic_markers_from_bytes(data),
     )
 
 
@@ -342,6 +523,60 @@ def _exif_from_bytes(data: bytes) -> ExifInfo:
                 return exif_from_pil(pil)
     except Exception:
         return ExifInfo()
+
+
+def _synthetic_markers_from_bytes(data: bytes) -> list[str]:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with Image.open(io.BytesIO(data)) as pil:
+                return synthetic_markers(pil)
+    except Exception:
+        return []
+
+
+def _mentions_synthetic(value: Any) -> bool:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    return isinstance(value, str) and SYNTHETIC_TOKEN in value.lower()
+
+
+def synthetic_markers(pil: Image.Image) -> list[str]:
+    """Names of the metadata fields that label this image SYNTHETIC (never raises).
+
+    Looks at the EXIF text fields the synthetic generator writes (Make, Model, ImageDescription,
+    Software, ...), PNG text chunks, JPEG comments and XMP. A real photo has none of these.
+    """
+    found: list[str] = []
+    try:
+        base = pil.getexif()
+        try:
+            sub: Any = base.get_ifd(ExifTags.IFD.Exif)
+        except Exception:
+            sub = {}
+        for code, name in _SYNTHETIC_EXIF_FIELDS.items():
+            value = base.get(code)
+            if value is None and sub:
+                value = sub.get(code)
+            if _mentions_synthetic(value):
+                found.append(f"exif:{name}")
+    except Exception:
+        pass
+    info = getattr(pil, "info", {}) or {}
+    for key, value in info.items():
+        if key in ("exif", "icc_profile"):
+            continue
+        if not _mentions_synthetic(value):
+            continue
+        if key in ("xmp", "XML:com.adobe.xmp"):
+            found.append("xmp")
+        elif key == "comment":
+            found.append("jpeg:comment")
+        elif pil.format == "PNG":
+            found.append(f"png:{key}")
+        else:
+            found.append(f"info:{key}")
+    return sorted(set(found))
 
 
 def exif_from_pil(pil: Image.Image) -> ExifInfo:

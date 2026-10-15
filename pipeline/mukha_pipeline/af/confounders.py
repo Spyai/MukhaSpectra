@@ -1,14 +1,24 @@
 """Things that darken the AF image without a tissue change, flagged per FVL region.
 
 * Porphyrin red: bacteria in plaque or tongue coating make protoporphyrin/coproporphyrin, which
-  fluoresce red (~635 nm) and cover the tissue's green glow.
-* Pigmentation: melanin absorbs both the 405 nm excitation and the green emission.
-* Blood: haemoglobin absorbs strongly at 415 nm (Soret band) and 542/577 nm, so haemorrhage or
-  inflammation looks dark. Diascopy (pressing a glass slide) separates the two.
+  fluoresce red (~635 nm) and cover the tissue's green glow. Only an EXCESS of red counts: the
+  red channel must be well above this image's typical mucosa red. A high red/green ratio alone is
+  not enough, because in a deep fluorescence loss green falls more than red, so red/green rises
+  with no red emission at all (and a raised red/green is itself reported in dysplasia).
+* Pigmentation: melanin absorbs both the 405 nm excitation and the green emission. Melanin brown
+  has little redness (Lab a* about 8-17), so reddish pixels are never treated as pigment.
+* Blood / red area: haemoglobin absorbs strongly at 415 nm (Soret band) and 542/577 nm, so
+  haemorrhage or inflammation looks dark. A dark reddish area may equally be a red patch
+  (erythroplakia), so the triage rules never discount this class; they keep the lesion at least
+  MODERATE instead. Diascopy (pressing a glass slide) helps tell blood from tissue change.
 * Glare: specular highlights carry no tissue signal at all.
 
 A flag lowers how much an FVL region counts in the triage rules but never removes it: a red patch
 that also looks like blood still needs a clinician. Notes say "may", never "is".
+
+AF thresholds are relative to the same image's mucosa (the AF image is linear light, scaled by
+exposure and calibration), except the saturation test, which is about the sensor clipping and is
+therefore judged on the unscaled values (pass ``intensity_scale``).
 """
 
 from __future__ import annotations
@@ -19,7 +29,15 @@ import cv2
 import numpy as np
 from scipy import ndimage as ndi
 
-from mukha_pipeline.af._common import CONFOUNDER_DEFAULTS, as_bool_mask, disk, get, to_float_rgb
+from mukha_pipeline.af._common import (
+    CONFOUNDER_DEFAULTS,
+    as_bool_mask,
+    disk,
+    finite_median,
+    get,
+    masked_smooth,
+    to_float_rgb,
+)
 from mukha_pipeline.schema.models import ConfounderFlag, ConfounderType
 from mukha_pipeline.types import AFMaps, FVLOutput, Masks
 
@@ -64,37 +82,82 @@ def _section(cfg: dict | None, key: str) -> dict:
     return sub if isinstance(sub, dict) else cfg
 
 
+def _valid_scale(intensity_scale: float) -> float:
+    """Same fallback as :func:`compute_af_maps`: non-finite or non-positive -> 1.0."""
+    try:
+        scale = float(intensity_scale)
+    except (TypeError, ValueError):
+        return 1.0
+    return scale if np.isfinite(scale) and scale > 0 else 1.0
+
+
+def porphyrin_mask(maps: AFMaps, mucosa: np.ndarray, cfg: dict | None) -> np.ndarray:
+    """Red porphyrin fluorescence: a red EXCESS over this image's typical mucosa red.
+
+    A pixel is flagged when its (lightly smoothed) red is at least ``porphyrin_red_rel_min`` x
+    the median mucosa red AND red/green >= ``porphyrin_red_over_green_min``. The red reference
+    is floored at ``porphyrin_red_ref_min_of_green`` x the median mucosa green, so a near-zero red
+    channel (noise only) cannot make every dark pixel look like porphyrin. Both tests are ratios,
+    so the result does not depend on exposure or calibration scaling. Only mucosa is evaluated.
+    """
+    c = cfg or {}
+    shape = maps.green.shape
+    muc = as_bool_mask(mucosa, shape, "mucosa") & np.isfinite(maps.red) & np.isfinite(maps.green)
+    out = np.zeros(shape, dtype=bool)
+    med_red, med_green = finite_median(maps.red[muc]), finite_median(maps.green[muc])
+    if med_red is None or med_green is None:
+        return out
+    floor = float(get(c, "porphyrin_red_ref_min_of_green", CONFOUNDER_DEFAULTS)) * med_green
+    red_ref = max(med_red, floor)
+    if not np.isfinite(red_ref) or red_ref <= 0:
+        return out
+    sigma = float(get(c, "porphyrin_smoothing_sigma_px", CONFOUNDER_DEFAULTS))
+    red = masked_smooth(maps.red, muc, sigma)
+    green = masked_smooth(maps.green, muc, sigma)
+    rel_min = float(get(c, "porphyrin_red_rel_min", CONFOUNDER_DEFAULTS))
+    ratio_min = float(get(c, "porphyrin_red_over_green_min", CONFOUNDER_DEFAULTS))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ratio = red / np.maximum(green, 1e-6)
+        out = muc & np.isfinite(red) & (red >= rel_min * red_ref) & (ratio >= ratio_min)
+    return out
+
+
 def confounder_masks(
-    wl: np.ndarray, maps: AFMaps, masks: Masks, cfg: dict | None
+    wl: np.ndarray,
+    maps: AFMaps,
+    masks: Masks,
+    cfg: dict | None,
+    *,
+    intensity_scale: float = 1.0,
 ) -> ConfounderMasks:
-    """Compute confounder masks (``cfg`` = the ``confounders`` section)."""
+    """Compute confounder masks (``cfg`` = the ``confounders`` section).
+
+    ``intensity_scale`` is the factor :func:`compute_af_maps` multiplied the AF image by
+    (exposure x calibration). It is only used to judge AF saturation on the sensor's own scale.
+    """
     shape = maps.green.shape
     img = to_float_rgb(wl)
     if img.shape[:2] != shape:
         raise ValueError(f"wl has shape {img.shape[:2]}, expected {shape}")
     c = cfg or {}
+    mucosa = as_bool_mask(masks.mucosa, shape, "masks.mucosa")
 
-    with np.errstate(invalid="ignore", divide="ignore"):
-        red, green = maps.red, maps.green
-        ratio = red / np.maximum(green, 1e-6)
-        porphyrin = (
-            np.isfinite(red)
-            & np.isfinite(green)
-            & (ratio >= float(get(c, "porphyrin_red_over_green_min", CONFOUNDER_DEFAULTS)))
-            & (red >= float(get(c, "porphyrin_red_min", CONFOUNDER_DEFAULTS)))
-        )
+    porphyrin = porphyrin_mask(maps, mucosa, c)
 
     lab = cv2.cvtColor(img, cv2.COLOR_RGB2Lab)
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
     lab_l, lab_a = lab[:, :, 0], lab[:, :, 1]
     hue, sat = hsv[:, :, 0] / 2.0, hsv[:, :, 1]
+    # Dark and reddish = blood / red area (possible red patch): never discounted by the rules.
     blood = (lab_a >= float(get(c, "blood_lab_a_min", CONFOUNDER_DEFAULTS))) & (
         lab_l <= float(get(c, "blood_lab_l_max", CONFOUNDER_DEFAULTS))
     )
     h_lo, h_hi = (float(v) for v in get(c, "pigmentation_hue_range", CONFOUNDER_DEFAULTS))
-    # Blood takes precedence: the same dark-red pixel must not be discounted twice.
+    # Pigment is dark brown with little redness. Reddish pixels (a* >= pigmentation_lab_a_max)
+    # are never pigment, and blood takes precedence so a pixel is not discounted twice.
     pigmentation = (
         (lab_l <= float(get(c, "pigmentation_lab_l_max", CONFOUNDER_DEFAULTS)))
+        & (lab_a < float(get(c, "pigmentation_lab_a_max", CONFOUNDER_DEFAULTS)))
         & (hue >= h_lo)
         & (hue <= h_hi)
         & (sat >= float(get(c, "pigmentation_saturation_min", CONFOUNDER_DEFAULTS)))
@@ -102,8 +165,9 @@ def confounder_masks(
     )
 
     sat_level = float(get(c, "af_saturation_min", CONFOUNDER_DEFAULTS))
+    scale = _valid_scale(intensity_scale)
     with np.errstate(invalid="ignore"):
-        af_max = np.fmax(np.fmax(maps.red, maps.green), maps.blue)
+        af_max = np.fmax(np.fmax(maps.red, maps.green), maps.blue) / scale
         af_saturated = np.isfinite(af_max) & (af_max >= sat_level)
     glare = as_bool_mask(masks.specular, shape, "masks.specular") | af_saturated
     return ConfounderMasks(
@@ -134,16 +198,23 @@ def region_overlaps(
 
 
 def flag_confounders(
-    fvl: FVLOutput, wl: np.ndarray, maps: AFMaps, masks: Masks, cfg: dict | None
+    fvl: FVLOutput,
+    wl: np.ndarray,
+    maps: AFMaps,
+    masks: Masks,
+    cfg: dict | None,
+    *,
+    intensity_scale: float = 1.0,
 ) -> FVLOutput:
     """Annotate each FVL region with confounders (``cfg`` = full analysis config).
 
     Returns a new :class:`FVLOutput`; the input is not modified. Also sets
     ``analysis.porphyrin_red_fraction`` (share of analysable mucosa with red fluorescence), which
-    is reported even when no region was found.
+    is reported even when no region was found. ``intensity_scale`` must be the value passed to
+    :func:`compute_af_maps` so AF saturation (glare) is judged on the sensor's own scale.
     """
     c = _section(cfg, "confounders")
-    conf = confounder_masks(wl, maps, masks, c)
+    conf = confounder_masks(wl, maps, masks, c, intensity_scale=intensity_scale)
     shape = maps.green.shape
     mucosa = as_bool_mask(masks.mucosa, shape, "masks.mucosa") & np.isfinite(maps.green)
     n_mucosa = int(mucosa.sum())

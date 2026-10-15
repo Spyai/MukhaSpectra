@@ -20,7 +20,13 @@ from app.reports import labels as lb
 from app.reports.charts import risk_icon_svg, score_gauge_svg, spectral_plot_svg
 from app.reports.images import EmbeddedImage, embed_artifact, svg_data_uri, union_box
 from app.reports.qr import qr_data_uri
-from app.reports.ranking import lesion_numbers, ordered_lesions
+from app.reports.ranking import (
+    flagged_reference_sites,
+    lesion_numbers,
+    ordered_lesions,
+    severity_rank,
+    visual_seen,
+)
 from app.reports.sitemap import render_site_map_svg
 from app.reports.types import ArtifactReader, Facility, PatientIdentity, ReportOptions
 from mukha_pipeline.schema.models import (
@@ -42,6 +48,7 @@ from mukha_pipeline.schema.models import (
     ScreeningResult,
     SiteResult,
     SiteRole,
+    SpectralClassifierOutput,
     SpectralReadingResult,
     WLAnalysis,
 )
@@ -63,6 +70,10 @@ SYMPTOM_SITE_NOTE = "patient-reported; site not recorded — examine the whole m
 SCREENING_AID_TITLE = "Screening aid — not a diagnosis"
 SIGNATURE_NOTE = "(recorded in MukhaSpectra — not a digital signature)"
 FACILITY_MISSING = "Referral facility not configured — contact the screening programme"
+SPECTRAL_PLACEHOLDER_STATUS = "Heuristic placeholder (not a trained model, not validated)"
+REFERENCE_FLAGGED_ROLE = "Reference side (comparison)"
+WHY_THIS_LEVEL = "(see “Why this level”)"
+RISK_FACTORS_REASON = "the patient's risk factors"
 IST_FALLBACK = timezone(timedelta(hours=5, minutes=30), "IST")
 
 PROVENANCE_NOTICE: dict[DataProvenance, tuple[str, str]] = {
@@ -182,6 +193,7 @@ class SpectralView:
     classifier_model: str | None
     notes: list[str] = field(default_factory=list)
     shown_in: int | None = None  # finding number whose block already shows this reading
+    delta_note: str | None = None  # how the Δ column is defined (when it has values)
 
 
 @dataclass
@@ -220,6 +232,8 @@ class LesionView:
     wl: WLView
     factors: list[FactorRow]
     score: str
+    # Set when the overall level is above this finding's own level (says why).
+    level_context: str | None = None
 
 
 @dataclass
@@ -252,11 +266,18 @@ class SiteRow:
     calibration_ok: bool
     badge: Badge
     reference_only: bool = False
+    # Reference-only site with a visual flag, a finding or a MODERATE/HIGH level.
+    reference_flagged: bool = False
 
     @property
     def show_level(self) -> bool:
-        """A healthy reference site shows "Reference only" (as on the map), not a LOW pill."""
-        return not (self.reference_only and self.badge.level == RiskLevel.LOW.value)
+        """An unflagged reference site shows "Reference only" (as on the map), not a LOW pill;
+        a flagged one shows its level."""
+        return not (
+            self.reference_only
+            and not self.reference_flagged
+            and self.badge.level == RiskLevel.LOW.value
+        )
 
 
 @dataclass
@@ -268,13 +289,31 @@ class Coverage:
     reference_only: int
     not_examined: list[str]
     not_assessed: list[str]
+    reference_flagged: int = 0
+    not_assessed_qc: int = 0  # of not_assessed: failed QC (the rest: software error)
 
     @property
     def summary(self) -> str:
+        # The device never checks that a reference site is unaffected: never "healthy".
         text = f"Device coverage: {self.imaged} of {self.total} sites"
         if self.reference_only:
-            text += f" ({self.reference_only} used only as a healthy reference)"
+            n = self.reference_only
+            text += f" ({n} used only as a comparison reference"
+            k = self.reference_flagged
+            if k:
+                flagged = "it has a flagged finding" if n == 1 else f"{k} of them flagged"
+                text += f"; {flagged} — see the findings"
+            text += ")"
         return text + "."
+
+    @property
+    def not_assessed_reason(self) -> str:
+        """Why the not-assessed sites were not assessed ("QC failed", "software error")."""
+        if self.not_assessed_qc >= len(self.not_assessed):
+            return "QC failed"
+        if self.not_assessed_qc == 0:
+            return "software error"
+        return "QC failed or software error"
 
 
 @dataclass
@@ -450,13 +489,19 @@ def _wl_view(site: SiteResult | None, reader: ArtifactReader) -> WLView:
     return WLView(text, False, [], model_text, wl.note, None)
 
 
-def _classifier_status(status: str) -> str:
-    return {
-        "placeholder": "Placeholder heuristic, not validated",
-        "ok": "Model output, not clinically validated",
-        "model_unavailable": "Not available — not used",
-        "skipped_qc_failed": "Skipped — reading failed QC",
-    }.get(status, status)
+def _classifier_status(clf: SpectralClassifierOutput) -> str:
+    """Honest status of a spectral classifier output.
+
+    Only a trained model (``ModelStatus.AVAILABLE``) is called "model output"; the Phase 1
+    rule-based classifier reports ``status="ok"`` but is a heuristic placeholder.
+    """
+    if clf.status == "model_unavailable":
+        return "Not available — not used"
+    if clf.status == "skipped_qc_failed":
+        return "Skipped — reading failed QC"
+    if clf.status == "ok" and clf.model.status == ModelStatus.AVAILABLE:
+        return "Model output, not clinically validated"
+    return SPECTRAL_PLACEHOLDER_STATUS
 
 
 def _cited_features(texts: list[str]) -> set[str]:
@@ -493,17 +538,17 @@ def _spectral_view(
     if reading.features is not None:
         lf = reading.features.model_dump()
         rf = reference.features.model_dump() if reference and reference.features else {}
+        # Only the pipeline's quotient-based delta is shown. A plain lesion-minus-reference
+        # difference of the features depends on the probe's LED and filters, so there is no
+        # fallback: no pipeline delta, no Δ.
         df = reading.delta_vs_reference.model_dump() if reading.delta_vs_reference else {}
         for key, name in lb.SPECTRAL_FEATURE_TEXT.items():
-            delta = df.get(key)
-            if delta is None and key in rf:
-                delta = lf[key] - rf[key]
             features.append(
                 FeatureRow(
                     name,
                     lb.num(lf.get(key), 2),
                     lb.num(rf.get(key), 2),
-                    lb.signed(delta, 2) if delta is not None else lb.DASH,
+                    _delta_text(key, df.get(key)),
                     cited=key in cited,
                 )
             )
@@ -535,7 +580,7 @@ def _spectral_view(
         classifier_label=(
             lb.SPECTRAL_LABEL_TEXT.get(clf.label, clf.label) if clf and clf.label else None
         ),
-        classifier_status=_classifier_status(clf.status) if clf else "Not run",
+        classifier_status=_classifier_status(clf) if clf else "Not run",
         # A placeholder heuristic's score invites over-reading: show the label and status only.
         classifier_score=(
             lb.num(clf.suspicion_score)
@@ -548,7 +593,17 @@ def _spectral_view(
         classifier_reasons=list(clf.reasons) if clf else [],
         classifier_model=f"{clf.model.name} {clf.model.version}" if clf else None,
         notes=notes,
+        delta_note=lb.SPECTRAL_DELTA_NOTE if reading.delta_vs_reference is not None else None,
     )
+
+
+def _delta_text(key: str, delta: float | None) -> str:
+    """Δ cell: a ratio delta is a relative change (%), the others are plain signed numbers."""
+    if delta is None:
+        return lb.DASH
+    if key.startswith("ratio_"):
+        return lb.signed_pct(delta, 1)
+    return lb.signed(delta, 3 if key == "hb_absorption_proxy" else 2)
 
 
 def _lesion_view(
@@ -559,6 +614,7 @@ def _lesion_view(
     readings_by_id: dict[str, SpectralReadingResult],
     reader: ArtifactReader,
     heatmap_scale: HeatmapScale | None = None,
+    level_context: str | None = None,
 ) -> LesionView:
     site = sites.get(OralSite(lesion.site))
     regions: list[FVLRegion] = []
@@ -617,12 +673,7 @@ def _lesion_view(
             f"({lb.pct(c.overlap_fraction, 0)} overlap): {c.note}"
         )
 
-    visual = "no lesion recorded"
-    if site is not None and site.visual_flag.lesion_seen:
-        appearance = ", ".join(a.value.replace("_", " ") for a in site.visual_flag.appearance)
-        visual = f"Seen by health worker: {appearance or 'lesion'}"
-        if site.visual_flag.description:
-            visual += f" — “{site.visual_flag.description}”"
+    visual = _visual_text(site)
 
     spectral_ids = list(lesion.spectral_reading_ids)
     primaries = [
@@ -655,7 +706,99 @@ def _lesion_view(
         wl=_wl_view(site, reader),
         factors=_factor_rows(lesion.contributing_factors),
         score=lb.num(lesion.score, 1),
+        level_context=level_context,
     )
+
+
+def _visual_text(site: SiteResult | None) -> str:
+    """What the health worker recorded at the site.
+
+    "no lesion recorded" only when neither the checkbox nor an appearance was recorded (the
+    pipeline counts an appearance as a lesion seen); a free-text note is always printed.
+    """
+    if site is None:
+        return "no lesion recorded"
+    flag = site.visual_flag
+    note = flag.description.strip() if flag.description else ""
+    if not visual_seen(flag):
+        text = "no lesion recorded"
+        return f"{text} · health-worker note: “{note}”" if note else text
+    appearance = ", ".join(a.value.replace("_", " ") for a in flag.appearance)
+    text = f"Seen by health worker: {appearance or 'lesion'}"
+    return f"{text} — “{note}”" if note else text
+
+
+def _override_floor(f: ContributingFactor) -> RiskLevel | None:
+    """Floor level named in a red-flag factor's detail ("… level is at least HIGH.")."""
+    found = re.findall(r"\b(LOW|MODERATE|HIGH)\b", f.detail or "")
+    return RiskLevel(found[-1]) if found else None
+
+
+def _raised_because(
+    lesion: LesionAssessment,
+    result: ScreeningResult,
+    numbers: dict[str, int],
+    coverage: Coverage,
+) -> list[str]:
+    """Why the overall level is above ``lesion``'s own level ([] when it is not)."""
+    tri = result.triage
+    overall = RiskLevel(tri.overall_risk_level)
+    own = RiskLevel(lesion.risk_level)
+    if severity_rank(overall) <= severity_rank(own):
+        return []
+    if overall == RiskLevel.INCONCLUSIVE:
+        if coverage.not_assessed:
+            return ["sites the device could not assess"]
+        return ["quality-control problems (see section 5)"]
+    reasons: list[str] = []
+    higher = sorted(
+        numbers[les.lesion_id]
+        for les in result.lesions
+        if les.lesion_id != lesion.lesion_id
+        and les.lesion_id in numbers
+        and severity_rank(les.risk_level) >= severity_rank(overall)
+    )
+    if higher:
+        reasons.append(f"finding {higher[0]}")
+    flags = [
+        f
+        for f in tri.overrides_applied
+        if (floor := _override_floor(f)) is None or severity_rank(floor) >= severity_rank(overall)
+    ]
+    if flags:
+        labels = "; ".join(_lc(f.label) for f in flags)
+        noun = "a clinical red flag" if len(flags) == 1 else "clinical red flags"
+        reasons.append(f"{noun} ({labels})")
+    if not reasons:
+        scored = _scored_level(tri.score, tri.thresholds.moderate, tri.thresholds.high)
+        top = max((les.score for les in result.lesions), default=None)
+        from_findings = _scored_level(top, tri.thresholds.moderate, tri.thresholds.high)
+        risk_points = any(
+            f.points > 0 and f.source in (FactorSource.CLINICAL_HISTORY, FactorSource.SYMPTOM)
+            for f in tri.contributing_factors
+        )
+        if (
+            risk_points
+            and scored is not None
+            and severity_rank(scored) >= severity_rank(overall)
+            and (from_findings is None or severity_rank(from_findings) < severity_rank(overall))
+        ):
+            reasons.append(RISK_FACTORS_REASON)
+    return reasons
+
+
+def _why_text(reasons: list[str]) -> str:
+    """Reasons joined for a sentence; points to "Why this level" when nothing is named."""
+    if not reasons:
+        return f"the overall assessment {WHY_THIS_LEVEL}"
+    text = " and ".join(reasons)
+    return f"{text} {WHY_THIS_LEVEL}" if RISK_FACTORS_REASON in reasons else text
+
+
+def _level_context(lesion: LesionAssessment, overall: RiskLevel, reasons: list[str]) -> str:
+    """E.g. "Finding level: LOW · Overall level HIGH because of a clinical red flag (…)"."""
+    own = RiskLevel(lesion.risk_level).value
+    return f"Finding level: {own} · Overall level {overall.value} because of {_why_text(reasons)}"
 
 
 def _origins_text(lesion: LesionAssessment) -> str:
@@ -702,13 +845,19 @@ def _issue_rows(result: ScreeningResult) -> list[IssueRow]:
 
 def _site_rows(result: ScreeningResult) -> list[SiteRow]:
     order = {s: i for i, s in enumerate(OralSite)}
+    flagged = flagged_reference_sites(result)
     rows = []
     for site in sorted(result.sites, key=lambda s: (s.role != SiteRole.EXAMINED, order[s.site])):
         cal = site.calibration.status
+        is_flagged = OralSite(site.site) in flagged
+        if site.role == SiteRole.EXAMINED:
+            role = "Examined"
+        else:
+            role = REFERENCE_FLAGGED_ROLE if is_flagged else "Reference only"
         rows.append(
             SiteRow(
                 site=lb.site_name(site.site),
-                role="Examined" if site.role == SiteRole.EXAMINED else "Reference only",
+                role=role,
                 qc="Passed" if site.qc.passed else "Failed",
                 qc_ok=site.qc.passed,
                 analysis=lb.ANALYSIS_STATUS_TEXT.get(site.analysis_status, site.analysis_status),
@@ -716,6 +865,7 @@ def _site_rows(result: ScreeningResult) -> list[SiteRow]:
                 calibration_ok=cal == CalibrationStatus.CALIBRATED,
                 badge=badge(site.site_risk_level),
                 reference_only=site.role == SiteRole.REFERENCE_ONLY,
+                reference_flagged=is_flagged,
             )
         )
     return rows
@@ -810,18 +960,27 @@ def site_list_text(sites: list[OralSite]) -> list[str]:
 
 def _coverage(result: ScreeningResult) -> Coverage:
     present = {OralSite(s.site): s for s in result.sites}
-    failed = {OralSite(s) for s in result.qc_summary.sites_failed}
-    failed |= {
+    qc_failed = {OralSite(s) for s in result.qc_summary.sites_failed}
+    qc_failed |= {
         OralSite(s.site)
         for s in result.sites
-        if s.role == SiteRole.EXAMINED and s.analysis_status != "analysed"
+        if s.role == SiteRole.EXAMINED and s.analysis_status == "inconclusive_qc_failed"
     }
+    software = {
+        OralSite(s.site)
+        for s in result.sites
+        if s.role == SiteRole.EXAMINED and s.analysis_status == "not_analysed"
+    } - qc_failed
+    failed = qc_failed | software
+    reference = {s for s, sr in present.items() if sr.role == SiteRole.REFERENCE_ONLY}
     return Coverage(
         imaged=len(present),
         total=N_SITES,
-        reference_only=sum(1 for s in present.values() if s.role == SiteRole.REFERENCE_ONLY),
+        reference_only=len(reference),
         not_examined=site_list_text([s for s in OralSite if s not in present]),
         not_assessed=[lb.site_name(s) for s in OralSite if s in failed],
+        reference_flagged=len(reference & flagged_reference_sites(result)),
+        not_assessed_qc=len(qc_failed),
     )
 
 
@@ -900,8 +1059,13 @@ def _slip_reason(
     overall: RiskLevel,
     reviewed: RiskLevel,
     coverage: Coverage,
+    top_raised: list[str] | None = None,
 ) -> str:
-    """One line a referral desk can act on without the rest of the report."""
+    """One line a referral desk can act on without the rest of the report.
+
+    ``top_raised`` (reasons the overall level is above the top finding's own level) keeps a
+    LOW finding from reading as the reason for a MODERATE or HIGH referral.
+    """
     if reviewed != overall:
         parts = [f"{reviewed.value} risk level (clinician-reviewed; device {overall.value})"]
     elif overall == RiskLevel.INCONCLUSIVE:
@@ -910,7 +1074,14 @@ def _slip_reason(
         parts = [f"{overall.value} risk level"]
     if lesions:
         top = lesions[0]
-        text = f"Finding 1, {_lc(lb.site_name(top.site))} ({RiskLevel(top.risk_level).value})"
+        own = RiskLevel(top.risk_level).value
+        if top_raised:
+            level = f"finding level {own}; overall level raised by {' and '.join(top_raised)}"
+        elif top_raised is not None:
+            level = f"finding level {own}; overall level higher — see “Why this level”"
+        else:
+            level = own
+        text = f"Finding 1, {_lc(lb.site_name(top.site))} ({level})"
         if len(lesions) > 1:
             more = len(lesions) - 1
             text += f" + {more} more finding{'s' if more > 1 else ''}"
@@ -957,11 +1128,29 @@ def build_context(
     readings_by_id = {r.reading_id: r for r in result.spectral_readings}
 
     lesions = ordered_lesions(result)
+    numbers = lesion_numbers(result)
+    overall = RiskLevel(tri.overall_risk_level)
+    coverage = _coverage(result)
+
+    def level_context(les: LesionAssessment) -> str | None:
+        if severity_rank(overall) <= severity_rank(les.risk_level):
+            return None
+        return _level_context(les, overall, _raised_because(les, result, numbers, coverage))
+
     detailed = [
         _lesion_view(i, les, result, sites, readings_by_id, artifacts,
-                     _heatmap_scale(_site_threshold(sites, les)))
+                     _heatmap_scale(_site_threshold(sites, les)), level_context(les))
         for i, les in enumerate(lesions[:MAX_DETAILED_LESIONS], start=1)
     ]  # fmt: skip
+    # Page 1 / map: when even the top finding is below the overall level, say so once.
+    top_raised: list[str] | None = None
+    findings_note = None
+    if lesions and severity_rank(overall) > severity_rank(lesions[0].risk_level):
+        top_raised = _raised_because(lesions[0], result, numbers, coverage)
+        findings_note = (
+            "Finding levels and the site colours on the map are each finding's own level; the "
+            f"overall level is {overall.value} because of {_why_text(top_raised)}."
+        )
     first_shown: dict[str, int] = {}
     for view in detailed:  # a reading linked to two findings is plotted once
         for sv in view.spectral:
@@ -985,7 +1174,6 @@ def build_context(
     unlinked = [r for r in result.spectral_readings if r.reading_id not in linked]
 
     scored = _scored_level(tri.score, tri.thresholds.moderate, tri.thresholds.high)
-    overall = RiskLevel(tri.overall_risk_level)
     level_note = None
     if (
         tri.overrides_applied
@@ -1004,7 +1192,6 @@ def build_context(
     captured_local = _local(result.context.captured_at or result.created_at, tz)
     timeline = lb.timeline_text(action.timeline_days, start=captured_local)
     urgency_text = lb.URGENCY_TEXT.get(urgency, str(urgency))
-    coverage = _coverage(result)
     reviewed_badge, reviewer_line, effective_level = _review_view(result, overall, tz)
 
     rule = v.rule_config
@@ -1029,7 +1216,6 @@ def build_context(
     facilities, more_facilities = _select_facilities(result, options, effective_level)
     single_facility = urgency in FACILITY_LEAD_IN
 
-    numbers = lesion_numbers(result)
     factor_sources: dict[str, str] = {}
     if tri.highest_risk_lesion_id in numbers:
         factor_sources["lesion.max_score"] = f"Finding {numbers[tri.highest_risk_lesion_id]}"
@@ -1164,6 +1350,7 @@ def build_context(
             for lv in (RiskLevel.HIGH, RiskLevel.MODERATE, RiskLevel.LOW, RiskLevel.INCONCLUSIVE)
         ],
         "lesions": detailed,
+        "findings_note": findings_note,
         "compact_lesions": compact,
         "n_lesions": len(lesions),
         "max_detailed": MAX_DETAILED_LESIONS,
@@ -1211,7 +1398,9 @@ def build_context(
             "slip_patient": " · ".join(
                 p for p in (identity.name, pid, age if age != lb.DASH else "", sex) if p
             ),
-            "slip_reason": _slip_reason(result, lesions, overall, effective_level, coverage),
+            "slip_reason": _slip_reason(
+                result, lesions, overall, effective_level, coverage, top_raised
+            ),
             "programme": options.programme_contact,
             "record_url": options.record_url,
             "qr_uri": qr_data_uri(options.record_url) if options.record_url else None,

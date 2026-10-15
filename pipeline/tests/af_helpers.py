@@ -21,6 +21,11 @@ PATCH_RGB = (0.90, 0.87, 0.85)  # whitish leukoplakia stand-in (teeth-like colou
 BACKGROUND_RGB = (0.05, 0.03, 0.03)  # oral cavity shadow
 BROWN_RGB = (0.36, 0.22, 0.12)  # melanin pigmentation, L* ~ 27
 BLOOD_RGB = (0.50, 0.04, 0.08)  # deep red, a* > 35, L* < 45
+# Red patches (erythroplakia stand-ins) that are not "deep red": an orange-red patch under warm
+# phone white balance (L* 40, a* 32, OpenCV hue 6 = inside the brown hue range) and a maroon
+# patch (L* 27, a* 31). Both must be treated as red areas, never discounted as pigment.
+ORANGE_RED_RGB = (150 / 255, 70 / 255, 50 / 255)
+MAROON_RGB = (110 / 255, 40 / 255, 40 / 255)
 
 
 def disc(shape: tuple[int, int], cy: float, cx: float, r: float) -> np.ndarray:
@@ -28,9 +33,15 @@ def disc(shape: tuple[int, int], cy: float, cx: float, r: float) -> np.ndarray:
     return (yy - cy) ** 2 + (xx - cx) ** 2 <= r**2
 
 
-def ellipse(shape: tuple[int, int], cy: float, cx: float, ry: float, rx: float) -> np.ndarray:
+def ellipse(
+    shape: tuple[int, int], cy: float, cx: float, ry: float, rx: float, angle: float = 0.0
+) -> np.ndarray:
+    """Filled ellipse; ``angle`` (radians) rotates the x semi-axis towards +y."""
     yy, xx = np.mgrid[: shape[0], : shape[1]]
-    return ((yy - cy) / ry) ** 2 + ((xx - cx) / rx) ** 2 <= 1.0
+    y, x = yy - cy, xx - cx
+    c, s = np.cos(angle), np.sin(angle)
+    u, v = c * x + s * y, -s * x + c * y
+    return (v / ry) ** 2 + (u / rx) ** 2 <= 1.0
 
 
 def smooth_texture(rng: np.random.Generator, shape: tuple[int, int], amp: float) -> np.ndarray:
@@ -121,21 +132,28 @@ def make_af_scene(
     porphyrin_disc: tuple[float, float, float] | None = None,
     porphyrin_red: float = 0.32,
     mucosa: np.ndarray | None = None,
+    base_red: float = 0.06,
+    fvl_red_share: float = 0.0,
 ) -> AFScene:
     """AF image: green proportional to tissue, dark FVL discs (cy, cx, r as fractions of H/W/H,
-    depth = fractional green loss), optional red porphyrin disc (cy, cx, r)."""
+    depth = fractional green loss), optional red porphyrin disc (cy, cx, r).
+
+    ``fvl_red_share``: inside FVL the red channel falls by ``share x depth`` (the synthetic
+    generator uses 0.5), so red/green rises in a deep loss without any red excess.
+    """
     h, w = shape
     muc = mucosa if mucosa is not None else ellipse(shape, h * 0.5, w * 0.5, h * 0.45, w * 0.47)
     tex = smooth_texture(rng, shape, 0.03)
     green = np.where(muc, base_green * tex, 0.02).astype(np.float32)
+    red = np.where(muc, base_red, 0.01).astype(np.float32)
     fvl = np.zeros(shape, bool)
     depth = 0.0
     for cy, cx, r, d in fvl_discs:
         m = disc(shape, cy * h, cx * w, r * h) & muc
         green[m] *= 1.0 - d
+        red[m] *= 1.0 - fvl_red_share * d
         fvl |= m
         depth = d
-    red = np.where(muc, 0.06, 0.01).astype(np.float32)
     blue = np.where(muc, 0.05, 0.01).astype(np.float32)
     if porphyrin_disc is not None:
         cy, cx, r = porphyrin_disc

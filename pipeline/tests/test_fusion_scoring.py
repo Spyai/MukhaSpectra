@@ -10,6 +10,7 @@ from fusion_helpers import (
     default_rules,
     factor,
     limitation_codes,
+    parse_rules_default,
     patient,
     reading,
     region,
@@ -134,7 +135,10 @@ def test_diascopy_resolves_lowers_and_persists_raises():
     assert factor(resolves.contributing_factors, "af.diascopy.fvl_resolves").points == (
         pytest.approx(5.5 * -0.7, abs=1e-4)
     )
-    assert resolves.risk_level == RiskLevel.LOW
+    # The discount still orders lesions, but strong FVL is never taken below MODERATE.
+    assert resolves.score < 3.0
+    assert resolves.risk_level == RiskLevel.MODERATE
+    assert "af.strong_fvl_floor" in codes(resolves.contributing_factors)
     assert "af.diascopy.not_done" not in codes(base.contributing_factors)
 
 
@@ -143,8 +147,10 @@ def test_in_image_reference_lowers_vs_contralateral():
     in_image = triage([site(TONGUE, [base_region()], ref_type=ReferenceType.IN_IMAGE_AUTO)])
     lesion = in_image.lesions[0]
     assert lesion.score < contra.score
+    mult = parse_rules_default().af.reference_multipliers[ReferenceType.IN_IMAGE_AUTO]
+    assert mult == 0.8
     assert factor(lesion.contributing_factors, "af.reference.in_image_auto").points == (
-        pytest.approx(5.5 * -0.25, abs=1e-4)
+        pytest.approx(5.5 * (mult - 1.0), abs=1e-4)
     )
     assert "reference_in_image" in limitation_codes(in_image)
 
@@ -167,14 +173,15 @@ def test_low_specificity_site_lowers():
         in factor(gum.contributing_factors, "af.low_specificity_site").label
     )
     lower = only_lesion([site(S.LOWER_GINGIVA, [base_region()])])
-    assert {"af.low_specificity_site", "site.high_risk"} <= set(codes(lower.contributing_factors))
+    lower_codes = set(codes(lower.contributing_factors))
+    assert "site.high_risk" in lower_codes and "af.low_specificity_site" not in lower_codes
 
 
-def test_multiplier_order_is_reference_diascopy_confounders_site_then_high_risk():
+def test_multiplier_order_is_reference_diascopy_confounders_then_site():
     lesion = only_lesion(
         [
             site(
-                S.LOWER_GINGIVA,
+                S.UPPER_GINGIVA,
                 [base_region(confounders=[(C.PIGMENTATION, 0.5)])],
                 ref_type=ReferenceType.IN_IMAGE_AUTO,
                 diascopy=Diascopy.FVL_PERSISTS,
@@ -182,16 +189,35 @@ def test_multiplier_order_is_reference_diascopy_confounders_site_then_high_risk(
         ]
     )
     order = [c for c in codes(lesion.contributing_factors) if "." in c]
-    tail = order[-5:]
-    assert tail == [
+    assert order[-5:] == [
         "af.reference.in_image_auto",
         "af.diascopy.fvl_persists",
         "af.confounders",
         "af.low_specificity_site",
-        "site.high_risk",
+        "af.strong_fvl_floor",  # zero-point floor record, after the points
     ]
-    expected_af = 5.5 * 0.75 * 1.2 * 0.7 * 0.6
-    assert lesion.score == pytest.approx(expected_af * 1.15, abs=1e-3)
+    assert lesion.score == pytest.approx(5.5 * 0.8 * 1.2 * 0.7 * 0.6, abs=1e-3)
+
+
+def test_high_risk_multiplier_comes_last():
+    lesion = only_lesion(
+        [
+            site(
+                TONGUE,
+                [base_region(confounders=[(C.PIGMENTATION, 0.5)])],
+                ref_type=ReferenceType.IN_IMAGE_AUTO,
+                diascopy=Diascopy.FVL_PERSISTS,
+            )
+        ]
+    )
+    order = [c for c in codes(lesion.contributing_factors) if "." in c]
+    assert order[-4:] == [
+        "af.diascopy.fvl_persists",
+        "af.confounders",
+        "site.high_risk",
+        "af.strong_fvl_floor",
+    ]
+    assert lesion.score == pytest.approx(5.5 * 0.8 * 1.2 * 0.7 * 1.15, abs=1e-3)
 
 
 # --------------------------------------------------------------------------------------------
@@ -318,20 +344,17 @@ def test_spectral_unmatched_ref_falls_back_to_primary():
     assert out.lesions[1].spectral_reading_ids == ["s1"]
 
 
-@pytest.mark.parametrize(
-    ("label", "creates"),
-    [("suspicious", True), ("indeterminate", True), ("not_suspicious", False), (None, False)],
-)
-def test_spectral_only_lesion_needs_suspicious_label(label, creates):
+@pytest.mark.parametrize("label", ["suspicious", "indeterminate", "not_suspicious", None])
+def test_every_lesion_reading_becomes_a_lesion_whatever_the_label(label):
+    """The reading's role is the health worker's designation; the placeholder label never
+    decides whether a finding exists."""
     out = triage(
         [site(TONGUE)], [reading("s1", TONGUE, hb_delta=0.07, ratio_delta=-0.12, label=label)]
     )
-    assert bool(out.lesions) is creates
-    if creates:
-        (lesion,) = out.lesions
-        assert lesion.origins == ["spectral"]
-        assert lesion.score == pytest.approx(2.0 * 1.15, abs=1e-4)
-        assert "deeper blood-absorption dip" in lesion.summary
+    (lesion,) = out.lesions
+    assert lesion.origins == ["spectral"]
+    assert lesion.score == pytest.approx(2.0 * 1.15, abs=1e-4)
+    assert "deeper blood-absorption dip" in lesion.summary
 
 
 def test_spectral_only_lesion_with_unscored_reading_is_described():

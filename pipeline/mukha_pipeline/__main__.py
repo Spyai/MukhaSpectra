@@ -15,9 +15,39 @@ import json
 import sys
 from pathlib import Path
 
+from mukha_pipeline.io import ImageDecodeError, SpectralParseError
 from mukha_pipeline.manifest import ManifestError, build_screening_input
 from mukha_pipeline.orchestrator import analyze_screening
 from mukha_pipeline.schema.export import render
+from mukha_pipeline.types import ScreeningInput
+
+# Input problems the user can fix: reported as one plain line with exit code 2, never a
+# traceback. (UploadDecodeError is an ImageDecodeError.)
+INPUT_ERRORS = (ManifestError, ImageDecodeError, SpectralParseError)
+
+
+def _load_manifest_input(manifest: str) -> ScreeningInput:
+    manifest_path = Path(manifest)
+    base = manifest_path.parent
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as err:
+        raise ManifestError(
+            f"The manifest is not valid JSON ({err.msg}, line {err.lineno})."
+        ) from err
+    except (OSError, UnicodeDecodeError) as err:
+        raise ManifestError(f"The manifest could not be read: {manifest_path}.") from err
+
+    def read_file(field: str) -> tuple[bytes, str] | None:
+        matches = sorted(p for p in base.iterdir() if p.is_file() and p.stem == field)
+        if not matches:
+            return None
+        try:
+            return matches[0].read_bytes(), matches[0].name
+        except OSError as err:
+            raise ManifestError(f"File '{matches[0].name}' could not be read.") from err
+
+    return build_screening_input(data, read_file).screening_input
 
 
 def _analyze(args: argparse.Namespace) -> int:
@@ -26,19 +56,9 @@ def _analyze(args: argparse.Namespace) -> int:
 
         inp = make_demo_patient(args.demo, seed=args.seed)
     else:
-        manifest_path = Path(args.manifest)
-        base = manifest_path.parent
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-
-        def read_file(field: str) -> tuple[bytes, str] | None:
-            matches = sorted(p for p in base.iterdir() if p.is_file() and p.stem == field)
-            if not matches:
-                return None
-            return matches[0].read_bytes(), matches[0].name
-
         try:
-            inp = build_screening_input(data, read_file).screening_input
-        except ManifestError as err:
+            inp = _load_manifest_input(args.manifest)
+        except INPUT_ERRORS as err:
             print(f"error: {err}", file=sys.stderr)
             return 2
 

@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app import __version__
@@ -26,6 +27,13 @@ from app.errors import install_error_handlers
 from app.migrations import prepare_database, upgrade_to_head
 from app.routers import API_PREFIX, api_router
 from app.schemas import UploadManifest
+from app.security import (
+    ACCESS_NOTICE_KEY,
+    ACCESS_NOTICE_NONE,
+    API_KEY_HEADER,
+    NO_API_KEY_WARNING,
+    BodySizeLimitMiddleware,
+)
 from app.services import build_services
 from app.services.pipeline_bridge import PipelineBridge
 from app.services.reports import ReportRenderer
@@ -49,13 +57,37 @@ spectral classifier is a placeholder heuristic (not validated); the white-light 
 used in triage until trained weights and a model card are installed. No accuracy figure is
 claimed. Results from synthetic data are labelled SYNTHETIC.
 
-Every result records the software, pipeline, schema, model and rule-config versions (with the
-SHA-256 of each config file). Re-analysis never overwrites a result: it adds a new version.
+Every result records the software (with its build identifier), pipeline, schema, model and
+rule-config versions (with the SHA-256 of each config file). Re-analysis never overwrites a
+result: it adds a new version. A screening or a whole patient can be erased (DELETE).
 """
+
+CORS_ALLOW_HEADERS = [
+    "Accept",
+    "Accept-Language",
+    "Content-Language",
+    "Content-Type",
+    API_KEY_HEADER,
+]
+CORS_ALLOW_METHODS = ["GET", "POST", "DELETE", "OPTIONS"]
+
+
+def api_description(settings: Settings) -> str:
+    """The OpenAPI description, with an honest statement of the access control in force."""
+    if settings.api_key is None:
+        access = f"**Access control.** {ACCESS_NOTICE_NONE}"
+    else:
+        access = f"**Access control.** {ACCESS_NOTICE_KEY}"
+    return f"{API_DESCRIPTION}\n{access}\n"
+
 
 OPENAPI_TAGS = [
     {"name": "system", "description": "Health, versions, schema and site catalogue."},
-    {"name": "screenings", "description": "Upload, results, re-analysis, artifacts, reports."},
+    {
+        "name": "screenings",
+        "description": "Upload, results, re-analysis, artifacts, reports, erasure.",
+    },
+    {"name": "patients", "description": "Erasure of everything stored about a patient."},
     {"name": "demo", "description": "SYNTHETIC demo patients (labelled synthetic everywhere)."},
 ]
 
@@ -135,7 +167,11 @@ def create_app(
         prepare_database(settings.database_url)
         if settings.auto_migrate:
             await run_in_threadpool(upgrade_to_head, engine)
-        logger.info("MukhaSpectra API %s ready (%s)", __version__, PROTOTYPE_BANNER)
+        if settings.api_key is None:
+            logger.warning("*** %s ***", NO_API_KEY_WARNING)
+        logger.info(
+            "MukhaSpectra API %s ready (%s)", services.analysis.software_version, PROTOTYPE_BANNER
+        )
         try:
             yield
         finally:
@@ -144,7 +180,7 @@ def create_app(
     app = FastAPI(
         title=API_TITLE,
         version=__version__,
-        description=API_DESCRIPTION,
+        description=api_description(settings),
         openapi_tags=OPENAPI_TAGS,
         lifespan=lifespan,
     )
@@ -152,15 +188,19 @@ def create_app(
     app.state.engine = engine
     app.state.services = services
 
+    # Added innermost first: body limit -> security headers -> CORS -> trusted hosts.
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_bytes)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["*"],
-        expose_headers=["Content-Disposition", "X-Total-Count"],
+        allow_methods=CORS_ALLOW_METHODS,
+        allow_headers=CORS_ALLOW_HEADERS,
+        expose_headers=["Content-Disposition", "X-Total-Count", "Retry-After"],
     )
+    if settings.allowed_hosts and "*" not in settings.allowed_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     install_error_handlers(app)
     app.include_router(api_router, prefix=API_PREFIX)
     _install_openapi(app)

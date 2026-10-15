@@ -7,6 +7,7 @@ without a valid calibration is still analysed, and the result marks it ``uncalib
 
 from mukha_pipeline.calibration.common import CalibrationError, as_utc
 from mukha_pipeline.calibration.image import (
+    compute_af_flat_field,
     compute_af_scale,
     compute_color_matrix,
     compute_flat_field,
@@ -27,6 +28,7 @@ __all__ = [
     "UNCALIBRATED_NOTE",
     "CalibrationError",
     "as_utc",
+    "compute_af_flat_field",
     "compute_af_scale",
     "compute_color_matrix",
     "compute_flat_field",

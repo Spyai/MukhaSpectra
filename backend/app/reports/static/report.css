@@ -430,6 +430,11 @@ table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
 .lesion-head .right { text-align: right; }
 .lesion-head .score { font-size: 7.3pt; color: var(--muted); margin-top: 0.4mm; }
 .lesion .summary { margin: 1mm 0 1.2mm; font-size: 8.4pt; line-height: 1.28; }
+/* The overall level is above this finding's own level: say why, next to the finding badge. */
+.level-context {
+  margin-top: 1mm; padding: 0.6mm 2mm; border-left: 2pt solid var(--ink-2); background: var(--soft);
+  font-size: 7.8pt; font-weight: 600; line-height: 1.3; color: var(--ink);
+}
 
 .triptych { display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 2.4mm; }
 .panel { margin: 0; }

@@ -53,8 +53,17 @@ _SPECS: tuple[IssueSpec, ...] = (
     IssueSpec("af_overexposed", _E, "Violet-light photo too bright — move back slightly, retake."),
     IssueSpec("af_blur", _E, "Violet-light photo blurry — hold the phone steady and retake."),
     IssueSpec("af_white_light", _E, "Looks like a white-light photo — retake with violet light."),
+    # Default warning (weakly green); escalated to an error when green is not dominant at all
+    # (grey from auto white balance or a greyscale file, or red-dominant).
     IssueSpec(
-        "af_not_green", _W, "Violet-light photo not green — check filter and colour setting."
+        "af_not_green",
+        _W,
+        "Violet-light photo not green — lock colour settings, check filter, retake.",
+    ),
+    IssueSpec(
+        "af_auto_white_balance",
+        _W,
+        "Lock white balance for fluorescence photos — auto white balance alters colours.",
     ),
     # --- dark frame ----------------------------------------------------------------------------
     IssueSpec("ambient_light", _E, "Dark photo too bright — block room light and retake."),
@@ -64,6 +73,16 @@ _SPECS: tuple[IssueSpec, ...] = (
     IssueSpec("misaligned", _E, "Photos do not line up — keep still between both photos."),
     IssueSpec("alignment_marginal", _W, "Photos line up poorly — keep steadier between photos."),
     IssueSpec("insufficient_mucosa", _E, "Too little tissue in view — open wider, move closer."),
+    IssueSpec(
+        "segmentation_failed",
+        _E,
+        "Tissue not recognised in photo — retake in good light, mouth open.",
+    ),
+    IssueSpec(
+        "segmentation_low_confidence",
+        _W,
+        "Tissue outline unclear — retake in even light if possible.",
+    ),
     # --- spectral probe (AS7341) ---------------------------------------------------------------
     IssueSpec("spectral_no_readings", _E, "No probe readings — repeat the probe measurement."),
     IssueSpec(

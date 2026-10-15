@@ -1,8 +1,15 @@
 """Stored inputs: raw capture bytes, calibration records, and rebuilding a ScreeningInput.
 
-Raw input bytes are kept exactly as received under ``screenings/{id}/inputs/{capture_id}{ext}``
-so a screening can be re-analysed later with a newer pipeline or config. Stored file names are
-neutral (``<site>-<kind><ext>``): uploaded file names often contain the patient's name.
+Input bytes are kept under ``screenings/{id}/inputs/{capture_id}{ext}`` so a screening can be
+re-analysed later with a newer pipeline or config. Uploaded JPEG / PNG files are stored with their
+identifying metadata removed (``io.sanitize``; the compressed pixels are untouched and the original
+upload's sha256 stays in the capture metadata); other formats are stored as received. Stored file
+names are neutral (``<site>-<kind><ext>``, prefixed ``SYNTHETIC_`` for synthetic captures):
+uploaded file names often contain the patient's name.
+
+Re-analysis decodes the stored bytes exactly as the upload adapter did (same maximum side, same
+DNG white balance per capture kind), and converts the stored ``px_per_mm`` (original pixels) to
+the decoded pixels.
 """
 
 from __future__ import annotations
@@ -113,9 +120,25 @@ def mime_type_for(ext: str) -> str:
     return IMAGE_MIME_TYPES.get(ext) or SPECTRAL_MIME_TYPES.get(ext) or "application/octet-stream"
 
 
-def neutral_file_name(site: OralSite | str | None, kind: CaptureKind, ext: str) -> str:
+SYNTHETIC_FILE_PREFIX = "SYNTHETIC_"
+
+
+def neutral_file_name(
+    site: OralSite | str | None, kind: CaptureKind, ext: str, *, synthetic: bool = False
+) -> str:
     stem = KIND_SLUG[kind] if site is None else f"{OralSite(site).value}-{KIND_SLUG[kind]}"
-    return f"{stem}{ext}"
+    return f"{SYNTHETIC_FILE_PREFIX if synthetic else ''}{stem}{ext}"
+
+
+def decoded_px_per_mm(px_per_mm: float | None, capture: ImageCapture) -> float | None:
+    """Scale for the decoded image from a scale given for the capture's own pixels."""
+    if px_per_mm is None:
+        return None
+    original = capture.meta.width_px
+    decoded = int(capture.image.shape[1])
+    if not original or original == decoded:
+        return px_per_mm
+    return px_per_mm * decoded / float(original)
 
 
 # --------------------------------------------------------------------------------------------
@@ -127,6 +150,8 @@ def image_calibration_to_npz(cal: ImageCalibration) -> bytes:
     arrays: dict[str, np.ndarray] = {"color_matrix": np.asarray(cal.color_matrix, np.float64)}
     if cal.flat_field is not None:
         arrays["flat_field"] = np.asarray(cal.flat_field, np.float32)
+    if cal.af_flat_field is not None:  # violet-LED profile, applied to linear AF only
+        arrays["af_flat_field"] = np.asarray(cal.af_flat_field, np.float32)
     buf = io.BytesIO()
     np.savez_compressed(buf, **arrays)  # type: ignore[arg-type]
     return buf.getvalue()
@@ -138,6 +163,7 @@ def image_calibration_from_record(record: CalibrationRecord, blob: bytes) -> Ima
     with np.load(io.BytesIO(blob), allow_pickle=False) as npz:
         color_matrix = np.array(npz["color_matrix"])
         flat_field = np.array(npz["flat_field"]) if "flat_field" in npz.files else None
+        af_flat_field = np.array(npz["af_flat_field"]) if "af_flat_field" in npz.files else None
     return ImageCalibration(
         calibration_id=str(record.data.get("calibration_id") or record.id),
         device_id=record.device_id,
@@ -147,6 +173,7 @@ def image_calibration_from_record(record: CalibrationRecord, blob: bytes) -> Ima
         color_matrix=color_matrix,
         af_scale=float(record.data.get("af_scale", 1.0)),
         synthetic=record.synthetic,
+        af_flat_field=af_flat_field,
     )
 
 
@@ -190,6 +217,7 @@ class CaptureStore:
         data: bytes,
         ext: str,
         meta: dict[str, Any],
+        synthetic: bool = False,
     ) -> Capture:
         capture_id = new_id()
         capture = Capture(
@@ -201,7 +229,7 @@ class CaptureStore:
             sha256=sha256_hex(data),
             size_bytes=len(data),
             mime_type=mime_type_for(ext),
-            file_name=neutral_file_name(site, kind, ext),
+            file_name=neutral_file_name(site, kind, ext, synthetic=synthetic),
             meta=meta,
         )
         self.storage.put(capture.storage_key, data)
@@ -254,7 +282,7 @@ class CaptureStore:
         from mukha_pipeline.types import ImageCapture
 
         data = self.storage.get(capture.storage_key)
-        image = self.bridge.load_image(data, capture.file_name)
+        image = self.bridge.load_image(data, capture.file_name, kind=CaptureKind(capture.kind))
         meta = CaptureMetadata.model_validate(capture.meta["capture_metadata"])
         return ImageCapture(image=image, meta=meta)
 
@@ -268,10 +296,11 @@ class CaptureStore:
             sites = []
             for entry in screening.site_inputs:
                 refs = entry["captures"]
+                wl = self._image_capture(captures[refs["wl"]])
                 sites.append(
                     SiteInput(
                         site=OralSite(entry["site"]),
-                        wl=self._image_capture(captures[refs["wl"]]),
+                        wl=wl,
                         af=self._image_capture(captures[refs["af"]]),
                         dark=self._image_capture(captures[refs["dark"]])
                         if refs.get("dark")
@@ -279,7 +308,7 @@ class CaptureStore:
                         role=SiteRole(entry.get("role", SiteRole.EXAMINED)),
                         visual_flag=VisualFlag.model_validate(entry.get("visual_flag") or {}),
                         diascopy=Diascopy(entry.get("diascopy", Diascopy.NOT_DONE)),
-                        px_per_mm=entry.get("px_per_mm"),
+                        px_per_mm=decoded_px_per_mm(entry.get("px_per_mm"), wl),
                     )
                 )
 

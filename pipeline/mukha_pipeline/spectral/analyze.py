@@ -1,4 +1,9 @@
-"""Spectral stage: QC -> summary -> features -> lesion-vs-reference delta -> classifier."""
+"""Spectral stage: QC -> summary -> features -> lesion-vs-reference delta -> classifier.
+
+The delta is computed on the per-channel lesion / reference quotient
+(:func:`mukha_pipeline.spectral.features.reference_delta`), which cancels the probe's LED spectrum,
+filter responses and gain, so calibrated and uncalibrated readings are scored on the same scale.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ from mukha_pipeline.schema.models import (
     SpectralReadingResult,
 )
 from mukha_pipeline.spectral.classifier import RuleBasedSpectralClassifier, SpectralClassifier
-from mukha_pipeline.spectral.features import compute_features, delta_features
+from mukha_pipeline.spectral.features import compute_features, reference_delta
 from mukha_pipeline.spectral.pairing import auto_pair_inputs
 from mukha_pipeline.spectral.summary import summarise_reading
 from mukha_pipeline.types import SpectralCalibration, SpectralFrame, SpectralInput
@@ -28,6 +33,10 @@ REFERENCE_QC_FAILED = (
     "The reference reading '{ref}' did not pass quality checks, so it was not used for comparison."
 )
 REFERENCE_MISSING = "The reference reading '{ref}' was not found among the probe readings."
+REFERENCE_UNUSABLE = (
+    "The reference reading '{ref}' has no usable signal in the 515-630 nm bands, so it was not "
+    "used for comparison."
+)
 SIGNAL_MISMATCH = (
     "The lesion and reference readings were not processed the same way (one calibrated, one "
     "not), so they cannot be compared."
@@ -148,8 +157,10 @@ def _compare(
         return None, [REFERENCE_QC_FAILED.format(ref=ref_id)]
     if ref.signal_type != s.signal_type:
         return None, [SIGNAL_MISMATCH]
-    assert s.features is not None
-    return delta_features(s.features, ref.features), []
+    delta = reference_delta(s.values, ref.values)
+    if delta is None:
+        return None, [REFERENCE_UNUSABLE.format(ref=ref_id)]
+    return delta, []
 
 
 def _classify(

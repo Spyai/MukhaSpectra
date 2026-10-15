@@ -34,14 +34,23 @@ def new_pseudonymous_id(*, synthetic: bool = False) -> str:
     return f"{prefix}-{secrets.token_hex(6).upper()}"
 
 
-def site_input_entry(site_input: SiteInput, refs: dict[str, str | None]) -> dict[str, Any]:
-    """What Screening.site_inputs stores for one site (enough to rebuild a SiteInput)."""
+_UNSET: Any = object()
+
+
+def site_input_entry(
+    site_input: SiteInput, refs: dict[str, str | None], *, px_per_mm: float | None = _UNSET
+) -> dict[str, Any]:
+    """What Screening.site_inputs stores for one site (enough to rebuild a SiteInput).
+
+    ``px_per_mm`` is stored for the capture's own (original) pixels; pass it when the decoded
+    image was downscaled (uploads), so re-analysis can convert it to its decoded pixels again.
+    """
     return {
         "site": site_input.site.value,
         "role": site_input.role.value,
         "visual_flag": site_input.visual_flag.model_dump(mode="json"),
         "diascopy": site_input.diascopy.value,
-        "px_per_mm": site_input.px_per_mm,
+        "px_per_mm": site_input.px_per_mm if px_per_mm is _UNSET else px_per_mm,
         "device_id": site_input.wl.meta.device_id,
         "firmware_version": site_input.wl.meta.firmware_version,
         "captures": refs,
@@ -58,8 +67,13 @@ def create_screening_record(
     identity_name: str | None,
     identity_external_id: str | None,
     created_at: datetime | None = None,
+    synthetic: bool | None = None,
 ) -> Screening:
-    """Add Patient (+ separate PatientIdentity when PII is given) and Screening rows."""
+    """Add Patient (+ separate PatientIdentity when PII is given) and Screening rows.
+
+    ``synthetic`` defaults to "provenance is SYNTHETIC"; pass True when SYNTHETIC-labelled
+    captures were found in an upload declared otherwise.
+    """
     created = created_at or utcnow()
     patient = Patient(
         pseudonymous_id=inp.patient.pseudonymous_id,
@@ -86,7 +100,7 @@ def create_screening_record(
         captured_at=as_utc(inp.now) or created,
         source=source,
         data_provenance=provenance.value,
-        synthetic=provenance == DataProvenance.SYNTHETIC,
+        synthetic=bool(synthetic) or provenance == DataProvenance.SYNTHETIC,
         screening_site_name=context.screening_site_name,
         camp_id=context.camp_id,
         health_worker_id=context.health_worker_id,

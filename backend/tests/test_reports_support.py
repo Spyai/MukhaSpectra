@@ -413,7 +413,8 @@ def test_context_edge_cases_degrade_gracefully():
     spectral = first.spectral[0]
     assert spectral.qc_text.startswith("Reading failed QC: Probe reading saturated")
     assert "relative signal (uncalibrated" in spectral.calibration_text
-    assert spectral.features[0].delta != "—"  # computed from lesion − reference features
+    # No pipeline delta: no Δ (a plain lesion − reference difference depends on the probe).
+    assert spectral.features[0].delta == "—"
     messages = [i.message for i in ctx["qc"]["issues"]]
     assert "Probe reading saturated — reduce gain and repeat." in messages
     assert "Session note from the device." in messages

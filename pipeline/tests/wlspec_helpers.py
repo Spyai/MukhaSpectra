@@ -195,6 +195,35 @@ def make_calibration(
     )
 
 
+def scale_device_gain(inp: SpectralInput, gain: dict[str, float]) -> SpectralInput:
+    """The same reading as seen by another probe: every channel's counts times ``gain[channel]``.
+
+    Models a different LED spectrum x filter transmission x sensor gain per channel. Lit and dark
+    counts are both scaled, so the dark-subtracted signal is exactly ``gain x`` the original.
+    """
+
+    def scaled(frames: Sequence[SpectralFrame]) -> list[SpectralFrame]:
+        return [
+            SpectralFrame(
+                {c: v * gain.get(c, 1.0) for c, v in f.channels.items()},
+                f.gain,
+                f.integration_ms,
+            )
+            for f in frames
+        ]
+
+    return SpectralInput(
+        reading_id=inp.reading_id,
+        site=inp.site,
+        role=inp.role,
+        lit=scaled(inp.lit),
+        dark=scaled(inp.dark),
+        meta=inp.meta,
+        reference_reading_id=inp.reference_reading_id,
+        lesion_ref=inp.lesion_ref,
+    )
+
+
 def qc_pass(lit: list[SpectralFrame], dark: list[SpectralFrame], cfg: dict) -> QCResult:
     return QCResult(passed=True, score=1.0)
 

@@ -8,13 +8,30 @@
 # Design principles
 #  1. Never one unexplained number: every point added or removed becomes a contributing factor.
 #  2. The device can raise concern but never lower a clinical red flag (see `overrides`).
-#  3. LOW is only allowed when every examined site produced usable images. Otherwise the result is
-#     INCONCLUSIVE and the worker is told to retake or refer. False reassurance is the worst
-#     failure this system can have.
+#     Discounts (reference, diascopy, look-alikes, site) order findings but can never take strong
+#     fluorescence loss below MODERATE (`lesion.af.strong_fvl_floor`), and any lesion the health
+#     worker saw is at least MODERATE.
+#  3. LOW is only allowed when every examined site produced usable images with a reliable mucosa
+#     outline and every lesion (including every lesion probe reading) could be checked. Otherwise
+#     the result is INCONCLUSIVE and the worker is told to retake or refer. False reassurance is
+#     the worst failure this system can have.
 #  4. Habits (tobacco, areca nut, alcohol) change counselling, not triage, unless a lesion exists.
+#     Reported symptoms and previous oral cancer set floors of their own (see `overrides`).
+#
+# Changes
+#  1.1.0  strong_fvl_floor; visual_lesion_seen floor; symptom floors for lump, burning sensation
+#         and pain, and previous oral cancer without a lesion; lower gingiva removed from the
+#         AF low-specificity list; in_image_auto reference multiplier 0.75 -> 0.8; diascopy and
+#         unpaired-site discount rules (see fusion/scoring.py); MODERATE steps also cover a
+#         reported symptom; INCONCLUSIVE summary covers findings, not only images.
+#         Spectral tiers score the probe-independent quotient delta (lesion / reference band by
+#         band, spectral/features.py reference_delta): first tiers 0.025 / -0.04 (relative
+#         change), top tiers unchanged. AF border rule re-tuned to the new border scale
+#         (1 - hull perimeter / perimeter): min 0.35 -> 0.15. A site that was not analysed
+#         because of a software error is never sent for a retake (examine clinically instead).
 
 name: mukhaspectra-triage-rules
-version: 1.0.0
+version: 1.1.0
 status: baseline_heuristic_unvalidated
 
 levels:
@@ -35,15 +52,27 @@ lesion:
     area_mm2:                     # used instead of the fraction when px_per_mm is known
       - {min: 10.0, points: 0.5}
       - {min: 50.0, points: 1.0}
-    border_irregularity: {min: 0.35, points: 0.5}
+    # Border raggedness = 1 - convex hull perimeter / perimeter (af/fvl.py border_irregularity):
+    # 0 for any smooth outline whatever its elongation, ~0.15 for a finely notched edge, ~0.3
+    # for a jagged blob. (The 1.0.0 scale, 1 - circularity, scored smooth 3:1 ovals as
+    # irregular.)
+    border_irregularity: {min: 0.15, points: 0.5}
     contrast_vs_surround: {min: 1.4, points: 0.5}
     multipliers:
       reference:
         contralateral: 1.0
         analogous_site: 0.9
-        in_image_auto: 0.75
+        # 0.8 (was 0.75) so that at an unpaired high-risk site (ventral tongue / floor of mouth),
+        # where the in-image reference is the only one possible, the strongest AF evidence
+        # confirmed by diascopy can still reach HIGH (tested for every site).
+        # At an unpaired site that is also in `site.af_low_specificity`, this multiplier and the
+        # low-specificity one are not compounded: only the smaller of the two applies.
+        in_image_auto: 0.8
         none: 0.5
       diascopy:
+        # Recorded once per site. fvl_resolves is applied only when the site has exactly one FVL
+        # region (otherwise it is unknown which one was pressed: no multiplier, plus a note);
+        # fvl_persists is applied to the darkest region only.
         not_done: 1.0
         fvl_persists: 1.2
         fvl_resolves: 0.3       # fluorescence returned under pressure: likely vascular/inflammatory
@@ -63,6 +92,18 @@ lesion:
       min_overlap: 0.15
       floor: MODERATE
       label: "Red area with loss of fluorescence: may be inflammation or a red patch; re-examine in 2 weeks and refer if it persists"
+    strong_fvl_floor:
+      # The multipliers above order lesions, but must never turn strong fluorescence loss into
+      # LOW: plaque (porphyrin), pigment or a vascular spot can sit on top of a dysplastic area,
+      # and porphyrin often covers ulcerated or necrotic surfaces. A region whose AF points
+      # before any multiplier reach `raw_points_min` (set equal to levels.moderate_min_score),
+      # or whose mean relative AF is at most `mean_relative_af_max`, is kept at least at `floor`.
+      # When plaque fluorescence or glare was discounted, the action also asks the worker to
+      # clean the area and retake the photos.
+      raw_points_min: 3.0
+      mean_relative_af_max: 0.55
+      floor: MODERATE
+      label: "Strong or extensive loss of fluorescence: re-examine in 2 weeks and refer if it persists, even if plaque, pigment or blood vessels may explain part of it"
 
   wl_model:
     # Ignored when the classifier status is not "ok" (e.g. model_unavailable).
@@ -75,13 +116,20 @@ lesion:
       other: 0.5
 
   spectral:
-    # Deltas are lesion minus the same patient's reference reading.
+    # Deltas compare the lesion reading with the same patient's reference reading on the
+    # per-channel quotient lesion / reference (spectral/features.py reference_delta), which
+    # cancels the probe's LED spectrum and filters, so calibrated and uncalibrated readings share
+    # these tiers. Same cut-offs as analysis.v1.yaml spectral.classifier (placeholder heuristic).
+    # Tuned on SYNTHETIC readings: equal blood volume scores 0, hb 0.36 vs 0.25 the first tier,
+    # hb 0.6 vs 0.25 the top tier.
     hb_absorption_proxy_delta:
-      - {min: 0.03, points: 0.5}
+      # Haemoglobin dip of the quotient: > 0 means a deeper 540-590 nm dip in the lesion.
+      - {min: 0.025, points: 0.5}
       - {min: 0.06, points: 1.0}
     ratio_555_630_delta:
-      # A lower 555/630 ratio means more absorption in the haemoglobin band.
-      - {max: -0.05, points: 0.5}
+      # Relative change ratio_lesion / ratio_reference - 1 (-0.10 = 10 % lower): a lower 555/630
+      # ratio means more absorption in the haemoglobin band.
+      - {max: -0.04, points: 0.5}
       - {max: -0.10, points: 1.0}
     # Without a reference reading the absolute features are hard to interpret. v1 scores deltas
     # only, so such a reading contributes 0 points (0 x this multiplier) and is reported as a
@@ -113,7 +161,10 @@ lesion:
     high_risk_multiplier: 1.15
     af_low_specificity:
       # FVL at these sites is frequently inflammatory (gingivitis) or due to keratin/coating.
-      sites: [upper_gingiva, lower_gingiva, tongue_dorsum, hard_palate]
+      # Lower gingiva is NOT listed: it is part of the gingivobuccal complex, the commonest site of
+      # oral cancer in Indian tobacco users (see high_risk_sites). At an unpaired site this
+      # multiplier is not compounded with the in-image reference multiplier (smaller one only).
+      sites: [upper_gingiva, tongue_dorsum, hard_palate]
       af_multiplier: 0.6
 
 patient:
@@ -135,9 +186,12 @@ patient:
 #   symptom: <Symptoms field>              patient-reported symptom is true
 #   visual_appearance: [..]                any site's visual flag has one of these (examined or
 #                                          reference-only: a worker's observation is never ignored)
+#   visual_lesion_seen: true               the health worker recorded a lesion at any site (ticked,
+#                                          or an appearance given), whatever its appearance
 #   history: prior_oral_cancer|prior_oral_lesion
 #   any_lesion: true                       at least one lesion assessment exists
-# All keys in one `when` must hold.
+# All keys in one `when` must hold. Floors with a visual condition also apply to the lesion that
+# carries the observation. New floors are appended at the end (tests refer to earlier indices).
 overrides:
   - code: symptom.non_healing_ulcer
     label: "Non-healing ulcer for more than 2 weeks"
@@ -187,9 +241,32 @@ overrides:
     label: "Unexplained bleeding in the mouth"
     when: {symptom: bleeding}
     floor: MODERATE
+  # A lump the patient feels may be at a site that was not photographed.
+  - code: symptom.lump
+    label: "Patient reports a lump in the mouth: needs clinical examination"
+    when: {symptom: lump}
+    floor: MODERATE
+  - code: symptom.burning_sensation
+    label: "Burning sensation in the mouth (possible early submucous fibrosis)"
+    when: {symptom: burning_sensation}
+    floor: MODERATE
+  - code: symptom.pain
+    label: "Pain in the mouth: persistent pain needs examination"
+    when: {symptom: pain}
+    floor: MODERATE
+  - code: history.prior_oral_cancer
+    label: "Previous oral cancer: needs regular specialist follow-up"
+    when: {history: prior_oral_cancer}
+    floor: MODERATE
+  # Any lesion the health worker saw, including one with no listed appearance ("other").
+  - code: visual.lesion_seen
+    label: "Abnormality seen by the health worker: examine again in 2 weeks; refer if it persists"
+    when: {visual_lesion_seen: true}
+    floor: MODERATE
 
 inconclusive:
-  # LOW requires every examined site to have passed QC and been analysed.
+  # LOW requires every examined site to have passed QC and been analysed with a reliable mucosa
+  # outline (segmentation status "ok"), and every lesion to have been checked by the device.
   low_requires_all_examined_sites_analysed: true
   min_sites_analysed: 1
 
@@ -207,8 +284,8 @@ actions:
     summary: "Suspicious finding. Remove irritants and re-examine in 2 weeks."
     steps:
       - "Remove local irritants (sharp tooth, ill-fitting denture) and stop tobacco and areca nut."
-      - "Re-examine the same site in 2 weeks."
-      - "If the lesion is still present at re-examination, refer for clinical examination."
+      - "Re-examine in 2 weeks: the same site, or the whole mouth when the concern is a reported symptom."
+      - "If the lesion or symptom is still present at re-examination, refer for clinical examination."
     timeline_days: 14
     referral_urgency: reexamine
   HIGH:
@@ -222,9 +299,9 @@ actions:
     referral_urgency: urgent
   INCONCLUSIVE:
     code: retake_or_clinical_exam
-    summary: "Images could not be analysed reliably. Retake, or refer for clinical examination."
+    summary: "The device could not check every site or finding reliably. Retake, or refer for clinical examination."
     steps:
-      - "Retake the failed captures now, following the on-screen prompts."
+      - "Retake any failed captures now, following the on-screen prompts."
       - "If a lesion is visible or a retake is not possible, refer for clinical examination."
     timeline_days: 0
     referral_urgency: retake

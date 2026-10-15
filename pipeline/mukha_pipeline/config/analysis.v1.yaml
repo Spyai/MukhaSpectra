@@ -2,7 +2,7 @@
 # Baseline values chosen from the autofluorescence literature and tuned on synthetic data.
 # Not clinically validated. Changing any value changes the sha256 recorded in every result.
 name: mukhaspectra-analysis
-version: 1.0.0
+version: 1.1.0
 status: baseline_unvalidated
 
 working_max_side_px: 1024
@@ -42,7 +42,7 @@ registration:
 
 segmentation:
   method: classical_hsv_lab
-  version: 1.0.0
+  version: 1.1.0
   mucosa_hue_ranges: [[0, 22], [160, 180]]   # OpenCV hue 0-180: pinks and reds
   mucosa_saturation_min: 0.18
   mucosa_value_min: 0.18
@@ -52,7 +52,13 @@ segmentation:
   background_value_max: 0.12
   specular_value_min: 0.96
   specular_saturation_max: 0.20
-  fill_holes_max_fraction: 0.10      # white patches enclosed by mucosa are kept as mucosa
+  specular_max_blob_fraction: 0.002  # specular = near-white blobs up to this image share only;
+                                     #   larger bright areas (over-exposed white patch) are tissue
+  specular_group_px: 2               # near-white pixels this close are one blob (speckled plaque)
+  fill_holes_max_fraction: 0.35      # white patches enclosed by mucosa are kept as mucosa (a
+                                     #   leukoplakia can fill a large part of a close-up)
+  fill_holes_cavity_max_fraction: 0.10  # ...but a hole containing dark cavity shadow (mouth
+  fill_holes_cavity_min_share: 0.05  #   opening in a frontal view: >= this share dark) keeps 0.10
   min_component_fraction: 0.01
   morphology_kernel_px: 7
   mucosa_lab_a_min: 14               # Lab a* (redness) also marks mucosa outside the hue ranges
@@ -63,6 +69,14 @@ segmentation:
   confidence_ambiguous_max: 0.6      # confidence 0 when this share of pixels matches no rule
   failed_mucosa_fraction: 0.02       # summary status "failed" below this mucosa share
   low_confidence_below: 0.5          # summary status "low_confidence" below this confidence
+  # AF cross-check after registration (refine_masks_with_af): teeth fluoresce brightly at
+  # 405 nm, so whitish "teeth" whose smoothed linear AF green is below this x the median mucosa
+  # green are tissue (a white patch) and move back into the mucosa.
+  teeth_af_min_ratio: 1.0
+  teeth_af_smoothing_sigma_px: 3.0
+  teeth_af_open_px: 7                # drop thin misregistration slivers along tooth edges
+  teeth_af_min_blob_fraction: 0.002  # of the image; smaller dim blobs stay excluded
+  teeth_af_min_mucosa_pixels: 200    # need this much mucosa with valid AF for the comparison
 
 af:
   smoothing_sigma_px: 3.0
@@ -74,22 +88,29 @@ af:
   surround_ring_px: 15
   edge_margin_px: 3                  # ignore a thin mucosa rim: AF/WL misregistration there
                                      #   would read as a band of fluorescence loss
-  reference_percentile_low: 25       # in-image reference uses mucosa between these percentiles
-  reference_percentile_high: 90      #   of green, so FVL and glare do not drag it down
+  reference_percentile_low: 50       # in-image reference uses mucosa between these percentiles
+  reference_percentile_high: 95      #   of green: FVL covering up to ~45% of the mucosa (a
+                                     #   centred close-up) and glare do not drag it
+  reference_outlier_ratio: 1.5       # AF highlights > this x the 90th pct of mucosa green are
+                                     #   set aside before the in-image reference (0 = off)
   relative_af_grid_size: 96          # downsampled grid for the 3D / interactive view
   heatmap_alpha_max: 0.75
   reference_min_pixels: 200          # fewer usable mucosa pixels -> no in-image reference
-  reference_min_paired_ratio: 0.67   # paired site dimmer than this x own tissue is not used
-                                     #   (it would inflate relative AF and hide a real loss)
   insufficient_mucosa_fraction: 0.02 # AF status "insufficient_mucosa" below this image share
   heatmap_unanalysed_desaturate: 0.35  # grey out what was not analysed (teeth, shadow, glare)
 
 confounders:
   porphyrin_red_over_green_min: 0.85  # AF red / green; red porphyrin fluorescence from plaque
-  porphyrin_red_min: 0.10             # 0-1 absolute red level so dark noise is not flagged
+  porphyrin_red_rel_min: 1.4          # AND red >= this x the image's median mucosa red (a red
+                                      #   EXCESS: in deep FVL red/green rises with no red emission)
+  porphyrin_red_ref_min_of_green: 0.10  # red reference floored at this x median mucosa green, so
+                                      #   a near-zero (noise-only) red channel is not "excess"
+  porphyrin_smoothing_sigma_px: 2.0   # light smoothing of red/green before the porphyrin test
   pigmentation_lab_l_max: 45          # WL L* (0-100): dark brown/black
+  pigmentation_lab_a_max: 20          # WL a*: melanin brown is ~8-17; reddish pixels are never pigment
   pigmentation_hue_range: [5, 30]     # OpenCV hue: browns
-  blood_lab_a_min: 35                 # WL a*: deep red
+  blood_lab_a_min: 25                 # WL a*: dark reddish = blood or a red patch (never discounted;
+                                      #   the triage red-area floor keeps it at least MODERATE)
   blood_lab_l_max: 45
   flag_overlap_min: 0.15              # report a confounder when it covers >= this of a region
   pigmentation_saturation_min: 0.15   # WL HSV S: grey shadow is not brown pigment
@@ -109,9 +130,18 @@ wl_classifier:
 spectral:
   channels_used_for_features: [F1_415, F2_445, F3_480, F4_515, F5_555, F6_590, F7_630, F8_680]
   classifier:
-    method: rules_v1
-    # Heuristic thresholds on (lesion - reference) deltas. Not trained, not validated.
+    method: rules_v2
+    # Placeholder heuristic thresholds on the lesion-vs-reference delta. Not trained, not
+    # validated. rules_v2: the delta is computed on the per-channel quotient lesion / reference
+    # (spectral/features.py reference_delta), which cancels the probe's LED spectrum, filters and
+    # gain, so calibrated and uncalibrated readings use the same thresholds:
+    #   hb_proxy delta = 540-590 nm haemoglobin dip of the quotient (0 = same shape)
+    #   ratio_555_630 delta = ratio_lesion / ratio_reference - 1 (-0.10 = 10 % lower)
+    # Tuned on SYNTHETIC readings (mukha_pipeline.synthetic, reference hb 0.25, repeat noise 1 %):
+    # equal blood volume stays below the first cut-off (~4 SD of the repeat noise), hb 0.36 gives
+    # ~+0.04 / -6.6 % (indeterminate), hb 0.6 gives ~+0.125 / -19.5 % (suspicious).
+    # Keep equal to the triage tiers in triage_rules.v1.yaml lesion.spectral.
     hb_proxy_delta_suspicious: 0.06
-    hb_proxy_delta_indeterminate: 0.03
+    hb_proxy_delta_indeterminate: 0.025
     ratio_555_630_delta_suspicious: -0.10
-    ratio_555_630_delta_indeterminate: -0.05
+    ratio_555_630_delta_indeterminate: -0.04

@@ -137,8 +137,27 @@ def test_failed_qc_plus_red_patch_seen_is_high():
     assert out.site_levels[S.BUCCAL_MUCOSA_LEFT] == RiskLevel.HIGH
 
 
-def test_visual_other_at_failed_site_stays_inconclusive_with_referral_step():
+def test_visual_other_at_failed_site_is_moderate_with_retake_step():
+    """Any lesion the worker saw is at least MODERATE, even where the device could not look."""
     out = triage([site(S.BUCCAL_MUCOSA_LEFT, analysed=False, lesion_seen=True)])
+    t = out.triage
+    assert t.overall_risk_level == RiskLevel.MODERATE
+    (lesion,) = out.lesions
+    assert lesion.risk_level == RiskLevel.MODERATE
+    assert "visual.lesion_seen" in codes(t.overrides_applied)
+    assert "rests on the clinical findings" in t.explanation
+    assert (
+        "Retake the captures that could not be analysed: Left buccal mucosa."
+        in t.recommended_action.steps
+    )
+
+
+def test_visual_other_at_failed_site_without_floor_stays_inconclusive(tmp_path):
+    def drop(d: dict) -> None:
+        d["overrides"] = [o for o in d["overrides"] if o["code"] != "visual.lesion_seen"]
+
+    rules = write_rules(tmp_path, drop)
+    out = triage([site(S.BUCCAL_MUCOSA_LEFT, analysed=False, lesion_seen=True)], rules=rules)
     t = out.triage
     assert t.overall_risk_level == RiskLevel.INCONCLUSIVE
     (lesion,) = out.lesions
@@ -159,7 +178,7 @@ def test_mild_fvl_is_low_and_more_features_make_it_moderate():
     assert lesion.score == pytest.approx(expected, abs=1e-3)
     assert lesion.risk_level == RiskLevel.LOW
     assert mild.triage.overall_risk_level == RiskLevel.LOW
-    assert "Only a low-scoring finding was seen" in mild.triage.explanation
+    assert "The only finding scored low on this screen" in mild.triage.explanation
 
     more = triage(
         [site(S.BUCCAL_MUCOSA_LEFT, [region(mean_rel=0.70, fraction=0.06, contrast=1.5)])]
@@ -227,7 +246,8 @@ def test_habits_alone_never_raise_above_low():
     history = [f for f in t.contributing_factors if f.source == FactorSource.CLINICAL_HISTORY]
     assert len(history) == 6 and all(f.points == 0 for f in history)
     assert all("Counselling point" in (f.detail or "") for f in history)
-    assert "Stopping gutka, khaini, bidi, areca nut and daily alcohol" in t.explanation
+    assert "stopping gutka, khaini, bidi, areca nut and daily alcohol" in t.explanation
+    assert "The patient reports a previous oral lesion" in t.explanation
     assert any(s.startswith("Habits reported (gutka") for s in t.recommended_action.steps)
 
 
@@ -265,8 +285,9 @@ def test_former_only_habits_get_encouragement_step():
 def _scenario_for(o: Override) -> tuple[list[SiteResult], RiskFactors]:
     appearance = sorted(o.visual_appearance)[:1] if o.visual_appearance else []
     regions = [region(mean_rel=0.72)] if o.any_lesion else []
+    seen = True if o.visual_lesion_seen else None
     sites = [
-        site(S.BUCCAL_MUCOSA_LEFT, regions, appearance=appearance),
+        site(S.BUCCAL_MUCOSA_LEFT, regions, appearance=appearance, lesion_seen=seen),
         site(S.BUCCAL_MUCOSA_RIGHT),
     ]
     rf: dict = {}
@@ -286,17 +307,22 @@ def test_every_override_floor_applies(override: Override):
     applied = factor(t.overrides_applied, override.code)
     assert applied.source == FactorSource.OVERRIDE and applied.label == override.label
     assert RISK_ORDER[t.overall_risk_level] >= RISK_ORDER[override.floor]
-    if override.visual_appearance:
+    if override.lesion_scoped:
         (lesion,) = out.lesions
         assert RISK_ORDER[lesion.risk_level] >= RISK_ORDER[override.floor]
         assert override.code in codes(lesion.contributing_factors)
 
 
 def test_lesion_conditional_floors_need_a_lesion():
+    """Without a lesion the HIGH floors do not hold, but the lump and previous oral cancer still
+    set their own MODERATE floors."""
     rf = risk(symptoms={"lump": True}, prior_oral_cancer=True)
     out = triage([site(S.BUCCAL_MUCOSA_LEFT)], rf=rf)
-    assert out.triage.overrides_applied == []
-    assert out.triage.overall_risk_level == RiskLevel.LOW
+    applied = codes(out.triage.overrides_applied)
+    assert "symptom.lump_with_lesion" not in applied
+    assert "history.prior_cancer_with_lesion" not in applied
+    assert {"symptom.lump", "history.prior_oral_cancer"} <= set(applied)
+    assert out.triage.overall_risk_level == RiskLevel.MODERATE
 
 
 def test_floor_cannot_be_lowered_by_low_device_score():
@@ -353,10 +379,11 @@ def test_score_high_is_kept_when_no_examined_site_readable():
 
 
 def test_moderate_score_without_floor_and_no_readable_site_is_inconclusive():
-    sites = [site(S.BUCCAL_MUCOSA_LEFT, analysed=False, lesion_seen=True)]
-    spectral = [reading("s1", S.BUCCAL_MUCOSA_LEFT, hb_delta=0.08, ratio_delta=-0.2)]
-    out = triage(sites, spectral, rf=risk(smokeless_tobacco={"uses": True}), age=60)
+    wl = wl_ok(WLLabel.RED_PATCH, 0.9)
+    sites = [site(S.BUCCAL_MUCOSA_LEFT, af_status="insufficient_mucosa", wl=wl)]
+    out = triage(sites, rf=risk(smokeless_tobacco={"uses": True}), age=60)
     assert out.lesions[0].risk_level == RiskLevel.MODERATE
+    assert out.triage.overrides_applied == []
     assert out.triage.overall_risk_level == RiskLevel.INCONCLUSIVE
     assert any("refer for clinical examination" in s for s in out.triage.recommended_action.steps)
 
@@ -457,7 +484,7 @@ def test_limitations_cover_wl_reference_and_spectral():
     ]:
         assert code in lims
     msg = next(x.message for x in out.limitations if x.code == "reference_in_image")
-    assert msg.startswith("At Tongue dorsum, no matching healthy site was available")
+    assert msg.startswith("At Tongue dorsum, no opposite-side or similar site was available")
 
 
 def test_site_levels_take_most_severe_lesion():
@@ -563,7 +590,8 @@ def test_explanation_and_top_lesion_follow_the_scoring_lesion():
     rf = risk(alcohol={"uses": True, "frequency": "daily"})
     out = triage(sites, spectral, age=45, rf=rf)
     gum, lip = out.lesions
-    assert gum.risk_level == RiskLevel.LOW and lip.risk_level == RiskLevel.INCONCLUSIVE
+    # Strong FVL (relative AF 0.50) stays MODERATE even though diascopy discounted it.
+    assert gum.risk_level == RiskLevel.MODERATE and lip.risk_level == RiskLevel.INCONCLUSIVE
     t = out.triage
     assert t.overall_risk_level == RiskLevel.MODERATE
     assert t.highest_risk_lesion_id == gum.lesion_id

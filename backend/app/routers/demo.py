@@ -20,6 +20,7 @@ DEMO_DISABLED = "Demo screenings are disabled on this server."
     responses={
         404: {"model": ErrorResponse, "description": "Demo endpoints are disabled"},
         422: {"model": ErrorResponse, "description": "Unknown demo kind"},
+        503: {"model": ErrorResponse, "description": "Server busy, try again shortly"},
     },
     summary="Create and analyse a SYNTHETIC demo patient (low | moderate | high)",
 )

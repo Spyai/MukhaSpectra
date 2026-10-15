@@ -40,11 +40,18 @@ def _sqlite_on_connect(dbapi_connection: Any, _record: Any) -> None:
 
 
 def create_db_engine(url: str) -> Engine:
-    """Create an engine for ``url``. SQLite gets foreign keys ON and cross-thread access."""
+    """Create an engine for ``url``. SQLite gets foreign keys ON and cross-thread access.
+
+    ``hide_parameters=True``: a database error must never write bound values (consent, risk
+    factors, health-worker names) into the server log.
+    """
     parsed = make_url(url)
     if parsed.get_backend_name() == "sqlite":
         database = parsed.database
-        kwargs: dict[str, Any] = {"connect_args": {"check_same_thread": False}}
+        kwargs: dict[str, Any] = {
+            "connect_args": {"check_same_thread": False},
+            "hide_parameters": True,
+        }
         if database in (None, "", ":memory:"):
             kwargs["poolclass"] = StaticPool
         # The database folder is created by app.migrations.prepare_database at startup, so
@@ -52,7 +59,7 @@ def create_db_engine(url: str) -> Engine:
         engine = create_engine(url, **kwargs)
         event.listen(engine, "connect", _sqlite_on_connect)
         return engine
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True, hide_parameters=True)
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:

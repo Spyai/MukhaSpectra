@@ -10,12 +10,14 @@ from mukha_pipeline.io.images import (
     ExifInfo,
     ImageDecodeError,
     LoadedImage,
+    RawWhiteBalance,
     encode_png,
     load_image_bytes,
     resize_max_side,
     to_float_rgb,
     to_uint8,
 )
+from mukha_pipeline.io.sanitize import SanitizedImage, strip_identifying_metadata
 from mukha_pipeline.io.spectral import (
     SPECTRAL_FORMAT_V1,
     ParsedSpectral,
@@ -31,11 +33,14 @@ __all__ = [
     "ImageDecodeError",
     "LoadedImage",
     "ParsedSpectral",
+    "RawWhiteBalance",
+    "SanitizedImage",
     "SpectralParseError",
     "encode_png",
     "load_image_bytes",
     "parse_spectral_file",
     "resize_max_side",
+    "strip_identifying_metadata",
     "to_float_rgb",
     "to_uint8",
 ]

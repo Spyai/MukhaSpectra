@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from synthetic_helpers import MEDIUM, SMALL, assert_float_image, relative_af_proxy
 
+from mukha_pipeline.preprocess.correction import linear_to_srgb, srgb_to_linear
 from mukha_pipeline.synthetic import (
     LesionSpec,
     generate_af_from_wl,
@@ -21,7 +22,13 @@ from mukha_pipeline.synthetic.af import (
     MAX_ROTATION_DEG,
     MAX_SCALE_CHANGE,
     MAX_SHIFT_PX,
+    MUCOSA_GREEN,
 )
+
+# The AF generator writes what a phone file holds: sRGB-ENCODED values. Its physics (green
+# emission, FVL depth, porphyrin red) is modelled in linear light, so tests of that physics
+# linearise first, exactly as the analysis does.
+DARK_LINEAR = float(srgb_to_linear(np.float32(DEFAULT_DARK_LEVEL)))
 
 
 @pytest.fixture(scope="module")
@@ -51,16 +58,38 @@ def _af(scene, seed: int = 0, **kwargs):
 def test_af_is_green_dominant_with_little_blue(clean_scene) -> None:
     af = _af(clean_scene)
     assert_float_image(af, MEDIUM)
-    tissue = af[clean_scene.tissue_mask & ~clean_scene.specular_mask]
+    lin = srgb_to_linear(af)
+    tissue = lin[clean_scene.tissue_mask & ~clean_scene.specular_mask]
     r, g, b = np.median(tissue, axis=0)
     assert g > 2 * r and g > 3 * b, "healthy mucosa glows green"
     blue_fraction = np.median(af[..., 2] / (af.sum(axis=-1) + 1e-6))
-    assert blue_fraction < 0.2, "long-pass filter keeps blue low"
+    assert blue_fraction < 0.2, "long-pass filter keeps blue low (also in the encoded file)"
     assert np.percentile(af[..., 1], 90) > 0.12, "violet torch clearly on"
 
 
+def test_af_output_is_srgb_encoded_and_fvl_depth_is_a_linear_fraction(lesion_scene) -> None:
+    """science.0: the file is sRGB-encoded like a phone JPEG; the FVL depth is a fraction of
+    LIGHT, so it is only recovered after linearising (encoded values hide much of the loss)."""
+    depth = lesion_scene.lesion.fvl_depth
+    af = _af(lesion_scene, bloom=0.0, fvl_mask=lesion_scene.lesion_mask, fvl_depth=depth)
+    inner = erode(lesion_scene.lesion_mask, 6)
+    ring = dilate(lesion_scene.lesion_mask, 30) & ~dilate(lesion_scene.lesion_mask, 10)
+    ring &= lesion_scene.tissue_mask & ~lesion_scene.specular_mask
+    lin_green = srgb_to_linear(af)[..., 1] - DARK_LINEAR
+    lin_ratio = np.median(lin_green[inner]) / np.median(lin_green[ring])
+    enc_ratio = np.median(af[..., 1][inner]) / np.median(af[..., 1][ring])
+    assert lin_ratio == pytest.approx(1.0 - depth, abs=0.06)
+    assert enc_ratio > lin_ratio + 0.12, "encoding compresses the loss"
+    # Healthy tissue: encoded value of the modelled linear level (torch hot spot ~MUCOSA_GREEN).
+    healthy_lin = float(np.percentile(lin_green[ring], 90))
+    assert 0.6 * MUCOSA_GREEN < healthy_lin < 1.3 * MUCOSA_GREEN
+    assert float(np.percentile(af[..., 1][ring], 90)) == pytest.approx(
+        float(linear_to_srgb(np.float32(healthy_lin + DARK_LINEAR))), abs=0.02
+    )
+
+
 def test_teeth_fluoresce_brighter_than_mucosa(clean_scene) -> None:
-    af = _af(clean_scene)
+    af = srgb_to_linear(_af(clean_scene))
     teeth = erode(clean_scene.teeth_mask, 3)
     assert af[teeth][:, 1].mean() > af[clean_scene.tissue_mask][:, 1].mean() * 1.3
 
@@ -68,7 +97,7 @@ def test_teeth_fluoresce_brighter_than_mucosa(clean_scene) -> None:
 def test_fvl_region_is_darker_by_about_the_depth(lesion_scene) -> None:
     depth = lesion_scene.lesion.fvl_depth
     af = _af(lesion_scene, bloom=0.0, fvl_mask=lesion_scene.lesion_mask, fvl_depth=depth)
-    green = af[..., 1] - DEFAULT_DARK_LEVEL
+    green = srgb_to_linear(af)[..., 1] - DARK_LINEAR
     inner = erode(lesion_scene.lesion_mask, 6)
     ring = dilate(lesion_scene.lesion_mask, 30) & ~dilate(lesion_scene.lesion_mask, 10)
     ring &= lesion_scene.tissue_mask & ~lesion_scene.specular_mask
@@ -77,7 +106,9 @@ def test_fvl_region_is_darker_by_about_the_depth(lesion_scene) -> None:
 
 
 def test_red_to_green_ratio_rises_in_fvl(lesion_scene) -> None:
-    af = _af(lesion_scene, bloom=0.0, fvl_mask=lesion_scene.lesion_mask, fvl_depth=0.4)
+    af = srgb_to_linear(
+        _af(lesion_scene, bloom=0.0, fvl_mask=lesion_scene.lesion_mask, fvl_depth=0.4)
+    )
     inner = erode(lesion_scene.lesion_mask, 6)
     ring = dilate(lesion_scene.lesion_mask, 30) & ~dilate(lesion_scene.lesion_mask, 10)
     ring &= lesion_scene.tissue_mask
@@ -98,9 +129,9 @@ def test_lesion_whiteness_does_not_brighten_af(lesion_scene) -> None:
 
 
 def test_clean_scene_has_no_false_fluorescence_loss(clean_scene) -> None:
-    af = _af(clean_scene)
+    af = srgb_to_linear(_af(clean_scene))
     tissue = clean_scene.tissue_mask & ~clean_scene.specular_mask
-    rel = relative_af_proxy(af, tissue, DEFAULT_DARK_LEVEL)
+    rel = relative_af_proxy(af, tissue, DARK_LINEAR)
     low = (rel < 0.75) & tissue
     opened = cv2.morphologyEx(low.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     assert opened.sum() < 50
@@ -108,10 +139,10 @@ def test_clean_scene_has_no_false_fluorescence_loss(clean_scene) -> None:
 
 
 def test_fvl_mask_below_threshold_in_relative_af(lesion_scene) -> None:
-    af = _af(lesion_scene, fvl_mask=lesion_scene.lesion_mask, fvl_depth=0.4)
+    af = srgb_to_linear(_af(lesion_scene, fvl_mask=lesion_scene.lesion_mask, fvl_depth=0.4))
     tissue = lesion_scene.tissue_mask & ~lesion_scene.specular_mask
     healthy = tissue & ~dilate(lesion_scene.lesion_mask, 15)
-    rel = relative_af_proxy(af, healthy, DEFAULT_DARK_LEVEL)
+    rel = relative_af_proxy(af, healthy, DARK_LINEAR)
     inner = erode(lesion_scene.lesion_mask, 6)
     assert rel[inner].mean() < 0.7
     assert (rel[healthy] >= 0.75).mean() > 0.995
@@ -126,7 +157,8 @@ def test_porphyrin_spots_raise_red_only_where_placed(clean_scene) -> None:
     assert 0 < changed.mean() < 0.02
     assert np.array_equal(spots[..., 2], base[..., 2])
     hot = diff > 0.1
-    assert (spots[..., 0][hot] / spots[..., 1][hot]).mean() > 0.85, "flaggable as porphyrin"
+    lin = srgb_to_linear(spots)
+    assert (lin[..., 0][hot] / lin[..., 1][hot]).mean() > 0.85, "flaggable as porphyrin"
     near_teeth = dilate(clean_scene.teeth_mask, 30)
     assert near_teeth[hot].mean() > 0.8, "plaque sits along the gingival margin"
 
@@ -171,7 +203,7 @@ def test_transform_maps_wl_coordinates_to_af(lesion_scene) -> None:
         return_transform=True,
     )
     h, w = MEDIUM
-    back = cv2.warpAffine(af, np.linalg.inv(transform)[:2], (w, h))
+    back = cv2.warpAffine(srgb_to_linear(af), np.linalg.inv(transform)[:2], (w, h))
     inner = erode(lesion_scene.lesion_mask, 6)
     ring = dilate(lesion_scene.lesion_mask, 30) & ~dilate(lesion_scene.lesion_mask, 10)
     ring &= lesion_scene.tissue_mask
@@ -197,7 +229,9 @@ def test_random_misalignment_respects_custom_limits() -> None:
 
 
 def test_masks_are_estimated_when_not_given(clean_scene) -> None:
-    af = generate_af_from_wl(clean_scene.wl, np.random.default_rng(3), misalign=False)
+    af = srgb_to_linear(
+        generate_af_from_wl(clean_scene.wl, np.random.default_rng(3), misalign=False)
+    )
     tissue = af[clean_scene.tissue_mask & ~clean_scene.specular_mask]
     assert np.median(tissue[:, 1]) > 2 * np.median(tissue[:, 0])
     assert af[erode(clean_scene.teeth_mask, 3)][:, 1].mean() > np.median(tissue[:, 1])
@@ -235,6 +269,7 @@ def test_af_without_any_tissue_still_renders() -> None:
 
 
 def test_dark_frame_level_shape_and_optional_stamp() -> None:
+    """The dark frame is what the file holds (encoded, like the AF capture it goes with)."""
     dark = generate_dark_frame(SMALL, np.random.default_rng(0), level=0.01)
     assert_float_image(dark, SMALL)
     assert np.median(dark) == pytest.approx(0.01, abs=0.003)
