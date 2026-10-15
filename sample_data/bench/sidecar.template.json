@@ -1,0 +1,72 @@
+{
+  "schema": "mukhaspectra.bench_sidecar.v1",
+  "data_provenance": "phantom",
+  "sample_id": "PH-GB050-1",
+  "session_id": "BENCH-2026-10-14-A",
+  "captured_at": "2026-10-14T10:30:00+05:30",
+  "operator_id": "team-01",
+  "devices": {
+    "scout_id": "scout-01",
+    "scout_firmware": null,
+    "confirm_id": "confirm-01",
+    "confirm_firmware": null,
+    "phone_model": null
+  },
+  "capture_settings": {
+    "wl_exposure_ms": null,
+    "af_exposure_ms": null,
+    "iso": null,
+    "white_balance": "locked:5000K",
+    "working_distance_mm": null,
+    "probe_gain": 64,
+    "probe_integration_ms": 50
+  },
+  "calibration": {
+    "image_calibration_id": null,
+    "spectral_calibration_id": null,
+    "white_standard": "PTFE diffuse reflectance standard, nominal 99 %"
+  },
+  "files": {
+    "wl": "20261014_PH-GB050-1_surface_wl.jpg",
+    "af": "20261014_PH-GB050-1_surface_af.jpg",
+    "dark": "20261014_PH-GB050-1_surface_dark.png",
+    "spectrum": "20261014_PH-GB050-1_spectrum.csv"
+  },
+  "site": null,
+  "phantom": {
+    "base": "gelatin 10 % w/v in PBS",
+    "scatterer": "intralipid 1 % v/v",
+    "absorber": "whole blood 0.50 % v/v",
+    "fluorophore": "FAD 20 uM",
+    "inclusion": {
+      "present": true,
+      "absorber": "whole blood 2.0 % v/v",
+      "fluorophore": "FAD 5 uM",
+      "diameter_mm": 8,
+      "depth_mm": 0.5
+    },
+    "batch": "GB-2026-10-13",
+    "age_hours": 20
+  },
+  "ex_vivo": null,
+  "volunteer": null,
+  "_ex_vivo_example": {
+    "species": "porcine",
+    "tissue": "buccal mucosa",
+    "source": "food-chain supplier",
+    "hours_since_slaughter": 4,
+    "storage": "PBS, 4 C, kept moist"
+  },
+  "_volunteer_example": {
+    "pseudonymous_id": "VOL-001",
+    "consent_recorded": true,
+    "consent_method": "signature",
+    "consent_form_version": "v1",
+    "consent_date": "2026-10-10",
+    "research_use_opt_in": true,
+    "age_band": "30-39",
+    "tobacco_or_areca_use": "never"
+  },
+  "expected": "inclusion should read darker than the surround in AF and show a deeper 540-580 nm dip",
+  "notes": ""
+}

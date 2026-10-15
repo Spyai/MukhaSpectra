@@ -1,0 +1,483 @@
+{#- MukhaSpectra clinician / referral report. Content order follows brief §6.1 items 1–9.
+    Input: the view model from app.reports.context.build_context (autoescape is on). -#}
+{%- macro pill(b) -%}
+<span class="pill risk-{{ b.css }}">{{ b.icon }}{{ b.level }}</span>
+{%- endmacro -%}
+
+{%- macro factor_table(rows, override_tag) -%}
+<table class="compact factor-table">
+  <thead><tr><th>Reason</th><th style="width:36mm">Source</th><th class="num" style="width:13mm">Points</th></tr></thead>
+  <tbody>
+  {%- for f in rows %}
+    <tr class="{{ 'override' if f.is_override else '' }}">
+      <td>{{ f.label }}{% if f.detail %} <span class="detail-inline">· {{ f.detail }}</span>{% endif %}</td>
+      <td>{% if f.is_override %}<span class="tag">{{ override_tag }}</span>{% else %}{{ f.source }}{% endif %}</td>
+      <td class="num pts{{ ' floor' if f.is_override else (' neg' if f.negative else '') }}">{{ f.points }}</td>
+    </tr>
+  {%- else %}
+    <tr><td colspan="3" class="muted">No contributing factors recorded.</td></tr>
+  {%- endfor %}
+  </tbody>
+</table>
+{%- if rows | selectattr('is_override') | list %}
+<div class="override-note">{{ override_footnote }}</div>
+{%- endif %}
+{%- endmacro -%}
+
+{%- macro image_panel(p) -%}
+<figure class="panel">
+  {%- if p.image.available %}
+  <div class="frame"><img src="{{ p.image.data_uri }}" alt="{{ p.title }}"></div>
+  {%- else %}
+  <div class="placeholder"><div class="ph-title">Image not available</div><div class="tiny">{{ p.image.reason }}</div></div>
+  {%- endif %}
+  <figcaption><b>{{ p.title }}</b> <span>· {{ p.note }}</span></figcaption>
+  {%- if p.scale %}
+  <div class="hm-scale">
+    <div class="bar-row"><span class="end">{{ p.scale.upper }}</span><span class="bar" style="background: {{ p.scale.gradient }}"></span><span class="end">{{ p.scale.lower }}</span></div>
+    <div class="key">relative AF {{ p.scale.upper }} → {{ p.scale.lower }} · no colour = no loss · grey = not analysed</div>
+  </div>
+  {%- endif %}
+</figure>
+{%- endmacro -%}
+{%- macro wl_line(wl) -%}
+<div class="model-line">
+  <b>{{ wl.status_text }}</b>{% if wl.model_text %} <span class="muted">· {{ wl.model_text }}</span>{% endif %}
+  {%- if wl.available and wl.predictions %}<br>{% for label, p in wl.predictions %}{{ label }} {{ p }}{% if not loop.last %} · {% endif %}{% endfor %} <span class="muted">(uncalibrated model scores)</span>{% endif %}
+  {%- if wl.note %}<br><span class="muted">{{ wl.note }}</span>{% endif %}
+  {%- if wl.saliency %}<br><img src="{{ wl.saliency.data_uri }}" alt="White-light saliency map (clinician only)" style="height:22mm; margin-top:1mm"> <span class="muted small">Saliency map — explainability aid for clinicians only.</span>{% endif %}
+</div>
+{%- endmacro -%}
+{%- macro swatch(fill, stroke, dash='') -%}
+<svg class="sw" viewBox="0 0 20 12" aria-hidden="true"><ellipse cx="10" cy="6" rx="8.6" ry="4.9" fill="{{ fill }}" stroke="{{ stroke }}" stroke-width="1.2"{% if dash %} stroke-dasharray="{{ dash }}"{% endif %}/></svg>
+{%- endmacro -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MukhaSpectra clinician report {{ header.report_id }}</title>
+<meta name="generator" content="MukhaSpectra report engine">
+<meta name="author" content="MukhaSpectra (research prototype)">
+<style>{{ css }}</style>
+<style>
+@page {
+  @top-left { content: {{ (banner ~ (" · SYNTHETIC DATA" if synthetic else (" · " ~ provenance_tag if provenance_tag else ""))) | css_str }}; }
+  @top-right { content: {{ running_header | css_str }}; }
+  @bottom-left { content: {{ footer_text | css_str }}; }
+}
+</style>
+</head>
+<body class="{{ 'is-synthetic' if synthetic else '' }}">
+{%- if synthetic %}
+<div class="watermark" aria-hidden="true">SYNTHETIC DATA</div>
+{%- endif %}
+<div class="screen-only screen-banner">{{ banner }}{% if synthetic %} · SYNTHETIC DATA{% elif provenance_tag %} · {{ provenance_tag }}{% endif %}</div>
+
+{#- 1 ─ Header ───────────────────────────────────────────────────────────── #}
+<header class="report-header">
+  <div>
+    <img class="logo" src="{{ logo_uri }}" alt="MukhaSpectra (placeholder logo)">
+    <h1>Oral screening — clinician referral report</h1>
+    <div class="subtitle">Screening and triage aid · {{ header.review_status }}</div>
+    <div class="meta-id">Report <b>{{ header.report_id }}</b> · v{{ header.report_version }} · generated {{ header.generated_at }}</div>
+  </div>
+  <div class="report-meta risk-{{ triage.badge.css }}">
+    <div class="meta-level"><span class="risk-badge sm risk-{{ triage.badge.css }}">{{ triage.badge.icon_inverse }}{{ triage.badge.level }}</span><span class="meta-when">{{ triage.timeline }}</span></div>
+    <div class="meta-action">{{ triage.summary }}</div>
+    {%- if triage.reviewer_line %}<div class="meta-review">{% if triage.reviewed_badge %}{{ pill(triage.reviewed_badge) }} {% endif %}{{ triage.reviewer_line }}</div>{% endif %}
+  </div>
+</header>
+
+<div class="context-grid">
+  <div class="kv"><div class="k">Screening site / camp</div><div class="v">{{ header.camp }}</div></div>
+  <div class="kv"><div class="k">Health worker</div><div class="v">{{ header.health_worker }}</div></div>
+  <div class="kv"><div class="k">Captured</div><div class="v">{{ header.captured_at }}</div></div>
+  <div class="kv"><div class="k">Analysed</div><div class="v">{{ header.analysed_at }}</div></div>
+  <div class="kv"><div class="k">Device ID(s)</div><div class="v">{{ header.devices }}</div></div>
+  <div class="kv"><div class="k">Firmware</div><div class="v">{{ header.firmware }}</div></div>
+  <div class="kv"><div class="k">Calibration status</div><div class="v"><span class="status-chip {{ 'ok' if header.calibration_ok else 'warn' }}">{{ header.calibration }}</span></div></div>
+  <div class="kv"><div class="k">Data</div><div class="v">{% if synthetic %}<span class="status-chip bad">{{ header.provenance }}</span>{% elif provenance_notice %}<span class="status-chip warn">{{ header.provenance }}</span>{% else %}{{ header.provenance }}{% endif %}</div></div>
+</div>
+<div class="versions">
+  {%- for k, v in versions_rows %}<span class="item"><b>{{ k }}</b> {{ v }}</span> {% endfor %}
+  {%- if header.supersedes %}<span class="item"><b>Supersedes</b> {{ header.supersedes }}</span>{% endif %}
+  <br><b>Models:</b> {{ models_line }}
+</div>
+
+{#- 2 ─ Disclaimer (+ data provenance) ──────────────────────────────────────── #}
+<div class="disclaimer" role="note">
+  <svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.6" fill="none" stroke="#5b3cc4" stroke-width="1.6"/><rect x="9.1" y="8.4" width="1.8" height="6.2" rx="0.9" fill="#5b3cc4"/><circle cx="10" cy="5.8" r="1.15" fill="#5b3cc4"/></svg>
+  <p><span class="title">{{ disclaimer_title }}.</span> {{ disclaimer_body }} Every result requires clinician review.</p>
+  {%- if synthetic %}
+  <p class="data-line synthetic-line">{{ synthetic_notice }}</p>
+  {%- elif provenance_notice %}
+  <p class="data-line provenance-line">{{ provenance_notice }}</p>
+  {%- endif %}
+</div>
+
+{#- 3 ─ Patient and risk factors ───────────────────────────────────────────── #}
+<section class="keep patient">
+  <h2><span class="sec-no">1</span> Patient and risk factors</h2>
+  <div class="patient-row">
+    <div class="card soft pt">
+      <div class="pt-main">{% if patient.name %}<b>{{ patient.name }}</b>{% else %}<span class="muted">Name not shown (privacy)</span>{% endif %} · <b>{{ patient.age }} · {{ patient.sex }}</b></div>
+      <div class="pt-ids">{% if patient.external_id %}Patient ID (masked) <span class="v">{{ patient.external_id }}</span> · {% endif %}Pseudonymous ID <span class="v">{{ patient.pseudonymous_id }}</span> · Consent <span class="v">{{ patient.consent }}</span></div>
+    </div>
+    <div class="card pt-rf">
+      <div class="rf-label">Risk-factor summary</div>
+      <div class="rf-summary">{{ risk_summary }}</div>
+      {%- set empty = risk_groups | dictsort | selectattr('1', 'equalto', []) | map('first') | map('lower') | list %}
+      {%- if empty and empty | length < risk_groups | length %}
+      <div class="rf-groups muted">None reported: {{ empty | join(', ') }}.</div>
+      {%- endif %}
+    </div>
+  </div>
+</section>
+
+{#- 4 + 5 ─ Overall risk and site map ─────────────────────────────────────── #}
+<section class="overall-row">
+  <div class="cols-main-side">
+    <div>
+      <h2><span class="sec-no">2</span> Overall risk level and recommended action</h2>
+      <div class="card overall risk-{{ triage.badge.css }}">
+        <div class="overall-top">
+          <span class="risk-badge risk-{{ triage.badge.css }}">{{ triage.badge.icon_inverse }}{{ triage.badge.level }}<span class="lvl-sub">Overall risk level</span></span>
+          <div class="when"><div class="k">Timeline</div><div class="v">{{ triage.timeline }}</div><div class="small muted">{{ triage.urgency }} · <span class="review-note">{{ 'device recommendation' if triage.reviewed_badge else 'requires clinician review' }}</span></div></div>
+        </div>
+        {%- if triage.reviewer_line %}
+        <div class="reviewed">{% if triage.reviewed_badge %}{{ pill(triage.reviewed_badge) }} {% endif %}<b>{{ triage.reviewer_line }}</b></div>
+        {%- endif %}
+        <div class="summary">{{ triage.summary }}</div>
+        {%- if triage.steps_label %}<div class="steps-label">{{ triage.steps_label }}</div>{% endif %}
+        <ol>
+          {%- for s in triage.steps %}<li>{{ s }}</li>{% endfor %}
+        </ol>
+        {%- if triage.clinician_note %}
+        <div class="clin-note">{{ triage.clinician_note }}</div>
+        {%- endif %}
+        {%- if lesions %}
+        <div class="findings-list{{ ' many' if n_lesions > 2 else '' }}"><span class="fl-label">Findings (numbered as on the map):</span>
+          {%- for l in lesions %}
+          <span class="f risk-{{ l.badge.css }}"><span class="no">{{ l.number }}</span>{{ l.site }} {{ pill(l.badge) }}</span>
+          {%- endfor %}
+          {%- for l in compact_lesions %}
+          <span class="f risk-{{ l.badge.css }}"><span class="no">{{ l.number }}</span>{{ l.site }} {{ pill(l.badge) }}</span>
+          {%- endfor %}
+        </div>
+        {%- if findings_note %}
+        <div class="level-context">{{ findings_note }}</div>
+        {%- endif %}
+        {%- endif %}
+        <div class="coverage">
+          <b>{{ coverage.summary }}</b>
+          {%- if coverage.not_examined %} Not examined (no device information): {{ coverage.not_examined | join(', ') }}.{% endif %}
+          {%- if coverage.not_assessed and not triage.clinician_note %} <span class="bad-text">Not assessed ({{ coverage.not_assessed_reason }}): {{ coverage.not_assessed | join(', ') }} — examine clinically.</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="map-col">
+      <h2><span class="sec-no">3</span> Oral site map</h2>
+      <img class="sitemap" src="{{ sitemap_uri }}" alt="Oral site map — patient's right | patient's left (viewed facing the patient)">
+      <div class="map-legend">
+        {%- for it in map_legend %}
+        <span class="it">{% if it.badge.level == 'INCONCLUSIVE' %}<svg class="sw" viewBox="0 0 20 12" aria-hidden="true"><defs><pattern id="lg-hatch" patternUnits="userSpaceOnUse" width="3" height="3" patternTransform="rotate(45)"><rect width="3" height="3" fill="#eef1f5"/><line x1="0" y1="0" x2="0" y2="3" stroke="#8d97a8" stroke-width="1.1"/></pattern></defs><ellipse cx="10" cy="6" rx="8.6" ry="4.9" fill="url(#lg-hatch)" stroke="#475467" stroke-width="1.2" stroke-dasharray="2 1.4"/></svg>{% else %}{{ swatch(it.fill, it.stroke) }}{% endif %}{{ it.badge.icon }}{{ it.badge.title }}</span>
+        {%- endfor %}
+        <span class="it">{{ swatch('#eaf1fe', '#2563eb', '2.4 1.6') }}Reference only</span>
+        <span class="it">{{ swatch('#ffffff', '#c4cbd5') }}Not examined</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="why">
+  <h3>Why this level — contributing factors</h3>
+  {%- if triage.explanation or triage.level_note %}
+  <p class="expl">{{ triage.explanation }}{% if triage.level_note %} <b>{{ triage.level_note }}</b>{% endif %}</p>
+  {%- endif %}
+  {%- if triage.gauge %}
+  <div class="score-line">
+    <div class="gauge">{{ triage.gauge }}</div>
+    <div class="txt">Rule score <b>{{ triage.score }}</b> (Moderate ≥ {{ triage.moderate }}, High ≥ {{ triage.high }}). Triage rules: {{ triage.rule_status }}. Read the score only together with the reasons below.</div>
+  </div>
+  {%- else %}
+  <div class="note-line">No overall rule score was computed (thresholds: Moderate ≥ {{ triage.moderate }}, High ≥ {{ triage.high }}). The level follows from the reasons below. Triage rules: {{ triage.rule_status }}.</div>
+  {%- endif %}
+  {{ factor_table(triage.factors, override_tag) }}
+</section>
+
+{#- 6 ─ Findings by lesion ─────────────────────────────────────────────────── #}
+<section class="findings">
+  <h2><span class="sec-no">4</span> Suspicious findings</h2>
+  {%- if not lesions %}
+  <div class="card soft">
+    {%- if qc.passed_all %}No suspicious finding was flagged at the examined sites by this screen. This does not rule out disease: follow the recommended action above, and re-screen if any symptom appears.
+    {%- else %}No suspicious finding was flagged at the sites that could be analysed. Sites that failed quality control ({{ qc.sites_failed | join(', ') if qc.sites_failed else 'see section 5' }}) were not assessed, so this does not rule out disease: follow the recommended action above.{% endif %}
+  </div>
+  {%- else %}
+  <div class="note-line">{{ n_lesions }} finding{{ 's' if n_lesions != 1 else '' }} by risk level{% if compact_lesions %}; full evidence for the top {{ max_detailed }}, the rest in the table below (all findings are in the screening record){% endif %}. <b>Relative AF</b> = green fluorescence ÷ the patient's comparison reference (assumed unaffected; the device does not check this. 1.00 = same, lower = loss). <b>Contrast</b> above 1 = darker than surroundings. <b>Border irreg.</b> 0 = smooth round edge, 1 = very irregular. Photos are cropped to the frame around the flagged region; brackets (outline on the heatmap) mark the region.</div>
+  {%- endif %}
+
+  {%- for l in lesions %}
+  <article class="lesion risk-{{ l.badge.css }}">
+    <div class="lesion-top">
+    <div class="lesion-head">
+      <div class="no">{{ l.number }}</div>
+      <div>
+        <div class="title">Finding {{ l.number }} · {{ l.site }}</div>
+        <div class="origins">Raised by: {{ l.origins }} · <span class="mono">{{ l.lesion_id }}</span></div>
+      </div>
+      <div class="right">{{ pill(l.badge) }}<div class="score">Lesion rule score {{ l.score }}</div></div>
+    </div>
+    {%- if l.level_context %}
+    <div class="level-context">{{ l.level_context }}</div>
+    {%- endif %}
+    <p class="summary">{{ l.summary }}</p>
+
+    <div class="triptych">
+      {%- for p in l.panels %}{{ image_panel(p) }}{% endfor %}
+    </div>
+
+    <div class="measure-wrap">
+      {%- if l.regions %}
+      <table class="compact measure">
+        <colgroup><col style="width:31mm"><col style="width:23mm"><col style="width:12.5mm"><col style="width:12.5mm"><col style="width:14.5mm"><col style="width:12.5mm"><col style="width:36mm"><col></colgroup>
+        <thead><tr>
+          <th>Region · location</th><th class="num">Area</th><th class="num">Mean rel. AF</th><th class="num">Min rel. AF</th>
+          <th class="num">Contrast</th><th class="num">Border irreg.</th><th>Reference used{% if l.fvl_threshold %} · threshold{% endif %}</th><th>Confounder flags</th>
+        </tr></thead>
+        <tbody>
+        {%- for g in l.regions %}
+          <tr>
+            <td><b>{{ g.region_id }}</b> · {{ g.position }}<span class="detail">{{ g.site }}</span></td>
+            <td class="num wrap">{{ g.area }}{% if g.area_note %}<span class="detail">{{ g.area_note }}</span>{% endif %}</td>
+            <td class="num">{{ g.mean_rel }}</td>
+            <td class="num">{{ g.min_rel }}</td>
+            <td class="num">{{ g.contrast }}</td>
+            <td class="num">{{ g.border }}</td>
+            <td>{{ g.reference }}{% if l.fvl_threshold %}<span class="detail">AF loss below {{ l.fvl_threshold }}</span>{% endif %}</td>
+            <td>{% for c in g.confounders %}<span class="chip-warn">{{ c }}</span>{% else %}<span class="muted">None</span>{% endfor %}</td>
+          </tr>
+        {%- endfor %}
+        </tbody>
+      </table>
+      {%- else %}
+      <div class="note-line">{{ l.region_note }}</div>
+      {%- endif %}
+      {%- if l.confounder_notes %}
+      <div class="confounders"><b>Confounders:</b> {% for n in l.confounder_notes %}{{ n }}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+      {%- endif %}
+      <div class="obs"><b>Visual:</b> {{ l.visual }} · <b>Diascopy:</b> {{ l.diascopy }}{% if not l.wl.available %} · <b>{{ l.wl.short_text }}</b>{% endif %}</div>
+    </div>
+    </div>
+
+    {%- for s in l.spectral %}
+    {%- if s.shown_in %}
+    <div class="note-line">Spectral probe reading {{ s.reading_id }} ({{ s.site }}): {{ s.classifier_label or 'no label' }} · {{ s.classifier_status }} — plot and features under finding {{ s.shown_in }}.</div>
+    {%- else %}
+    <div class="spectral">
+      <div>
+        <img class="plot" src="{{ s.plot_uri }}" alt="Spectral plot, lesion versus reference">
+        <div class="meta">Probe reading {{ s.reading_id }} · {{ s.calibration_text }}{% if s.reference_site %} · reference: {{ s.reference_site }}{% endif %} · bands ± 1 SD · slopes in log signal per 100 nm</div>
+      </div>
+      <div>
+        {%- if s.features %}
+        <table class="compact features">
+          <thead><tr><th>Feature</th><th class="num">Lesion</th><th class="num">Ref.</th><th class="num">Δ</th></tr></thead>
+          <tbody>
+          {%- for f in s.features %}
+            <tr class="{{ 'cited' if f.cited else '' }}"><td>{{ f.name }}</td><td class="num">{{ f.lesion }}</td><td class="num">{{ f.reference }}</td><td class="num">{{ f.delta }}</td></tr>
+          {%- endfor %}
+          </tbody>
+        </table>
+        {%- if s.delta_note %}<div class="tiny muted">{{ s.delta_note }}</div>{% endif %}
+        {%- if s.features | selectattr('cited') | list %}<div class="tiny muted">Bold: features cited in the reasons.</div>{% endif %}
+        {%- endif %}
+        <div class="clf">
+          <b>Spectral classifier:</b> {{ s.classifier_label or 'no label' }}{% if s.classifier_score %} · score {{ s.classifier_score }} (heuristic, not a probability){% endif %} · <span class="status">{{ s.classifier_status }}</span>{% if s.classifier_model %} <span class="muted">({{ s.classifier_model }})</span>{% endif %}
+          {%- if s.classifier_reasons %}<br><span class="muted">Reasons:</span> {{ s.classifier_reasons | join('; ') }}{% endif %}
+        </div>
+        {%- if s.qc_text %}<div class="note-line bad-text">{{ s.qc_text }}</div>{% endif %}
+        {%- for n in s.notes %}<div class="note-line">{{ n }}</div>{% endfor %}
+      </div>
+    </div>
+    {%- endif %}
+    {%- endfor %}
+    {%- if l.wl.available %}{{ wl_line(l.wl) }}{% endif %}
+
+    <div class="factors">
+      <h3>Contributing factors — finding {{ l.number }} <span class="muted small">(lesion rule score {{ l.score }}; Moderate ≥ {{ triage.moderate }}, High ≥ {{ triage.high }})</span></h3>
+      {{ factor_table(l.factors, override_tag) }}
+    </div>
+  </article>
+  {%- endfor %}
+
+  {%- if compact_lesions %}
+  <div class="keep">
+  <h3>Other findings</h3>
+  <table class="compact">
+    <thead><tr><th class="num" style="width:6mm">#</th><th style="width:36mm">Site</th><th style="width:25mm">Level</th><th class="num" style="width:12mm">Score</th><th style="width:30mm">Raised by</th><th>Summary</th></tr></thead>
+    <tbody>
+    {%- for c in compact_lesions %}
+      <tr><td class="num">{{ c.number }}</td><td>{{ c.site }}</td><td>{{ pill(c.badge) }}</td><td class="num">{{ c.score }}</td><td class="small">{{ c.origins }}</td><td class="small">{{ c.summary }}</td></tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+  </div>
+  {%- endif %}
+
+  {%- if unlinked_spectral %}
+  <h3>Spectral readings not linked to a finding</h3>
+  <table class="compact">
+    <thead><tr><th>Reading</th><th>Site</th><th>Signal</th><th>Classifier</th><th>Status</th></tr></thead>
+    <tbody>
+    {%- for s in unlinked_spectral %}
+      <tr><td class="mono">{{ s.reading_id }}</td><td>{{ s.site }}</td><td>{{ s.signal_text }}</td><td>{{ s.classifier_label or '—' }}</td><td class="small">{{ s.classifier_status }}{% if s.qc_text %} · {{ s.qc_text }}{% endif %}</td></tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+  {%- endif %}
+</section>
+
+{#- 7 ─ QC and limitations ─────────────────────────────────────────────────── #}
+<section>
+  <h2><span class="sec-no">5</span> Quality control and limitations</h2>
+  <div class="qc-summary">
+    {%- if qc.passed_all %}<span class="ok-text">All captures passed quality control.</span>
+    {%- else %}<span class="bad-text">{{ qc.captures_failed }} capture{{ 's' if qc.captures_failed != 1 else '' }} failed quality control{% if qc.sites_failed %} — {{ qc.sites_failed | join(', ') }} could not be analysed{% endif %}.</span>{% endif %}
+    Device calibration: <span class="status-chip {{ 'ok' if qc.calibration_ok else 'warn' }}">{{ qc.calibration }}</span>
+    {%- if not qc.calibration_ok %} <span class="small">Intensities were not corrected against the reference card; read AF and spectral values with caution.</span>{% endif %}
+  </div>
+
+  <div class="keep">
+  <table class="compact sites-table">
+    <thead><tr><th>Site</th><th>Role</th><th>QC</th><th>Analysis</th><th>Calibration</th><th>Site level</th></tr></thead>
+    <tbody>
+    {%- for s in qc.sites %}
+      <tr><td>{{ s.site }}</td><td>{{ s.role }}</td><td class="{{ '' if s.qc_ok else 'bad-text' }}">{{ s.qc }}</td><td>{{ s.analysis }}</td><td class="{{ '' if s.calibration_ok else 'warn-text' }}">{{ s.calibration }}</td><td>{% if s.show_level %}{{ pill(s.badge) }}{% else %}<span class="ref-chip">Reference only</span>{% endif %}</td></tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {%- if qc.issues %}
+  <div class="keep">
+  <h3>Failed or retaken captures</h3>
+  <table class="compact issues">
+    <thead><tr><th>Site</th><th>Capture</th><th>Status</th><th>Reason (retake prompt)</th></tr></thead>
+    <tbody>
+    {%- for i in qc.issues %}
+      <tr><td>{{ i.site }}</td><td>{{ i.capture }}</td><td class="sev {{ i.css }}">{{ i.severity }}</td><td>{{ i.message }}</td></tr>
+    {%- endfor %}
+    </tbody>
+  </table>
+  {%- if qc.retakes %}
+  <div class="note-line"><b>Recommended retakes:</b> {{ qc.retakes | join(' · ') }}</div>
+  {%- endif %}
+  </div>
+  {%- endif %}
+
+  <div class="cols-2" style="margin-top:2.2mm">
+    <div class="keep">
+      <h3>Models and rules used</h3>
+      <table class="compact models">
+        <thead><tr><th>Component</th><th>Status</th><th>Validated</th></tr></thead>
+        <tbody>
+        {%- for m in model_rows %}
+          <tr class="{{ m.css }}"><td>{{ m.component }}{% if m.name != '—' %}<span class="detail">{{ m.name }} {{ m.version }}</span>{% endif %}</td><td>{{ m.status }}</td><td>{{ m.validated }}</td></tr>
+        {%- endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="keep">
+      <h3>Limitations</h3>
+      <ul class="limits">
+        {%- for lim in limitations %}<li>{{ lim }}</li>{% endfor %}
+        <li>No model or rule in this prototype has been clinically validated; no performance figures are claimed.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+{#- 8 ─ Clinician review ───────────────────────────────────────────────────── #}
+<section class="keep">
+  <h2><span class="sec-no">6</span> Clinician review</h2>
+  <div class="review">
+    <div class="row">
+      <div class="field"><div class="lbl">Reviewer name</div><div class="line">{{ review.reviewer or '' }}</div></div>
+      <div class="field"><div class="lbl">Registration no. / ID</div><div class="line">{{ review.reviewer_id or '' }}</div></div>
+    </div>
+    <div class="checks">
+      <span class="opt"><span class="box">{{ '✓' if review.agreed else '' }}</span>Agree with device risk level ({{ review.current }})</span>
+      <span class="opt"><span class="box">{{ '✓' if review.prefilled and not review.agreed else '' }}</span>Modify risk to:</span>
+      {%- for lv in review.levels %}
+      <span class="opt"><span class="box">{{ '✓' if review.modified == lv else '' }}</span>{{ lv }}</span>
+      {%- endfor %}
+    </div>
+    <div class="field"><div class="lbl">Clinical findings on examination</div></div>
+    <div class="notes-lines"><div class="nl"></div><div class="nl"></div></div>
+    <div class="checks biopsy">
+      <span class="lbl-inline">Biopsy:</span>
+      <span class="opt"><span class="box"></span>taken (site <span class="blank"></span>)</span>
+      <span class="opt"><span class="box"></span>planned</span>
+      <span class="opt"><span class="box"></span>not indicated</span>
+      <span class="lbl-inline fu">Follow-up date:</span><span class="blank wide"></span>
+    </div>
+    <div class="field"><div class="lbl">Notes</div></div>
+    {%- if review.notes %}
+    <div class="notes-filled">{{ review.notes }}</div>
+    {%- else %}
+    <div class="notes-lines"><div class="nl"></div><div class="nl"></div></div>
+    {%- endif %}
+    <div class="row" style="margin-top:2.4mm; margin-bottom:0">
+      <div class="field"><div class="lbl">Signature</div><div class="line">{% if review.prefilled %}<span class="sig-note">{{ review.signature_note }}</span>{% endif %}</div></div>
+      <div class="field"><div class="lbl">Date</div><div class="line">{{ review.signed_at or '' }}</div></div>
+    </div>
+  </div>
+</section>
+
+{#- 9 ─ Referral ───────────────────────────────────────────────────────────── #}
+<section class="referral-section">
+  <h2><span class="sec-no">7</span> Referral details</h2>
+  <div class="referral risk-{{ triage.badge.css }}">
+    <div>
+      <div class="urgency">{{ referral.urgency }} · {{ referral.timeline }}</div>
+      {%- if referral.reviewer_line %}
+      <div class="urgency reviewed-line">{% if referral.reviewed_badge %}{{ pill(referral.reviewed_badge) }} {% endif %}{{ referral.reviewer_line }}{% if referral.reviewed_badge %}<span class="sub">The line above is the device recommendation before review; follow the reviewer's notes.</span>{% endif %}</div>
+      {%- endif %}
+      <div class="slip">
+        <div><span class="k">Patient</span> {{ referral.slip_patient }}</div>
+        <div><span class="k">Reason</span> {{ referral.slip_reason }}</div>
+      </div>
+      {%- if not referral.facilities %}
+      <div class="facility missing">{{ referral.missing_text }}{% if referral.programme %}: {{ referral.programme.name }}{% if referral.programme.phone %} · {{ referral.programme.phone }}{% endif %}{% endif %}.</div>
+      {%- elif referral.single %}
+      {%- set f = referral.facilities[0] %}
+      <div class="facility single"><span class="first">{{ referral.lead_in }}</span> <b>{{ f.name }}</b>{% if f.example %} <span class="example">Example facility — configure facilities.yaml</span>{% endif %} · {{ f.address }}{% if f.phone %} · Phone {{ f.phone }}{% endif %}{% if f.hours %} · {{ f.hours }}{% endif %}</div>
+      {%- else %}
+      {%- for f in referral.facilities %}
+      <div class="facility">
+        {%- if loop.first %}<div class="first">First-choice facility</div>{% endif %}
+        <div class="name">{{ f.name }}{% if f.example %} <span class="example">Example facility — configure facilities.yaml</span>{% endif %}</div>
+        <div>{{ f.address }}{% if f.phone %} · Phone {{ f.phone }}{% endif %}{% if f.hours %} · {{ f.hours }}{% endif %}</div>
+        {%- if f.capabilities or f.notes %}{% set caps = f.capabilities | join(', ') %}<div class="muted small">{% if caps %}{{ caps[:1] | upper }}{{ caps[1:] }}.{% endif %}{% if f.notes %} {{ f.notes }}{% endif %}</div>{% endif %}
+      </div>
+      {%- endfor %}
+      {%- endif %}
+      {%- if referral.more_facilities %}<div class="note-line">{{ referral.more_facilities }} more configured facilit{{ 'ies' if referral.more_facilities != 1 else 'y' }} not shown.</div>{% endif %}
+      <div class="note-line">Screening contact: {{ referral.health_worker }} · {{ referral.camp }}.{% if referral.programme %} Programme: {{ referral.programme.name }}{% if referral.programme.phone %} · {{ referral.programme.phone }}{% endif %}.{% endif %} Bring this report to the referral visit.</div>
+    </div>
+    <div class="qr">
+      {%- if referral.qr_uri %}
+      <img src="{{ referral.qr_uri }}" alt="QR code linking to this screening record">
+      <div class="hint">Scan to open this screening record (access control arrives in a later release)</div>
+      <div class="url">{{ referral.record_url }}</div>
+      {%- else %}
+      <div class="noqr">QR code not included: no record link was configured for this report.</div>
+      {%- endif %}
+    </div>
+  </div>
+  <div class="end-note">Generated by MukhaSpectra from result <span class="mono">{{ header.result_id }}</span> (v{{ header.result_version }}); re-analysis creates a new result version and never overwrites this one. Rule config {{ r.versions.rule_config.name }} {{ r.versions.rule_config.version }}, sha256 <span class="mono">{{ r.versions.rule_config.sha256 }}</span>.</div>
+</section>
+</body>
+</html>

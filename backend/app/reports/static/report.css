@@ -1,0 +1,572 @@
+/* MukhaSpectra clinician report — print stylesheet (WeasyPrint, A4).
+   Calm clinical typography: Inter with Noto Sans Kannada / Devanagari (names in Indian scripts,
+   when installed) and DejaVu Sans as fallbacks; tabular figures only where numbers line up; risk
+   colour always paired with an icon and the level text. Page-level running header/footer rules
+   that depend on the report (report id, patient, versions) are injected by the template. */
+
+:root {
+  --ink: #1d2939;
+  --ink-2: #344054;
+  --muted: #667085;
+  --faint: #98a2b3;
+  --rule: #e4e7ec;
+  --rule-strong: #d0d5dd;
+  --soft: #f6f7f9;
+  --brand: #5b3cc4;
+  --brand-soft: #f3f0fd;
+  --brand-line: #ddd5f8;
+  --green: #1f9d6b;
+  --low: #0f766e;
+  --low-tint: #e2f4f1;
+  --moderate: #b45309;
+  --moderate-tint: #fdf0d8;
+  --high: #b42318;
+  --high-tint: #fde7e4;
+  --inconclusive: #475467;
+  --inconclusive-tint: #eef1f5;
+  --reference: #2563eb;
+}
+
+@page {
+  size: A4;
+  margin: 14mm 13mm 12.5mm 13mm;
+
+  @top-left {
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
+    font-size: 7.4pt;
+    font-weight: 700;
+    color: #b42318;
+    letter-spacing: 0.02em;
+    vertical-align: bottom;
+    padding-bottom: 2.4mm;
+  }
+  @top-center {
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
+    font-size: 7.4pt;
+    font-weight: 700;
+    color: #b42318;
+    letter-spacing: 0.12em;
+    vertical-align: bottom;
+    padding-bottom: 3mm;
+  }
+  @top-right {
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
+    font-size: 7.4pt;
+    color: #475467;
+    vertical-align: bottom;
+    padding-bottom: 3mm;
+  }
+  @bottom-left {
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
+    font-size: 6.8pt;
+    color: #667085;
+    vertical-align: top;
+    padding-top: 3mm;
+    width: 80%;
+  }
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", sans-serif;
+    font-size: 7.2pt;
+    font-weight: 600;
+    color: #344054;
+    vertical-align: top;
+    padding-top: 3mm;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html {
+  font-family: Inter, "Noto Sans Kannada", "Noto Sans Devanagari", "DejaVu Sans", Arial, sans-serif;
+  font-size: 9.6pt;
+  line-height: 1.38;
+  color: var(--ink);
+  background: #ffffff;
+  /* Keep risk colours and badge fills when report.html is printed from a browser. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Tabular figures only where numbers must line up. Inter's "tnum" also gives the hyphen a
+   figure width ("Non - healing", "MS - 2026 - 10"), so it stays off text that holds IDs. */
+.num, td.num, table.features td, .score-line .txt {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+body { margin: 0; background: #ffffff; }
+
+p { margin: 0 0 1.6mm; }
+ul, ol { margin: 0; padding-left: 4.2mm; }
+li { margin: 0 0 0.6mm; }
+strong { font-weight: 600; }
+.muted { color: var(--muted); }
+.small { font-size: 8pt; }
+.tiny { font-size: 7.2pt; }
+.num { text-align: right; white-space: nowrap; }
+th.num { white-space: normal; }
+.mono { font-size: 0.92em; letter-spacing: 0.01em; color: var(--ink-2); }
+
+/* ---------------------------------------------------------------- watermark + screen banner */
+
+.watermark {
+  position: fixed;
+  top: 112mm;
+  left: -22mm;
+  width: 228mm;
+  text-align: center;
+  transform: rotate(-33deg);
+  font-size: 66pt;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(180, 35, 24, 0.075);
+  z-index: 50;
+}
+
+.screen-only { display: none; }
+
+@media screen {
+  html { background: #e9ecf1; }
+  body { max-width: 210mm; margin: 0 auto; padding: 10mm 13mm 16mm; background: #ffffff; }
+  .screen-only { display: block; }
+  .screen-banner {
+    margin: -10mm -13mm 6mm;
+    padding: 2.2mm 13mm;
+    background: #b42318;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 8.5pt;
+  }
+  .watermark { position: fixed; top: 40%; left: 0; width: 100%; pointer-events: none; }
+}
+
+/* ---------------------------------------------------------------- header */
+
+.report-header { display: grid; grid-template-columns: 1fr auto; column-gap: 5mm; align-items: start; }
+.report-header .logo { height: 8mm; width: auto; display: block; margin-bottom: 1.6mm; }
+.report-header h1 {
+  font-size: 12.6pt;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  margin: 0;
+}
+.report-header .subtitle { color: var(--muted); font-size: 8.4pt; margin-top: 0.6mm; }
+.report-meta { text-align: right; font-size: 7.8pt; color: var(--ink-2); max-width: 80mm; }
+.report-meta div { margin-bottom: 0.4mm; }
+.report-meta .meta-when { display: inline-block; font-size: 10pt; font-weight: 700; color: var(--c); margin-left: 2mm; vertical-align: 0.4mm; }
+.report-meta .meta-action { font-size: 8.4pt; font-weight: 600; color: var(--ink); line-height: 1.25; }
+.report-meta .meta-review { font-size: 7.6pt; font-weight: 600; color: var(--brand); line-height: 1.25; }
+.report-header .meta-id { color: var(--muted); font-size: 7.4pt; margin-top: 0.4mm; }
+.report-header .meta-id b { color: var(--ink-2); }
+
+.context-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1.2fr 1fr 1fr;
+  column-gap: 3mm;
+  row-gap: 0.6mm;
+  margin-top: 1.6mm;
+  padding: 1.3mm 3mm;
+  background: var(--soft);
+  border: 0.6pt solid var(--rule);
+  border-radius: 2mm;
+}
+.kv .k {
+  font-size: 6.6pt;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  font-weight: 600;
+}
+.kv .v { font-size: 8.3pt; color: var(--ink); line-height: 1.25; }
+
+.versions {
+  margin-top: 1mm;
+  font-size: 6.6pt;
+  color: var(--muted);
+  line-height: 1.34;
+}
+.versions span.item { white-space: nowrap; margin-right: 2.4mm; }
+.versions b { color: var(--ink-2); font-weight: 600; }
+.versions .model-item { white-space: normal; }
+
+.status-chip {
+  display: inline-block;
+  padding: 0.2mm 1.8mm;
+  border-radius: 8pt;
+  font-size: 7.4pt;
+  font-weight: 600;
+  border: 0.6pt solid;
+}
+.status-chip.ok { color: var(--low); background: var(--low-tint); border-color: #9bd6cd; }
+.status-chip.warn { color: var(--moderate); background: var(--moderate-tint); border-color: #efc98a; }
+.status-chip.bad { color: var(--high); background: var(--high-tint); border-color: #f1aaa2; }
+
+/* ---------------------------------------------------------------- notices */
+
+.disclaimer {
+  margin-top: 2mm;
+  padding: 1.3mm 3.2mm 1.3mm 10mm;
+  position: relative;
+  background: var(--brand-soft);
+  border: 0.7pt solid var(--brand-line);
+  border-radius: 2mm;
+}
+.disclaimer .icon { position: absolute; left: 3.2mm; top: 2.3mm; width: 4.6mm; height: 4.6mm; }
+.disclaimer .title { font-weight: 700; font-size: 9.4pt; color: #3f2a8c; }
+.disclaimer p { margin: 0; font-size: 8.2pt; line-height: 1.33; color: var(--ink-2); }
+.disclaimer .data-line {
+  margin-top: 0.8mm;
+  padding: 0.7mm 2.2mm;
+  border-radius: 1.4mm;
+  font-size: 7.3pt;
+  line-height: 1.28;
+  font-weight: 600;
+}
+.disclaimer .synthetic-line { border: 0.9pt dashed #e0786d; background: #fff4f2; color: #912018; }
+.disclaimer .provenance-line { border: 0.9pt dashed #e0a24a; background: #fff7e8; color: #7a3d06; }
+
+/* ---------------------------------------------------------------- sections */
+
+section { margin-top: 3.4mm; }
+h2 {
+  font-size: 10.4pt;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  margin: 0 0 1.4mm;
+  padding-bottom: 1mm;
+  border-bottom: 0.8pt solid var(--rule);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h2 .sec-no {
+  display: inline-block;
+  min-width: 4.6mm;
+  color: var(--brand);
+  font-weight: 700;
+}
+h3 {
+  font-size: 8.9pt;
+  font-weight: 700;
+  margin: 2.2mm 0 1mm;
+  color: var(--ink-2);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+.keep { break-inside: avoid; page-break-inside: avoid; }
+
+.cols-2 { display: grid; grid-template-columns: 1fr 1fr; column-gap: 5mm; }
+.cols-main-side { display: grid; grid-template-columns: 1fr 74mm; column-gap: 4.5mm; }
+.patient-row { display: grid; grid-template-columns: 1.1fr 0.9fr; column-gap: 4mm; }
+/* Keep the findings heading and its key with the first finding (never stranded at a page foot). */
+.findings > h2, .findings > .note-line { break-after: avoid; page-break-after: avoid; }
+.page-start { break-before: page; page-break-before: always; }
+section.patient { margin-top: 2.2mm; }
+section.overall-row { margin-top: 2.2mm; }
+.overall-top { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; }
+.review-note { color: var(--brand); font-weight: 600; }
+.lesion .factors h3 { margin-top: 1.4mm; }
+.why .expl { font-size: 8.1pt; line-height: 1.3; color: var(--ink-2); margin: 0 0 1mm; }
+section.why { margin-top: 2mm; }
+section.why h3 { margin-top: 0; }
+.why table td { font-size: 7.6pt; padding-top: 0.3mm; padding-bottom: 0.3mm; line-height: 1.2; }
+
+.card {
+  border: 0.6pt solid var(--rule);
+  border-radius: 2mm;
+  padding: 2mm 3mm;
+  background: #ffffff;
+}
+.card.soft { background: var(--soft); }
+
+.pt { padding: 1.6mm 3mm; }
+.pt-main { font-size: 9.6pt; line-height: 1.3; }
+.pt-main b { font-weight: 700; }
+.pt-ids { font-size: 7.8pt; line-height: 1.32; color: var(--muted); margin-top: 0.5mm; }
+.pt-ids .v { color: var(--ink); font-weight: 600; }
+.pt-rf { padding: 1.4mm 3mm; }
+
+.rf-label { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; margin-bottom: 0.3mm; }
+.rf-summary { font-weight: 600; font-size: 8.8pt; line-height: 1.3; margin-bottom: 0.4mm; }
+.rf-groups { font-size: 7.6pt; }
+
+/* ---------------------------------------------------------------- risk badges */
+
+.risk-high { --c: var(--high); --t: var(--high-tint); }
+.risk-moderate { --c: var(--moderate); --t: var(--moderate-tint); }
+.risk-low { --c: var(--low); --t: var(--low-tint); }
+.risk-inconclusive { --c: var(--inconclusive); --t: var(--inconclusive-tint); }
+
+.risk-badge {
+  display: inline-block;
+  padding: 2mm 4mm 2mm 3.2mm;
+  border-radius: 2.2mm;
+  background: var(--c);
+  color: #ffffff;
+  border: 1.2pt solid var(--c);
+  font-weight: 700;
+  font-size: 14pt;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+.risk-badge.risk-inconclusive { background: var(--t); color: var(--c); border-style: dashed; border-width: 1.4pt; }
+.risk-badge svg { width: 5mm; height: 5mm; vertical-align: -0.6mm; margin-right: 1.8mm; }
+.risk-badge .lvl-sub { display: block; font-size: 6.8pt; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 1.2mm; opacity: 0.9; }
+.risk-badge.sm { font-size: 11pt; padding: 1.1mm 2.6mm 1.1mm 2mm; border-radius: 1.6mm; }
+.risk-badge.sm svg { width: 3.9mm; height: 3.9mm; margin-right: 1.2mm; vertical-align: -0.5mm; }
+
+.pill {
+  display: inline-block;
+  padding: 0.35mm 1.9mm 0.35mm 1.3mm;
+  border-radius: 8pt;
+  background: var(--t);
+  color: var(--c);
+  border: 0.7pt solid var(--c);
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.pill.risk-inconclusive { border-style: dashed; }
+.pill svg { width: 2.9mm; height: 2.9mm; vertical-align: -0.45mm; margin-right: 0.8mm; }
+
+.overall { border-left: 2.6pt solid var(--c); background: #ffffff; }
+.overall .when { margin-top: 0; }
+.overall .when .k { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+.overall .when .v { font-size: 10pt; font-weight: 700; color: var(--c); }
+.overall .summary { font-size: 9.4pt; font-weight: 600; margin: 1.8mm 0 1mm; }
+.overall ol { font-size: 8.4pt; }
+.overall li { margin-bottom: 0.2mm; }
+.overall .reviewed {
+  margin-top: 1.6mm; padding: 1mm 2mm; border: 0.9pt solid var(--brand-line); background: var(--brand-soft);
+  border-radius: 1.6mm; font-size: 8.2pt; line-height: 1.3; color: #3f2a8c;
+}
+.overall .steps-label { font-size: 7.6pt; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4mm; }
+.overall .clin-note {
+  margin-top: 1.2mm; padding: 1mm 2mm; border-left: 2pt solid var(--brand); background: var(--brand-soft);
+  font-size: 8.2pt; font-weight: 600; line-height: 1.3; color: #3f2a8c;
+}
+.overall .coverage { margin-top: 1.4mm; padding-top: 1.2mm; border-top: 0.5pt solid var(--rule); font-size: 7.5pt; line-height: 1.32; color: var(--ink-2); }
+.overall .coverage b { font-weight: 700; color: var(--ink); }
+
+.map-col img.sitemap { width: 100%; height: auto; display: block; }
+.map-legend { margin-top: 0.8mm; font-size: 7pt; line-height: 1.25; color: var(--ink-2); display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 1.2mm; row-gap: 0.6mm; }
+.map-legend .it { white-space: nowrap; }
+.map-legend .sw { width: 4.2mm; height: 2.6mm; vertical-align: -0.4mm; margin-right: 0.6mm; }
+.map-legend .risk-icon { width: 2.7mm; height: 2.7mm; vertical-align: -0.4mm; margin-right: 0.6mm; }
+
+.findings-list { margin-top: 1.4mm; padding-top: 1.2mm; border-top: 0.5pt solid var(--rule); font-size: 8pt; }
+.findings-list .fl-label { display: block; font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-bottom: 0.4mm; }
+.findings-list .f { display: inline-block; margin: 0 3mm 0.6mm 0; white-space: nowrap; }
+.findings-list.many { font-size: 7.4pt; }
+.findings-list.many .f { width: 49%; margin: 0 0 0.4mm; vertical-align: top; }
+.findings-list.many .pill { font-size: 6.3pt; padding: 0.2mm 1.4mm 0.2mm 1mm; }
+.findings-list.many .pill svg { width: 2.5mm; height: 2.5mm; }
+.findings-list .no {
+  display: inline-block; width: 4.2mm; height: 4.2mm; line-height: 4.2mm; border-radius: 50%;
+  border: 1pt solid var(--c); color: var(--c); text-align: center; font-weight: 700; font-size: 7pt;
+  margin-right: 1mm;
+}
+
+/* ---------------------------------------------------------------- tables */
+
+table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+th {
+  text-align: left;
+  font-size: 6.3pt;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0.9mm 1.5mm;
+  background: var(--soft);
+  border-bottom: 0.7pt solid var(--rule-strong);
+}
+td { padding: 0.8mm 1.5mm; border-bottom: 0.5pt solid var(--rule); vertical-align: top; line-height: 1.3; }
+tr { break-inside: avoid; page-break-inside: avoid; }
+td.num, th.num { text-align: right; }
+td .detail { display: block; color: var(--muted); font-size: 7pt; }
+td .detail-inline { color: var(--muted); font-size: 7pt; }
+tr.override td { background: #fff7f5; }
+tr.override .tag {
+  display: inline; font-size: 7pt; font-weight: 700; color: var(--high); line-height: 1.25;
+}
+td.pts { font-weight: 600; }
+td.pts.neg { color: var(--low); }
+td.pts.floor { color: var(--high); font-weight: 700; text-transform: uppercase; font-size: 6.6pt; letter-spacing: 0.05em; }
+.override-note { font-size: 6.9pt; color: var(--muted); margin-top: 0.5mm; break-before: avoid; page-break-before: avoid; }
+table.compact td, table.compact th { padding: 0.65mm 1.4mm; }
+
+.score-line { display: grid; grid-template-columns: auto 1fr; column-gap: 4mm; align-items: center; margin-bottom: 0.8mm; }
+.score-line .gauge { display: block; }
+.score-line .txt { font-size: 7.9pt; line-height: 1.32; color: var(--ink-2); }
+.note-line { font-size: 7.6pt; line-height: 1.32; color: var(--muted); margin-top: 0.8mm; }
+
+/* ---------------------------------------------------------------- lesion blocks */
+
+.lesion {
+  margin-top: 2.6mm;
+  border: 0.7pt solid var(--rule-strong);
+  border-top: 2.4pt solid var(--c);
+  border-radius: 2mm;
+  padding: 1.8mm 3mm 2mm;
+}
+/* A finding may continue on the next page, but only between its parts: header + images +
+   measurements stay together, as do the spectral block and the factor table. */
+.lesion .lesion-top, .lesion .spectral, .lesion .model-line {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.lesion-head { display: grid; grid-template-columns: auto 1fr auto; column-gap: 2.6mm; align-items: center; }
+.lesion-head .no {
+  width: 6.4mm; height: 6.4mm; border-radius: 50%; border: 1.4pt solid var(--c); color: var(--c);
+  text-align: center; line-height: 5.8mm; font-weight: 700; font-size: 9.4pt;
+}
+.lesion-head .title { font-size: 10.2pt; font-weight: 700; }
+.lesion-head .origins { font-size: 7.3pt; color: var(--muted); }
+.lesion-head .right { text-align: right; }
+.lesion-head .score { font-size: 7.3pt; color: var(--muted); margin-top: 0.4mm; }
+.lesion .summary { margin: 1mm 0 1.2mm; font-size: 8.4pt; line-height: 1.28; }
+/* The overall level is above this finding's own level: say why, next to the finding badge. */
+.level-context {
+  margin-top: 1mm; padding: 0.6mm 2mm; border-left: 2pt solid var(--ink-2); background: var(--soft);
+  font-size: 7.8pt; font-weight: 600; line-height: 1.3; color: var(--ink);
+}
+
+.triptych { display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 2.4mm; }
+.panel { margin: 0; }
+.panel .frame {
+  height: 30mm;
+  background: #0f1419;
+  border-radius: 1.2mm;
+  overflow: hidden;
+  text-align: center;
+}
+.panel img { width: 100%; height: 30mm; object-fit: cover; display: block; }
+.panel .placeholder {
+  height: 30mm;
+  background: var(--soft);
+  border: 0.8pt dashed var(--rule-strong);
+  border-radius: 1.2mm;
+  color: var(--faint);
+  text-align: center;
+  padding-top: 11mm;
+  font-size: 8pt;
+}
+.panel .placeholder .ph-title { font-weight: 600; color: var(--muted); }
+.panel figcaption { margin-top: 0.5mm; font-size: 7.2pt; line-height: 1.25; }
+.panel figcaption b { font-weight: 700; }
+.panel figcaption span { color: var(--muted); }
+.hm-scale { margin-top: 0.4mm; font-size: 6.4pt; line-height: 1.2; color: var(--muted); }
+.hm-scale .bar-row { display: grid; grid-template-columns: auto 1fr auto; column-gap: 1mm; align-items: center; }
+.hm-scale .bar { display: block; height: 2mm; border-radius: 0.6mm; border: 0.4pt solid var(--rule-strong); }
+.hm-scale .end { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; color: var(--ink-2); }
+.hm-scale .key { margin-top: 0.2mm; }
+
+.measure-wrap { margin-top: 1.6mm; }
+table.measure { table-layout: fixed; }
+table.measure th { letter-spacing: 0.02em; }
+td.num.wrap { white-space: normal; }
+.why h3, .why .expl, .why .score-line { break-after: avoid; page-break-after: avoid; }
+table.measure .chip-warn { white-space: normal; }
+.measure-wrap .cap { font-size: 6.9pt; line-height: 1.3; color: var(--muted); margin-top: 0.6mm; }
+.obs { margin-top: 0.8mm; font-size: 7.6pt; line-height: 1.3; color: var(--ink-2); }
+.obs b { color: var(--muted); font-weight: 600; }
+.confounders { margin-top: 0.8mm; font-size: 7.4pt; line-height: 1.3; color: #8a4b08; }
+.chip-warn {
+  display: inline-block; font-size: 7pt; padding: 0.1mm 1.4mm; border-radius: 6pt;
+  background: var(--moderate-tint); color: #8a4b08; border: 0.5pt solid #efc98a; margin: 0 0.6mm 0.4mm 0;
+  white-space: nowrap;
+}
+
+.spectral { display: grid; grid-template-columns: 90mm 1fr; column-gap: 4mm; margin-top: 1.4mm; }
+.spectral img.plot { width: 100%; height: auto; display: block; }
+.spectral .meta { font-size: 6.9pt; line-height: 1.3; color: var(--muted); margin-top: 0.4mm; }
+.clf { margin-top: 1mm; padding: 1mm 2mm; background: var(--soft); border-radius: 1.4mm; font-size: 7.3pt; line-height: 1.28; }
+.clf .status { color: var(--moderate); font-weight: 600; }
+table.features td { font-size: 7.3pt; padding-top: 0.25mm; padding-bottom: 0.25mm; line-height: 1.18; }
+table.features tr.cited td { font-weight: 700; color: var(--ink); }
+
+.model-line {
+  margin-top: 1.4mm; padding: 1mm 2mm; border-radius: 1.4mm; font-size: 7.5pt; line-height: 1.3;
+  background: var(--inconclusive-tint); color: var(--ink-2);
+}
+.model-line b { font-weight: 600; }
+
+.lesion .factors { margin-top: 0.6mm; }
+.lesion .factors td { font-size: 7.3pt; padding-top: 0.25mm; padding-bottom: 0.25mm; line-height: 1.2; }
+.lesion .factors th, .why table th { padding-top: 0.5mm; padding-bottom: 0.5mm; }
+/* Factor tables may continue on the next page between rows (the header row repeats). */
+.factors h3 { break-after: avoid; page-break-after: avoid; }
+table.models td:nth-child(1) { width: 40%; }
+table.models td:nth-child(3) { width: 14%; }
+
+/* ---------------------------------------------------------------- QC */
+
+
+.qc-summary { font-size: 8.4pt; margin-bottom: 1.6mm; }
+.ok-text { color: var(--low); font-weight: 600; }
+.bad-text { color: var(--high); font-weight: 600; }
+.warn-text { color: var(--moderate); font-weight: 600; }
+td.sev.error { color: var(--high); font-weight: 600; white-space: nowrap; }
+td.sev.warning { color: var(--moderate); font-weight: 600; white-space: nowrap; }
+tr.muted td { color: var(--muted); }
+.ref-chip {
+  display: inline-block; padding: 0.25mm 1.8mm; border-radius: 8pt; font-size: 7pt; font-weight: 600;
+  color: #1e3a8a; background: #eaf1fe; border: 0.7pt dashed #2563eb; white-space: nowrap;
+}
+.limits li { font-size: 7.8pt; line-height: 1.32; margin-bottom: 0.4mm; }
+
+/* ---------------------------------------------------------------- review + referral */
+
+.review { border: 1pt solid var(--ink-2); border-radius: 2mm; padding: 2.4mm 3.4mm; break-inside: avoid; page-break-inside: avoid; }
+.review .row { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6mm; margin-bottom: 2mm; }
+.field .lbl { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.field .line { border-bottom: 0.8pt solid var(--ink-2); height: 6.4mm; padding-top: 1.8mm; font-weight: 600; }
+.checks { font-size: 8.8pt; margin: 0.6mm 0 2mm; }
+.checks .opt { display: inline-block; margin-right: 5mm; white-space: nowrap; }
+.box {
+  display: inline-block; width: 3.6mm; height: 3.6mm; border: 0.9pt solid var(--ink-2); border-radius: 0.6mm;
+  vertical-align: -0.7mm; margin-right: 1.4mm; text-align: center; line-height: 3.2mm; font-size: 8pt; font-weight: 700;
+}
+.notes-lines { margin-bottom: 1.4mm; }
+.notes-lines .nl { border-bottom: 0.6pt solid var(--rule-strong); height: 5.4mm; }
+.notes-filled { min-height: 10mm; padding: 1.2mm 0; border-bottom: 0.6pt solid var(--rule-strong); font-size: 8.4pt; line-height: 1.32; }
+.checks.biopsy { margin: 0 0 1.6mm; }
+.checks .lbl-inline { font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin-right: 2mm; }
+.checks .lbl-inline.fu { margin-left: 2mm; }
+.checks .blank { display: inline-block; width: 16mm; border-bottom: 0.7pt solid var(--ink-2); height: 3.4mm; vertical-align: -0.6mm; }
+.checks .blank.wide { width: 26mm; }
+.sig-note { font-size: 7.2pt; font-weight: 500; color: var(--muted); }
+
+.referral { display: grid; grid-template-columns: 1fr 38mm; column-gap: 5mm; }
+.facility { padding: 0.9mm 2.4mm; border: 0.6pt solid var(--rule); border-radius: 1.6mm; margin-bottom: 1.1mm; font-size: 7.8pt; line-height: 1.3; break-inside: avoid; }
+.facility .name { font-weight: 700; font-size: 8.6pt; }
+.facility .example {
+  display: inline-block; font-size: 6.8pt; font-weight: 700; color: var(--moderate); background: var(--moderate-tint);
+  border: 0.5pt dashed #e0a24a; border-radius: 6pt; padding: 0 1.6mm; margin-left: 1mm; vertical-align: 0.3mm;
+}
+.facility .first { font-size: 6.6pt; font-weight: 700; color: var(--brand); text-transform: uppercase; letter-spacing: 0.07em; }
+.facility.single .first { font-size: 7.6pt; text-transform: none; letter-spacing: 0; }
+.facility.missing {
+  border: 1.2pt solid var(--high); background: var(--high-tint); color: var(--high);
+  font-weight: 700; font-size: 9pt; padding: 1.6mm 2.6mm;
+}
+.slip {
+  margin: 0 0 1.6mm; padding: 1.1mm 2.4mm; border: 0.8pt dashed var(--rule-strong); border-radius: 1.6mm;
+  font-size: 8pt; line-height: 1.35; background: var(--soft);
+}
+.slip .k { display: inline-block; min-width: 13mm; font-size: 6.6pt; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; }
+.qr { text-align: center; break-inside: avoid; page-break-inside: avoid; }
+.qr img { width: 32mm; height: 32mm; display: block; margin: 0 auto; }
+.qr .url { font-size: 6.6pt; color: var(--ink-2); word-break: break-all; margin-top: 1mm; }
+.qr .hint { font-size: 7pt; color: var(--muted); margin-top: 0.8mm; }
+.qr .noqr { border: 0.8pt dashed var(--rule-strong); border-radius: 1.6mm; padding: 4mm 2mm; font-size: 7.6pt; color: var(--muted); }
+.urgency { font-size: 9.4pt; font-weight: 700; color: var(--c); margin-bottom: 1.2mm; }
+.urgency.reviewed-line { color: #3f2a8c; font-size: 8.8pt; }
+.urgency.reviewed-line .sub { display: block; font-size: 7.4pt; font-weight: 500; color: var(--muted); }
+
+.end-note { margin-top: 2.4mm; font-size: 6.9pt; color: var(--muted); border-top: 0.6pt solid var(--rule); padding-top: 1.6mm; }

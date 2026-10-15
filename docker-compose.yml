@@ -1,0 +1,58 @@
+# Local run: docker compose up --build, then open http://localhost:5173
+# Research prototype — not for clinical use.
+#
+# Access control: Phase 1 has no user accounts (Phase 5). Without MUKHA_API_KEY anyone who can
+# reach the API can read every screening, so both services are published on 127.0.0.1 only.
+# Before exposing them to a camp network, set MUKHA_API_KEY (at least 16 characters) and change
+# the port bindings deliberately. The console's nginx adds the key to every /api request itself,
+# so the key protects the API port (8000) only: anyone who can reach the console port (5173) can
+# still use the whole API. Keep the console on 127.0.0.1 or behind network access control.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        # Recorded in every result (software version "<version>+<build>").
+        MUKHA_BUILD_ID: ${MUKHA_BUILD_ID:-}
+    environment:
+      MUKHA_PUBLIC_BASE_URL: http://localhost:5173
+      MUKHA_CORS_ORIGINS: '["http://localhost:5173"]'
+      # DNS-rebinding guard: the API answers only to these Host names.
+      MUKHA_ALLOWED_HOSTS: '["localhost", "127.0.0.1", "backend"]'
+      # Keep in step with client_max_body_size in deploy/nginx.conf.template.
+      MUKHA_MAX_REQUEST_MB: "200"
+      # Optional shared key (>= 16 chars): `MUKHA_API_KEY=... docker compose up`. Leave unset only
+      # while the ports stay on 127.0.0.1. nginx adds it to every /api request server-side.
+      MUKHA_API_KEY: ${MUKHA_API_KEY:-}
+    volumes:
+      - mukha-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
+    depends_on:
+      - backend
+    environment:
+      MUKHA_API_KEY: ${MUKHA_API_KEY:-}
+    ports:
+      - "127.0.0.1:5173:80"
+
+  # Production-like database. Start with: docker compose --profile postgres up --build
+  # and set MUKHA_DATABASE_URL=postgresql+psycopg://mukha:mukha@db:5432/mukha on the backend.
+  db:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: mukha
+      POSTGRES_PASSWORD: mukha
+      POSTGRES_DB: mukha
+    volumes:
+      - mukha-pg:/var/lib/postgresql/data
+
+volumes:
+  mukha-data:
+  mukha-pg:

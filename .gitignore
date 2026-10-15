@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/dev-dist/
+frontend/test-results/
+frontend/playwright-report/
+*.tsbuildinfo
+
+# Runtime data (never commit patient data)
+var/
+backend/var/
+*.db
+*.sqlite3
+
+# Models: weights are distributed separately with their model card
+ml/weights/
+*.onnx
+!ml/tests/fixtures/*.onnx
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,91 @@
+# MukhaSpectra capture quality control, v1
+# Thresholds are starting values tuned on synthetic and bench images. Re-tune on real Scout
+# captures before any field use. Metrics are computed on a copy resized so the longest side is
+# `metric_max_side_px`, which keeps thresholds independent of camera resolution.
+# Purpose: stop false reassurance. A capture that could hide a lesion must fail (error) or be
+# reported as a limitation (warning); it must never be analysed as if it were good.
+name: mukhaspectra-qc
+version: 1.1.0
+status: baseline_unvalidated
+# 1.1.0: AF that is not green at all (auto white balance, greyscale file, red-dominant) is an
+#   error; greyscale detected by channel equality; auto white balance on AF is a warning;
+#   segmentation 'failed' blocks a site, 'low_confidence' warns; new 'limitations' section.
+
+# 512 px: area-averaging a phone photo down this far suppresses sensor/JPEG noise (which would
+# otherwise make a blurred photo look sharp) while blur that matters for analysis (>= ~3 px at
+# the 1024 px working resolution) still removes almost all Laplacian energy.
+metric_max_side_px: 512
+min_image_side_px: 64                 # shorter side below this: too small to assess or analyse
+grayscale_channel_diff_max: 0.01      # 99th pct of max(|R-G|, |G-B|) over lit pixels (0-1) at or
+                                      #   below this: a grey photo expanded to RGB (error)
+
+white_light:
+  blur_laplacian_var_min: 5.0         # variance of 3x3 Laplacian of luma (0-255) at metric size,
+                                      #   clipped highlights excluded. Synthetic mucosa: sharp
+                                      #   18-250, Gaussian sigma 2 px @1024: 7-20, sigma 4: < 2.5
+  mean_brightness_min: 45.0           # luma 0-255
+  mean_brightness_max: 215.0
+  clip_low_fraction_max: 0.20         # fraction of pixels whose brightest channel <= 3 (warning)
+  clip_high_fraction_max: 0.05        # fraction of pixels with any channel >= 252 (error)
+  glare_fraction_max: 0.04            # specular highlights: HSV V >= glare_value_min and
+  glare_value_min: 0.98               #   S <= glare_saturation_max. V 0.98 keeps bright but
+  glare_saturation_max: 0.20          #   unclipped teeth from counting as glare
+  glare_warning_fraction: 0.015
+
+autofluorescence:
+  blur_laplacian_var_min: 1.2         # AF is intrinsically smooth (emission diffuses from the
+                                      #   stroma), so only gross defocus/motion is caught here.
+                                      #   QC sees the file's sRGB-encoded values. Synthetic AF
+                                      #   (encoded): sharp 120-200, sigma 2 px @1024: ~12,
+                                      #   sigma 4: ~1.1-1.2 (borderline; re-tune on real data)
+  green_p90_min: 0.12                 # 0-1; below this the violet LED is probably off/blocked
+  blue_fraction_max: 0.35             # median B/(R+G+B); high = reflected 405 nm reaching the
+                                      #   sensor (emission filter missing)
+  green_fraction_min: 0.36            # median G/(R+G+B); below = weakly green AF image (warning)
+  green_dominance_min: 0.03           # median G share minus the larger of R and B shares at or
+                                      #   below this: green not dominant at all (auto white
+                                      #   balance, greyscale, red-dominant) - error, retake.
+                                      #   Encoded synthetic AF: ~0.2; grey-world AWB: ~0
+  white_light_blue_fraction_min: 0.18 # red-dominant AND this much blue = a white-light photo
+  white_light_red_excess_min: 0.05    #   (median R share - G share) above this; with little
+                                      #   blue it is only a warning (porphyrin looks the same)
+  signal_sum_min: 0.06                # R+G+B (0-3) for a pixel to count in the colour ratios
+  clip_high_fraction_max: 0.05
+  mean_brightness_max: 230.0
+
+dark_frame:
+  mean_max: 0.06                      # 0-1; above this, room light is leaking in
+  mean_warning: 0.03
+
+registration:
+  confidence_min: 0.55
+  confidence_warning: 0.70
+
+segmentation:
+  mucosa_fraction_min: 0.08           # below this there is too little tissue in view
+
+spectral:
+  adc_full_scale: 65535
+  saturation_fraction: 0.95           # any channel >= this * full scale is saturated
+  ambient_leak_ratio_max: 0.15        # dark / lit, CLEAR channel
+  contact_clear_min: 800              # lit - dark counts on CLEAR when in tissue contact
+  contact_nir_dark_max: 2000          # dark NIR counts; high = probe not sealed against tissue
+  repeatability_cv_max: 0.08          # coefficient of variation across N readings (warning)
+  signal_min: 50                      # lit - dark counts per spectral band; a few weak bands =
+                                      #   warning, more than half weak = error
+  min_readings: 3
+
+# Not capture failures: thresholds for the limitations the orchestrator reports alongside a
+# result, so the clinician knows what the device could not check.
+limitations:
+  # Whitish area touching the mucosa that stays excluded as "teeth" after the AF cross-check
+  # (image share): above this, 'white_area_not_analysed'.
+  white_area_not_analysed_fraction_max: 0.03
+  # Opposite-side (paired) reference below this x the site's own level: the dimmer side may be
+  # a change on both sides, which can hide a loss -> 'possible_bilateral_change'.
+  paired_reference_dimmer_ratio: 0.9
+
+score_weights:
+  error: 0.5
+  warning: 0.15
+  info: 0.0

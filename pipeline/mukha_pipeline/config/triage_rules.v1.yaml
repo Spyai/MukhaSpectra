@@ -1,0 +1,315 @@
+# MukhaSpectra rule-based triage, v1
+#
+# STATUS: baseline heuristic. NOT trained. NOT clinically validated.
+# Every point value and threshold below is a starting assumption written down so that clinicians
+# can inspect it, argue with it and tune it. Changing anything here changes the sha256 recorded
+# in every result, so reports stay traceable to the exact rules that produced them.
+#
+# Design principles
+#  1. Never one unexplained number: every point added or removed becomes a contributing factor.
+#  2. The device can raise concern but never lower a clinical red flag (see `overrides`).
+#     Discounts (reference, diascopy, look-alikes, site) order findings but can never take strong
+#     fluorescence loss below MODERATE (`lesion.af.strong_fvl_floor`), and any lesion the health
+#     worker saw is at least MODERATE.
+#  3. LOW is only allowed when every examined site produced usable images with a reliable mucosa
+#     outline and every lesion (including every lesion probe reading) could be checked. Otherwise
+#     the result is INCONCLUSIVE and the worker is told to retake or refer. False reassurance is
+#     the worst failure this system can have.
+#  4. Habits (tobacco, areca nut, alcohol) change counselling, not triage, unless a lesion exists.
+#     Reported symptoms and previous oral cancer set floors of their own (see `overrides`).
+#
+# Changes
+#  1.2.0  high_risk_site_fvl_floor: any detected FVL at a high-risk site is at least MODERATE.
+#  1.1.0  strong_fvl_floor; visual_lesion_seen floor; symptom floors for lump, burning sensation
+#         and pain, and previous oral cancer without a lesion; lower gingiva removed from the
+#         AF low-specificity list; in_image_auto reference multiplier 0.75 -> 0.8; diascopy and
+#         unpaired-site discount rules (see fusion/scoring.py); MODERATE steps also cover a
+#         reported symptom; INCONCLUSIVE summary covers findings, not only images.
+#         Spectral tiers score the probe-independent quotient delta (lesion / reference band by
+#         band, spectral/features.py reference_delta): first tiers 0.025 / -0.04 (relative
+#         change), top tiers unchanged. AF border rule re-tuned to the new border scale
+#         (1 - hull perimeter / perimeter): min 0.35 -> 0.15. A site that was not analysed
+#         because of a software error is never sent for a retake (examine clinically instead).
+
+name: mukhaspectra-triage-rules
+version: 1.2.0
+status: baseline_heuristic_unvalidated
+
+levels:
+  moderate_min_score: 3.0
+  high_min_score: 6.0
+
+lesion:
+  af:
+    # Applied per FVL region, only when the site's AF analysis status is "ok".
+    fvl_present: 1.5
+    depth:
+      # Points per 0.1 that the region's mean relative AF sits below the FVL threshold.
+      points_per_0_1: 0.75
+      max: 2.0
+    area_fraction_of_mucosa:      # used when the mm scale is unknown
+      - {min: 0.05, points: 0.5}
+      - {min: 0.15, points: 1.0}
+    area_mm2:                     # used instead of the fraction when px_per_mm is known
+      - {min: 10.0, points: 0.5}
+      - {min: 50.0, points: 1.0}
+    # Border raggedness = 1 - convex hull perimeter / perimeter (af/fvl.py border_irregularity):
+    # 0 for any smooth outline whatever its elongation, ~0.15 for a finely notched edge, ~0.3
+    # for a jagged blob. (The 1.0.0 scale, 1 - circularity, scored smooth 3:1 ovals as
+    # irregular.)
+    border_irregularity: {min: 0.15, points: 0.5}
+    contrast_vs_surround: {min: 1.4, points: 0.5}
+    multipliers:
+      reference:
+        contralateral: 1.0
+        analogous_site: 0.9
+        # 0.8 (was 0.75) so that at an unpaired high-risk site (ventral tongue / floor of mouth),
+        # where the in-image reference is the only one possible, the strongest AF evidence
+        # confirmed by diascopy can still reach HIGH (tested for every site).
+        # At an unpaired site that is also in `site.af_low_specificity`, this multiplier and the
+        # low-specificity one are not compounded: only the smaller of the two applies.
+        in_image_auto: 0.8
+        none: 0.5
+      diascopy:
+        # Recorded once per site. fvl_resolves is applied only when the site has exactly one FVL
+        # region (otherwise it is unknown which one was pressed: no multiplier, plus a note);
+        # fvl_persists is applied to the darkest region only.
+        not_done: 1.0
+        fvl_persists: 1.2
+        fvl_resolves: 0.3       # fluorescence returned under pressure: likely vascular/inflammatory
+    confounder_discount:
+      # AF points are multiplied by (1 - discount * overlap_fraction) for each confounder,
+      # and the combined multiplier never goes below `min_multiplier`.
+      porphyrin_red: 0.6
+      pigmentation: 0.6
+      # A deep-red area in white light may be blood or inflammation, but it may also be a red
+      # patch (erythroplakia), the highest-risk oral lesion. It is never discounted; instead
+      # `red_area_floor` keeps the lesion at least MODERATE (re-examine in 2 weeks).
+      blood: 0.0
+      glare: 0.5
+      min_multiplier: 0.2
+    red_area_floor:
+      confounder: blood
+      min_overlap: 0.15
+      floor: MODERATE
+      label: "Red area with loss of fluorescence: may be inflammation or a red patch; re-examine in 2 weeks and refer if it persists"
+    strong_fvl_floor:
+      # The multipliers above order lesions, but must never turn strong fluorescence loss into
+      # LOW: plaque (porphyrin), pigment or a vascular spot can sit on top of a dysplastic area,
+      # and porphyrin often covers ulcerated or necrotic surfaces. A region whose AF points
+      # before any multiplier reach `raw_points_min` (set equal to levels.moderate_min_score),
+      # or whose mean relative AF is at most `mean_relative_af_max`, is kept at least at `floor`.
+      # When plaque fluorescence or glare was discounted, the action also asks the worker to
+      # clean the area and retake the photos.
+      raw_points_min: 3.0
+      mean_relative_af_max: 0.55
+      floor: MODERATE
+      label: "Strong or extensive loss of fluorescence: re-examine in 2 weeks and refer if it persists, even if plaque, pigment or blood vessels may explain part of it"
+    high_risk_site_fvl_floor:
+      # Any detected FVL region at a site in `site.high_risk_sites` (gingivobuccal complex,
+      # lateral/ventral tongue, floor of mouth, retromolar trigone) is a suspicious finding where
+      # oral cancer is most common in Indian tobacco and areca-nut users: re-examine in 2 weeks,
+      # never routine re-screening. Low-specificity sites keep the score-based path.
+      floor: MODERATE
+      label: "Loss of fluorescence at a high-risk site: re-examine in 2 weeks and refer if it persists"
+
+  wl_model:
+    # Ignored when the classifier status is not "ok" (e.g. model_unavailable).
+    min_probability: 0.5
+    points:
+      normal: 0.0
+      white_patch: 1.5
+      red_patch: 3.0
+      ulcer_mass: 3.0
+      other: 0.5
+
+  spectral:
+    # Deltas compare the lesion reading with the same patient's reference reading on the
+    # per-channel quotient lesion / reference (spectral/features.py reference_delta), which
+    # cancels the probe's LED spectrum and filters, so calibrated and uncalibrated readings share
+    # these tiers. Same cut-offs as analysis.v1.yaml spectral.classifier (placeholder heuristic).
+    # Tuned on SYNTHETIC readings: equal blood volume scores 0, hb 0.36 vs 0.25 the first tier,
+    # hb 0.6 vs 0.25 the top tier.
+    hb_absorption_proxy_delta:
+      # Haemoglobin dip of the quotient: > 0 means a deeper 540-590 nm dip in the lesion.
+      - {min: 0.025, points: 0.5}
+      - {min: 0.06, points: 1.0}
+    ratio_555_630_delta:
+      # Relative change ratio_lesion / ratio_reference - 1 (-0.10 = 10 % lower): a lower 555/630
+      # ratio means more absorption in the haemoglobin band.
+      - {max: -0.04, points: 0.5}
+      - {max: -0.10, points: 1.0}
+    # Without a reference reading the absolute features are hard to interpret. v1 scores deltas
+    # only, so such a reading contributes 0 points (0 x this multiplier) and is reported as a
+    # limitation; the multiplier is kept for a future absolute-feature rule.
+    no_reference_multiplier: 0.5
+
+  clinical_visual:
+    # The health worker's own observation at the site.
+    points:
+      white_patch: 2.0
+      red_patch: 4.0
+      mixed_red_white: 4.0
+      ulcer: 3.0
+      growth: 4.0
+      other: 1.0
+
+  site:
+    # Common sites for oral potentially malignant disorders and cancer in Indian tobacco/areca
+    # users (gingivobuccal complex, lateral/ventral tongue, floor of mouth, retromolar trigone).
+    high_risk_sites:
+      - buccal_mucosa_left
+      - buccal_mucosa_right
+      - lateral_tongue_left
+      - lateral_tongue_right
+      - ventral_tongue_floor_of_mouth
+      - retromolar_left
+      - retromolar_right
+      - lower_gingiva
+    high_risk_multiplier: 1.15
+    af_low_specificity:
+      # FVL at these sites is frequently inflammatory (gingivitis) or due to keratin/coating.
+      # Lower gingiva is NOT listed: it is part of the gingivobuccal complex, the commonest site of
+      # oral cancer in Indian tobacco users (see high_risk_sites). At an unpaired site this
+      # multiplier is not compounded with the in-image reference multiplier (smaller one only).
+      sites: [upper_gingiva, tongue_dorsum, hard_palate]
+      af_multiplier: 0.6
+
+patient:
+  # Added to the highest lesion score only when at least one lesion exists.
+  risk_factor_points:
+    smokeless_tobacco: 1.0
+    smoking: 0.5
+    areca_nut: 0.75
+    alcohol_daily: 0.5
+    prior_oral_lesion: 0.75
+    prior_oral_cancer: 1.5
+    age_40_plus: 0.5
+  risk_factor_cap: 2.5
+  # Former users count at this fraction of the current-use points.
+  former_use_fraction: 0.5
+
+# Floors from clinical red flags. Evaluated after scoring; the overall level is the maximum of the
+# scored level and every floor that applies. Condition keys:
+#   symptom: <Symptoms field>              patient-reported symptom is true
+#   visual_appearance: [..]                any site's visual flag has one of these (examined or
+#                                          reference-only: a worker's observation is never ignored)
+#   visual_lesion_seen: true               the health worker recorded a lesion at any site (ticked,
+#                                          or an appearance given), whatever its appearance
+#   history: prior_oral_cancer|prior_oral_lesion
+#   any_lesion: true                       at least one lesion assessment exists
+# All keys in one `when` must hold. Floors with a visual condition also apply to the lesion that
+# carries the observation. New floors are appended at the end (tests refer to earlier indices).
+overrides:
+  - code: symptom.non_healing_ulcer
+    label: "Non-healing ulcer for more than 2 weeks"
+    when: {symptom: non_healing_ulcer_over_2_weeks}
+    floor: HIGH
+  - code: visual.red_patch
+    label: "Red or mixed red-white patch seen by the health worker"
+    when: {visual_appearance: [red_patch, mixed_red_white]}
+    floor: HIGH
+  - code: visual.growth
+    label: "Growth or mass seen by the health worker"
+    when: {visual_appearance: [growth]}
+    floor: HIGH
+  - code: symptom.neck_lump
+    label: "Lump in the neck"
+    when: {symptom: neck_lump}
+    floor: HIGH
+  - code: symptom.lump_with_lesion
+    label: "Patient reports a lump and a lesion is present"
+    when: {symptom: lump, any_lesion: true}
+    floor: HIGH
+  - code: history.prior_cancer_with_lesion
+    label: "Previous oral cancer and a lesion is present"
+    when: {history: prior_oral_cancer, any_lesion: true}
+    floor: HIGH
+  - code: visual.white_patch
+    label: "White patch seen by the health worker"
+    when: {visual_appearance: [white_patch]}
+    floor: MODERATE
+  - code: visual.ulcer
+    label: "Ulcer seen by the health worker"
+    when: {visual_appearance: [ulcer]}
+    floor: MODERATE
+  - code: symptom.trismus
+    label: "Difficulty opening the mouth (possible oral submucous fibrosis)"
+    when: {symptom: difficulty_opening_mouth}
+    floor: MODERATE
+  - code: symptom.red_patch_reported
+    label: "Patient reports a red patch"
+    when: {symptom: red_patch}
+    floor: MODERATE
+  - code: symptom.white_patch_reported
+    label: "Patient reports a white patch"
+    when: {symptom: white_patch}
+    floor: MODERATE
+  - code: symptom.bleeding
+    label: "Unexplained bleeding in the mouth"
+    when: {symptom: bleeding}
+    floor: MODERATE
+  # A lump the patient feels may be at a site that was not photographed.
+  - code: symptom.lump
+    label: "Patient reports a lump in the mouth: needs clinical examination"
+    when: {symptom: lump}
+    floor: MODERATE
+  - code: symptom.burning_sensation
+    label: "Burning sensation in the mouth (possible early submucous fibrosis)"
+    when: {symptom: burning_sensation}
+    floor: MODERATE
+  - code: symptom.pain
+    label: "Pain in the mouth: persistent pain needs examination"
+    when: {symptom: pain}
+    floor: MODERATE
+  - code: history.prior_oral_cancer
+    label: "Previous oral cancer: needs regular specialist follow-up"
+    when: {history: prior_oral_cancer}
+    floor: MODERATE
+  # Any lesion the health worker saw, including one with no listed appearance ("other").
+  - code: visual.lesion_seen
+    label: "Abnormality seen by the health worker: examine again in 2 weeks; refer if it persists"
+    when: {visual_lesion_seen: true}
+    floor: MODERATE
+
+inconclusive:
+  # LOW requires every examined site to have passed QC and been analysed with a reliable mucosa
+  # outline (segmentation status "ok"), and every lesion to have been checked by the device.
+  low_requires_all_examined_sites_analysed: true
+  min_sites_analysed: 1
+
+actions:
+  LOW:
+    code: routine_rescreen_and_cessation
+    summary: "No high-risk features found by this screen. This does not rule out disease."
+    steps:
+      - "Routine re-screening in 12 months, or sooner if any symptom appears."
+      - "Tobacco and areca-nut cessation counselling."
+    timeline_days: 365
+    referral_urgency: none
+  MODERATE:
+    code: remove_irritants_reexamine_2_weeks
+    summary: "Suspicious finding. Remove irritants and re-examine in 2 weeks."
+    steps:
+      - "Remove local irritants (sharp tooth, ill-fitting denture) and stop tobacco and areca nut."
+      - "Re-examine in 2 weeks: the same site, or the whole mouth when the concern is a reported symptom."
+      - "If the lesion or symptom is still present at re-examination, refer for clinical examination."
+    timeline_days: 14
+    referral_urgency: reexamine
+  HIGH:
+    code: urgent_referral_biopsy
+    summary: "Urgent referral for specialist examination and biopsy."
+    steps:
+      - "Refer urgently to an oral medicine / head-and-neck specialist."
+      - "Specialist examination and biopsy as soon as possible, within 2 weeks."
+      - "Tobacco and areca-nut cessation counselling."
+    timeline_days: 14
+    referral_urgency: urgent
+  INCONCLUSIVE:
+    code: retake_or_clinical_exam
+    summary: "The device could not check every site or finding reliably. Retake, or refer for clinical examination."
+    steps:
+      - "Retake any failed captures now, following the on-screen prompts."
+      - "If a lesion is visible or a retake is not possible, refer for clinical examination."
+    timeline_days: 0
+    referral_urgency: retake
