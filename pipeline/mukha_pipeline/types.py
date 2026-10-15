@@ -40,7 +40,10 @@ from mukha_pipeline.sites import OralSite
 
 @dataclass
 class ImageCapture:
-    image: np.ndarray  # float32 RGB [0,1], ORIGINAL resolution
+    # float32 RGB [0,1], as decoded. Uploads are shrunk while decoding (longest side at most
+    # UPLOAD_DECODE_MAX_SIDE); meta.width_px/height_px keep the original capture size and
+    # meta.extra['decode_scale'] = decoded width / original width.
+    image: np.ndarray
     meta: CaptureMetadata
 
 
@@ -53,7 +56,7 @@ class SiteInput:
     role: SiteRole = SiteRole.EXAMINED
     visual_flag: VisualFlag = field(default_factory=VisualFlag)
     diascopy: Diascopy = Diascopy.NOT_DONE
-    px_per_mm: float | None = None  # at ORIGINAL resolution, if a scale is known
+    px_per_mm: float | None = None  # for the decoded WL image's pixels, if a scale is known
 
 
 @dataclass

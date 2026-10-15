@@ -126,8 +126,11 @@ def test_compose_publishes_ports_on_localhost_only():
     for name in ("backend", "frontend"):
         for port in compose["services"][name].get("ports", []):
             assert str(port).startswith("127.0.0.1:"), (name, port)
-    env = compose["services"]["backend"]["environment"]
-    assert "MUKHA_API_KEY" not in env or not env["MUKHA_API_KEY"]
+    # The key is passed through from the operator's environment, never written in the file.
+    for name in ("backend", "frontend"):
+        env = compose["services"][name].get("environment") or {}
+        key = str(env.get("MUKHA_API_KEY") or "")
+        assert key in ("", "${MUKHA_API_KEY:-}", "${MUKHA_API_KEY}"), (name, key)
 
 
 # --------------------------------------------------------------------------------------------
@@ -345,7 +348,7 @@ def test_docker_image_installs_the_postgres_driver():
 
 
 def test_nginx_body_limit_matches_the_api_and_413_is_json():
-    conf = (REPO / "deploy" / "nginx.conf").read_text(encoding="utf-8")
+    conf = (REPO / "deploy" / "nginx.conf.template").read_text(encoding="utf-8")
     assert f"client_max_body_size {Settings().max_request_mb}m;" in conf
     assert "error_page 413" in conf
     assert "application/json" in conf and '"detail"' in conf

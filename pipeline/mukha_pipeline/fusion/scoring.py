@@ -455,6 +455,16 @@ def strong_fvl_override(
     return None
 
 
+def high_risk_site_fvl_override(draft: LesionDraft, rules: TriageRules) -> Override | None:
+    """Any detected FVL region at a high-risk site is at least ``floor``: a suspicious finding
+    where oral cancer is most common in tobacco and areca-nut users is re-examined, never sent
+    to routine re-screening."""
+    hf = rules.af.high_risk_site_fvl_floor
+    if hf is None or draft.region is None or draft.site not in rules.site.high_risk_sites:
+        return None
+    return Override(code="af.high_risk_site_fvl_floor", label=hf.label, floor=hf.floor)
+
+
 def score_lesion(
     draft: LesionDraft, lesion_id: str, rules: TriageRules, risk_factors: RiskFactors
 ) -> ScoredLesion:
@@ -497,7 +507,11 @@ def score_lesion(
             lesion_seen=visual_seen(draft.visual),
         )
         floors = matching_overrides(rules.overrides, ctx, visual_only=True)
-    for extra in (red_area_override(draft, rules), strong_fvl_override(draft, raw_af, rules)):
+    for extra in (
+        red_area_override(draft, rules),
+        strong_fvl_override(draft, raw_af, rules),
+        high_risk_site_fvl_override(draft, rules),
+    ):
         if extra is not None:
             floors.append(extra)
     level = score_level

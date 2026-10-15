@@ -74,11 +74,14 @@ OVERRIDE_PHRASE: dict[str, str] = {
     "symptom.pain": "persistent pain in the mouth reported by the patient",
     "history.prior_oral_cancer": "previous oral cancer (needs regular specialist follow-up)",
     "af.strong_fvl_floor": "strong or extensive loss of fluorescence at another finding",
+    "af.high_risk_site_fvl_floor": "loss of fluorescence at a high-risk site",
 }
 
 # Lesion floors that the lesion's own evidence already describes ("strong loss of fluorescence
 # at ..."): not repeated in the explanation for the lesion that carries them.
-SELF_DESCRIBING_FLOORS: frozenset[str] = frozenset({"af.strong_fvl_floor"})
+SELF_DESCRIBING_FLOORS: frozenset[str] = frozenset(
+    {"af.strong_fvl_floor", "af.high_risk_site_fvl_floor"}
+)
 
 # Extra steps for symptoms and history that set a floor without a device finding: the
 # template's "re-examine the same site" does not say what to look at.

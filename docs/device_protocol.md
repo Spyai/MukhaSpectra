@@ -58,10 +58,42 @@ reflectance = (S − D) / (W − Dw)
 where S/D are a reading's lit/dark counts and W/Dw the white standard's lit/dark counts. If the
 white standard was read at a different gain or integration time, W − Dw is scaled by the ratio
 of gain × integration time. Without a valid calibration the pipeline reports a **relative
-signal** (each channel's dark-subtracted counts divided by the sum over F1–F8): absolute levels
-are lost, but band ratios and the lesion-versus-reference comparison remain meaningful because
-both readings share the same LED. A calibration is valid for 24 h; an expired one is still
+signal** (each channel's dark-subtracted counts divided by the sum over F1–F8). Absolute levels
+are lost, and the reading's own band ratios still carry the probe's per-channel gain
+`K_c` (LED output × filter transmission × sensor response in that band), so a relative-signal
+reading's absolute features depend on the probe and must not be compared with fixed thresholds
+or with another probe's readings. A calibration is valid for 24 h; an expired one is still
 applied and flagged `expired` in the report.
+
+### 2.1 Lesion-versus-reference comparison
+
+The comparison that the triage scores (`delta_vs_reference`, `spectral/features.py`
+`reference_delta`) is computed on the **quotient spectrum**: each channel of the lesion reading
+divided by the same channel of the same patient's reference reading,
+
+```
+q_c = lesion_c / reference_c
+    = (K_c R_lesion,c / S_lesion) / (K_c R_reference,c / S_reference)     (relative signal)
+    = (R_lesion,c / R_reference,c) × (S_reference / S_lesion)
+```
+
+`K_c` cancels exactly, leaving the tissue reflectance quotient times one constant shared by every
+channel (for calibrated reflectance `q_c = R_lesion,c / R_reference,c` directly). Every feature
+is unchanged by an overall scale, so calibrated and uncalibrated readings of the same tissue give
+the same comparison, and the delta is defined as the features of `q` minus the features of a
+flat (all-ones) spectrum over the same channels:
+
+* `ratio_*` deltas are relative changes, `ratio_lesion / ratio_reference − 1` (−0.10 = 10 % lower);
+* `hb_absorption_proxy` is the 540–590 nm haemoglobin dip of `q` against a straight 515–630 nm
+  baseline (> 0 = a deeper dip in the lesion);
+* slopes are `slope_lesion − slope_reference`.
+
+Both readings must use the same probe, gain and integration time (step 3 above). If the
+reference has no usable signal in F4–F7 there is no delta and the reading is reported as
+indeterminate, never as reassuring. The spectral classifier is a **placeholder heuristic**
+(`rules_v2`, not trained, not validated); its cut-offs (dip ≥ 0.025 / ratio ≤ −4 % first tier,
+0.06 / −10 % top tier) were set on synthetic readings and are kept equal to the triage tiers.
+A "no spectral difference detected" result does not rule out disease.
 
 ## 3. Spectral file format v1
 

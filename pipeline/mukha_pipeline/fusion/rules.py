@@ -102,6 +102,14 @@ class StrongFVLFloor:
 
 
 @dataclass(frozen=True)
+class HighRiskSiteFVLFloor:
+    """Any detected FVL region at a high-risk site is kept at least at ``floor``."""
+
+    floor: RiskLevel
+    label: str
+
+
+@dataclass(frozen=True)
 class AFRules:
     fvl_present: float
     depth_points_per_0_1: float
@@ -116,6 +124,7 @@ class AFRules:
     min_confounder_multiplier: float
     red_area_floor: RedAreaFloor | None = None
     strong_fvl_floor: StrongFVLFloor | None = None
+    high_risk_site_fvl_floor: HighRiskSiteFVLFloor | None = None
 
 
 @dataclass(frozen=True)
@@ -313,6 +322,7 @@ def _af_rules(af: dict) -> AFRules:
         min_confounder_multiplier=min_mult,
         red_area_floor=_red_area_floor(af.get("red_area_floor")),
         strong_fvl_floor=_strong_fvl_floor(af.get("strong_fvl_floor")),
+        high_risk_site_fvl_floor=_high_risk_site_fvl_floor(af.get("high_risk_site_fvl_floor")),
     )
 
 
@@ -365,6 +375,21 @@ def _strong_fvl_floor(raw: Any) -> StrongFVLFloor | None:
     return StrongFVLFloor(
         raw_points_min=_num(raw, "raw_points_min", positive=True),
         mean_relative_af_max=max_rel,
+        floor=_floor_level(raw, where),
+        label=_check_text(_get(raw, "label"), f"{where}.label"),
+    )
+
+
+def _high_risk_site_fvl_floor(raw: Any) -> HighRiskSiteFVLFloor | None:
+    if raw is None:
+        return None
+    where = "lesion.af.high_risk_site_fvl_floor"
+    if not isinstance(raw, dict):
+        raise TriageRulesError(f"triage rules: '{where}' must be a mapping")
+    unknown = set(raw) - {"floor", "label"}
+    if unknown:
+        raise TriageRulesError(f"triage rules: '{where}' has unknown keys {sorted(unknown)}")
+    return HighRiskSiteFVLFloor(
         floor=_floor_level(raw, where),
         label=_check_text(_get(raw, "label"), f"{where}.label"),
     )

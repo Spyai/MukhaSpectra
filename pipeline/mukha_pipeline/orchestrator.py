@@ -499,8 +499,8 @@ def _prepare_site(
 
 
 def _usable_as_reference(st: _SiteState) -> bool:
-    """A site may be another site's "healthy" reference only if the health worker recorded no
-    lesion there (and no appearance at all at an examined site)."""
+    """A site may serve as another site's comparison reference only if the health worker
+    recorded no lesion there (and no appearance at all at an examined site)."""
     flag = st.inp.visual_flag
     if flag.lesion_seen:
         return False
@@ -649,7 +649,11 @@ def _site_result(st: _SiteState, spectral_results: list, an_cfg: dict) -> SiteRe
     working = None
     if st.wl is not None:
         h, w = st.wl.shape[:2]
-        working = WorkingResolution(width_px=w, height_px=h, scale_from_original=st.scale)
+        # st.scale is relative to the decoded image; uploads may already have been shrunk while
+        # decoding, so fold that in to keep "working width / original width" true.
+        decode_scale = (st.inp.wl.meta.extra or {}).get("decode_scale")
+        scale = st.scale * float(decode_scale) if decode_scale else st.scale
+        working = WorkingResolution(width_px=w, height_px=h, scale_from_original=scale)
     return SiteResult(
         site=st.site,
         site_label=info.label,

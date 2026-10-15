@@ -100,7 +100,8 @@ make e2e         # Playwright: upload sample → analysis → PDF report, agains
   - Names live in a separate PII table, and EXIF location data is stripped from stored uploads.
   - Screenings and patients can be erased through the API.
   - Authentication and RBAC arrive in Phase 5. Until then, keep the API on localhost or set
-    `MUKHA_API_KEY`.
+    `MUKHA_API_KEY`. The console's nginx adds that key itself, so the key protects the API
+    port only: keep the console port on localhost or behind network access control.
 
 ## Build phases
 

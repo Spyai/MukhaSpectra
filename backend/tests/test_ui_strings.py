@@ -31,11 +31,7 @@ def test_every_qc_issue_has_a_console_prompt():
 
 
 def test_console_strings_respect_positioning():
-    bad = [
-        (path, v)
-        for path, text in _strings(_en())
-        if (v := find_positioning_violations(text))
-    ]
+    bad = [(path, v) for path, text in _strings(_en()) if (v := find_positioning_violations(text))]
     assert bad == []
 
 

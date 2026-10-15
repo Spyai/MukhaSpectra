@@ -113,14 +113,16 @@ class Settings(BaseSettings):
         default=200,
         ge=1,
         le=8192,
-        description="Limit for one whole request body (keep deploy/nginx.conf in step).",
+        description="Limit for one whole request body (keep deploy/nginx.conf.template in step).",
     )
     max_decoded_megapixels: int = Field(
-        default=120,
+        default=180,
         ge=1,
         le=4000,
         description="Budget for all images of one upload after decoding (each is decoded at "
-        "most 2048 px on its longest side). Larger uploads get 413.",
+        "most 2048 px on its longest side). Larger uploads get 413. 180 MP fits every site "
+        "with WL + AF + dark frame at the full 2048 px square (14 x 3 x 4.2 MP = 176 MP), about "
+        "2.2 GB of float32 RGB.",
     )
     max_concurrent_analyses: int = Field(
         default=2,

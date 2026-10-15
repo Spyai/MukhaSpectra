@@ -514,7 +514,10 @@ class FVLRegion(_Model):
     contrast_vs_surround: float = Field(
         description="Mean relative AF of a ring around the region / region mean. >1 = darker."
     )
-    border_irregularity: UnitFloat = Field(description="1 - circularity (4*pi*A/P^2).")
+    border_irregularity: UnitFloat = Field(
+        description="Border raggedness: 1 - convex hull perimeter / perimeter, on an outline "
+        "simplified with a 1 px tolerance (0 = convex outline at any elongation)."
+    )
     solidity: UnitFloat
     confounders: list[ConfounderFlag] = Field(default_factory=list)
 
@@ -638,7 +641,11 @@ class SpectralReadingResult(_Model):
     features: SpectralFeatures | None = None
     reference_reading_id: str | None = None
     delta_vs_reference: SpectralFeatures | None = Field(
-        default=None, description="Lesion features minus reference features."
+        default=None,
+        description="Features of the per-channel lesion / reference quotient minus the features "
+        "of a flat spectrum (spectral/features.py reference_delta): ratios become relative "
+        "changes, hb_absorption_proxy the haemoglobin dip of the quotient, slopes differences. "
+        "Independent of the probe's LED, filters and gain.",
     )
     classifier: SpectralClassifierOutput | None = None
 

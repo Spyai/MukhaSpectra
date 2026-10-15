@@ -87,8 +87,16 @@ def test_decoded_pixel_budget_is_413_and_nothing_is_stored(make_client):
     assert _stored_files(services) == []
 
 
-def test_budget_default():
-    assert Settings().max_decoded_megapixels == 120
+def test_budget_default_fits_the_largest_legitimate_upload():
+    """Every catalogued site with WL + AF + dark frame, each decoded at the full 2048 px square,
+    must fit: a full-mouth screening is legitimate and must not get 413."""
+    from mukha_pipeline.capture.upload import UPLOAD_DECODE_MAX_SIDE
+    from mukha_pipeline.sites import OralSite
+
+    largest = len(OralSite) * 3 * UPLOAD_DECODE_MAX_SIDE**2
+    budget = Settings().max_decoded_pixels
+    assert budget >= largest
+    assert budget <= 1.1 * largest  # still a bound: about 2.2 GB of float32 RGB per upload
 
 
 # --------------------------------------------------------------------------------------------

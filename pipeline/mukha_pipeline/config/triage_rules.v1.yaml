@@ -19,6 +19,7 @@
 #     Reported symptoms and previous oral cancer set floors of their own (see `overrides`).
 #
 # Changes
+#  1.2.0  high_risk_site_fvl_floor: any detected FVL at a high-risk site is at least MODERATE.
 #  1.1.0  strong_fvl_floor; visual_lesion_seen floor; symptom floors for lump, burning sensation
 #         and pain, and previous oral cancer without a lesion; lower gingiva removed from the
 #         AF low-specificity list; in_image_auto reference multiplier 0.75 -> 0.8; diascopy and
@@ -31,7 +32,7 @@
 #         because of a software error is never sent for a retake (examine clinically instead).
 
 name: mukhaspectra-triage-rules
-version: 1.1.0
+version: 1.2.0
 status: baseline_heuristic_unvalidated
 
 levels:
@@ -104,6 +105,13 @@ lesion:
       mean_relative_af_max: 0.55
       floor: MODERATE
       label: "Strong or extensive loss of fluorescence: re-examine in 2 weeks and refer if it persists, even if plaque, pigment or blood vessels may explain part of it"
+    high_risk_site_fvl_floor:
+      # Any detected FVL region at a site in `site.high_risk_sites` (gingivobuccal complex,
+      # lateral/ventral tongue, floor of mouth, retromolar trigone) is a suspicious finding where
+      # oral cancer is most common in Indian tobacco and areca-nut users: re-examine in 2 weeks,
+      # never routine re-screening. Low-specificity sites keep the score-based path.
+      floor: MODERATE
+      label: "Loss of fluorescence at a high-risk site: re-examine in 2 weeks and refer if it persists"
 
   wl_model:
     # Ignored when the classifier status is not "ok" (e.g. model_unavailable).

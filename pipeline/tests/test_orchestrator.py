@@ -598,3 +598,29 @@ def test_white_area_limitation_names_only_sites_with_excluded_white_areas(output
     assert labels[OralSite.LATERAL_TONGUE_LEFT] not in message
     assert labels[OralSite.LATERAL_TONGUE_RIGHT] not in message
     assert find_positioning_violations(message) == []
+
+
+def test_working_scale_is_relative_to_the_original_capture_after_decode_downscaling(outputs):
+    """Uploads are shrunk while decoding; scale_from_original must still mean working width /
+    ORIGINAL capture width, not working width / decoded width."""
+    inp = demo("low")
+    for s in inp.sites:
+        for cap in (s.wl, s.af):
+            cap.meta = cap.meta.model_copy(
+                update={"extra": {**cap.meta.extra, "decode_scale": 0.5}}
+            )
+    result = analyze_screening(inp, strict=True).result
+    base = {s.site: s.working_resolution for s in outputs["low"].result.sites}
+    for s in result.sites:
+        assert s.working_resolution is not None
+        expected = base[s.site].scale_from_original * 0.5
+        assert s.working_resolution.scale_from_original == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("kind", ["low", "moderate", "high"])
+def test_generated_text_never_reassures_or_calls_tissue_healthy(outputs, kind):
+    """Reference tissue is a comparison, not 'healthy'; a quiet result is never 'all clear' or
+    'no referral'; the placeholder spectral label never reads 'not suspicious'."""
+    text = outputs[kind].result.model_dump_json().lower()
+    for phrase in ("healthy", "no referral", "not suspicious", "all clear", "model output"):
+        assert phrase not in text, phrase

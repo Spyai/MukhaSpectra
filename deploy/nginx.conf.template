@@ -18,6 +18,9 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         # The shared API key (MUKHA_API_KEY) is added here, server-side, so the browser never
         # holds it and plain <img> requests for artifacts are authorised too. Empty = no key.
+        # Consequence: the key guards only the API port (8000). Anyone who can reach THIS port
+        # can use the whole API, so keep it on 127.0.0.1 (or behind network access control)
+        # until per-user authentication arrives in Phase 5.
         proxy_set_header X-API-Key "${MUKHA_API_KEY}";
         # Uploads of large captures and a full analysis of many sites take time.
         proxy_connect_timeout 10s;

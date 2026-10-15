@@ -4,7 +4,9 @@
 # Access control: Phase 1 has no user accounts (Phase 5). Without MUKHA_API_KEY anyone who can
 # reach the API can read every screening, so both services are published on 127.0.0.1 only.
 # Before exposing them to a camp network, set MUKHA_API_KEY (at least 16 characters) and change
-# the port bindings deliberately.
+# the port bindings deliberately. The console's nginx adds the key to every /api request itself,
+# so the key protects the API port (8000) only: anyone who can reach the console port (5173) can
+# still use the whole API. Keep the console on 127.0.0.1 or behind network access control.
 services:
   backend:
     build:

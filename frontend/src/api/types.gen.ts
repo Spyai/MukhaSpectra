@@ -242,9 +242,9 @@ export interface ModelInfo {
   version: string;
   status: ModelStatus;
   /**
-   * True only after a documented clinical validation. Never set by code.
+   * Always false in schema v1: no MukhaSpectra model has a documented clinical validation. A validated model requires a new schema version.
    */
-  validated?: boolean;
+  validated?: false;
   /**
    * Path or URI of the model card.
    */
@@ -601,7 +601,7 @@ export interface FVLRegion {
    */
   contrast_vs_surround: number;
   /**
-   * 1 - circularity (4*pi*A/P^2).
+   * Border raggedness: 1 - convex hull perimeter / perimeter, on an outline simplified with a 1 px tolerance (0 = convex outline at any elongation).
    */
   border_irregularity: number;
   solidity: number;
@@ -725,7 +725,7 @@ export interface SpectralReadingResult {
   features?: SpectralFeatures | null;
   reference_reading_id?: string | null;
   /**
-   * Lesion features minus reference features.
+   * Features of the per-channel lesion / reference quotient minus the features of a flat spectrum (spectral/features.py reference_delta): ratios become relative changes, hb_absorption_proxy the haemoglobin dip of the quotient, slopes differences. Independent of the probe's LED, filters and gain.
    */
   delta_vs_reference?: SpectralFeatures | null;
   classifier?: SpectralClassifierOutput | null;
@@ -842,7 +842,7 @@ export interface TriageResult {
    * Plain-language explanation of the level.
    */
   explanation: string;
-  requires_clinician_review?: boolean;
+  requires_clinician_review?: true;
   review_status?: 'pending_review' | 'reviewed';
 }
 /**
