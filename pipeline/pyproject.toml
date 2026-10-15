@@ -22,7 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 raw = ["rawpy>=0.19"]          # DNG support
 onnx = ["onnxruntime>=1.17"]   # WL lesion classifier inference
-dev = ["pytest>=8", "pytest-cov>=5", "onnx>=1.15", "jsonschema>=4.21"]
+dev = ["pytest>=8", "pytest-cov>=5", "onnx>=1.15", "jsonschema>=4.21", "ruff>=0.14"]
 
 [tool.setuptools.packages.find]
 include = ["mukha_pipeline*"]
