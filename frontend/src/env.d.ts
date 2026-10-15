@@ -5,6 +5,8 @@ declare const __MUKHA_MOCK__: boolean;
 
 interface ImportMetaEnv {
   readonly VITE_MOCK?: string;
+  /** Full API prefix on another origin, e.g. https://api.example.org/api/v1 (live builds). */
+  readonly VITE_API_BASE?: string;
 }
 
 declare module '@mock-loader' {

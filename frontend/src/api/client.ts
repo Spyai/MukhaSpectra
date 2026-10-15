@@ -216,5 +216,7 @@ export const IS_MOCK: boolean = typeof __MUKHA_MOCK__ !== 'undefined' && __MUKHA
 
 export function createDefaultClient(): ApiClient {
   if (__MUKHA_MOCK__) return createLazyMockClient();
-  return createHttpClient();
+  // A hosted console can talk to a backend on another origin: VITE_API_BASE is the full
+  // prefix (e.g. https://api.example.org/api/v1); unset means same-origin /api/v1.
+  return createHttpClient({ baseUrl: import.meta.env.VITE_API_BASE || undefined });
 }

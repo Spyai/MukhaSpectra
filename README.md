@@ -55,6 +55,32 @@ Pipeline only, no server:
 
 Each command writes `result.json` (a `ScreeningResult`) and every artifact.
 
+## Hosted demo on Vercel
+
+The console deploys to Vercel as a static site. By default it builds in **mock mode**: the whole
+console runs on bundled synthetic patients with no backend, which is the right thing to put on
+a public URL (no real data; every screen carries the prototype banner and the SYNTHETIC ribbon).
+
+```bash
+npx vercel login
+npx vercel --prod          # from the repository root; prints the https://….vercel.app URL
+```
+
+Or, once this branch is on `main`, use the one-click button (it clones the default branch):
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Spyai/MukhaSpectra&project-name=mukhaspectra&repository-name=MukhaSpectra)
+
+Keep the project's *Root Directory* at the repository root; `vercel.json` builds `frontend/`.
+
+To host the **live** console (real uploads and PDFs) instead, run the backend from
+`backend/Dockerfile` on a container host (Fly.io, Railway, Render, a VM) and set these Vercel
+build variables: `VITE_MOCK=0` and `VITE_API_BASE=https://<your-api-host>/api/v1`. On the backend
+set `MUKHA_CORS_ORIGINS=["https://<your-app>.vercel.app"]`, `MUKHA_PUBLIC_BASE_URL` to the same
+origin, and `MUKHA_API_KEY` (the console never holds the key: put a proxy such as the bundled
+nginx config in front of the API, or wait for Phase 5 authentication before exposing uploads).
+The backend itself cannot run on Vercel: WeasyPrint needs Pango, OpenCV/onnxruntime exceed the
+function size limit, and an analysis runs for seconds per site.
+
 ## Repository
 
 | Path | What |
