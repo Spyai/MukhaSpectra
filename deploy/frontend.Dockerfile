@@ -9,6 +9,7 @@ COPY pipeline/mukha_pipeline/schema/ ./pipeline/mukha_pipeline/schema/
 RUN cd frontend && npm run build
 
 FROM nginx:1.27-alpine
-COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV NGINX_ENVSUBST_FILTER=^MUKHA_
 COPY --from=build /src/frontend/dist /usr/share/nginx/html
 EXPOSE 80

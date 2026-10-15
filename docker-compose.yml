@@ -18,10 +18,11 @@ services:
       MUKHA_CORS_ORIGINS: '["http://localhost:5173"]'
       # DNS-rebinding guard: the API answers only to these Host names.
       MUKHA_ALLOWED_HOSTS: '["localhost", "127.0.0.1", "backend"]'
-      # Keep in step with client_max_body_size in deploy/nginx.conf.
+      # Keep in step with client_max_body_size in deploy/nginx.conf.template.
       MUKHA_MAX_REQUEST_MB: "200"
-      # Optional shared key; leave unset only while the ports stay on 127.0.0.1.
-      # MUKHA_API_KEY: change-me-to-a-long-random-string
+      # Optional shared key (>= 16 chars): `MUKHA_API_KEY=... docker compose up`. Leave unset only
+      # while the ports stay on 127.0.0.1. nginx adds it to every /api request server-side.
+      MUKHA_API_KEY: ${MUKHA_API_KEY:-}
     volumes:
       - mukha-data:/data
     ports:
@@ -33,6 +34,8 @@ services:
       dockerfile: deploy/frontend.Dockerfile
     depends_on:
       - backend
+    environment:
+      MUKHA_API_KEY: ${MUKHA_API_KEY:-}
     ports:
       - "127.0.0.1:5173:80"
 

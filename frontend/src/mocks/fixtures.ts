@@ -570,7 +570,7 @@ const highBuccalLeft: SiteResult = {
       type: 'in_image_auto',
       reference_site: null,
       reference_green: 0.398,
-      note: 'Right buccal mucosa was not captured; healthy tissue in the same photo was used.',
+      note: 'Right buccal mucosa was not captured; brighter tissue in the same photo was used (less reliable than the other side).',
     },
     fvl_threshold: 0.75,
     min_region_area_px: 150,
@@ -1085,7 +1085,7 @@ export const highResult: ScreeningResult = {
     {
       code: 'reference_in_image',
       message:
-        'Left buccal mucosa used healthy tissue in the same photo as its reference because the right cheek was not captured.',
+        'Left buccal mucosa used brighter tissue in the same photo as its reference because the right cheek was not captured.',
     },
     {
       code: 'mm_scale_unknown',
@@ -1468,7 +1468,7 @@ export const moderateResult: ScreeningResult = {
     {
       code: 'reference_in_image',
       message:
-        'Left buccal mucosa used healthy tissue in the same photo as its reference because the right cheek was not captured.',
+        'Left buccal mucosa used brighter tissue in the same photo as its reference because the right cheek was not captured.',
     },
     {
       code: 'rules_unvalidated',

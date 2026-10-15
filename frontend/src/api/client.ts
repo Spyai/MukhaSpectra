@@ -114,8 +114,11 @@ export function createHttpClient(options: HttpClientOptions = {}): ApiClient {
       }
     }
     if (!res.ok) {
-      // A dev/preview proxy answers 500 with an empty body (or 502-504) when the API is down.
-      if (res.status >= 502 || (res.status === 500 && !text)) {
+      // A dev/preview proxy answers 500 with an empty body (or 502-504 with an HTML/text page)
+      // when the API is down. The API itself answers 503 with a JSON detail when it is busy:
+      // that is an HTTP error with a message to show, not a network failure.
+      const apiDetail = body && typeof body === 'object' ? extractDetail(body) : undefined;
+      if (!apiDetail && (res.status >= 502 || (res.status === 500 && !text))) {
         throw new ApiError('network', `HTTP ${res.status}`, res.status);
       }
       throw new ApiError('http', `HTTP ${res.status}`, res.status, extractDetail(body));

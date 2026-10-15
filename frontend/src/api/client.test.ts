@@ -152,6 +152,22 @@ describe('http client requests', () => {
     expect((err as ApiError).kind).toBe('network');
   });
 
+  it('shows the API busy message for a JSON 503 instead of calling it a network failure', async () => {
+    const api = createHttpClient({
+      fetch: vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: 'Server busy, try again shortly.' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    });
+    await expect(api.listScreenings()).rejects.toMatchObject({
+      kind: 'http',
+      status: 503,
+      detail: 'Server busy, try again shortly.',
+    });
+  });
+
   it('treats an empty 500 / 502 from the proxy as the API being unreachable', async () => {
     const api = createHttpClient({
       fetch: vi.fn().mockResolvedValue(new Response('', { status: 500 })),

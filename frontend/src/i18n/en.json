@@ -152,7 +152,7 @@
       "listLabel": "Or choose from a list",
       "placeholder": "Choose a site",
       "selected": "Selected: {{site}}",
-      "referenceSuggested": "Reference site suggested: {{site}} ({{pairing}}). Its photos let the analysis compare the glow with the same person's healthy tissue.",
+      "referenceSuggested": "Reference site suggested: {{site}} ({{pairing}}). Its photos let the analysis compare the glow with the same person's other side.",
       "noPair": "This site has no paired site. The analysis will use an in-image reference.",
       "useReference": "Add reference photos from {{site}}",
       "caption": "No site chosen yet. Tap one on the map.",
@@ -471,7 +471,7 @@
     "refType": {
       "contralateral": "same site, other side",
       "analogous_site": "similar tissue elsewhere",
-      "in_image_auto": "healthy tissue in the same photo",
+      "in_image_auto": "brighter tissue in the same photo (less reliable than the other side)",
       "none": "none"
     },
     "confounder": {
@@ -514,11 +514,11 @@
       "feature": "Feature",
       "lesionValue": "Lesion",
       "refValue": "Reference",
-      "delta": "Difference",
+      "delta": "Difference vs other side",
       "classifier": "Spectral classifier",
       "placeholder": "placeholder",
       "classifierLabel": {
-        "not_suspicious": "Not suspicious",
+        "not_suspicious": "No spectral difference detected (does not rule out disease)",
         "indeterminate": "Indeterminate",
         "suspicious": "Suspicious"
       },
@@ -563,7 +563,7 @@
       "analysisStatus": {
         "analysed": "Analysed",
         "inconclusive_qc_failed": "Not analysed — quality check failed",
-        "not_analysed": "Not analysed"
+        "not_analysed": "Not analysed (software error) — examine clinically"
       }
     },
     "models": {
@@ -677,7 +677,12 @@
     "af_filter_leak": "Violet-light photo too blue — fit the yellow filter, retake.",
     "af_overexposed": "Violet-light photo too bright — move back slightly, retake.",
     "af_blur": "Violet-light photo blurry — hold the phone steady and retake.",
-    "af_not_green": "Violet-light photo not green — check filter and colour setting.",
+    "af_not_green": "Violet-light photo not green — lock colour settings, check filter, retake.",
+    "af_auto_white_balance": "Lock white balance for fluorescence photos — auto white balance alters colours.",
+    "af_white_light": "White-light photo in the violet-light slot — retake under violet light.",
+    "segmentation_failed": "Tissue not recognised in photo — retake in good light, mouth open.",
+    "segmentation_low_confidence": "Tissue outline unclear — retake in even light if possible.",
+    "analysis_error": "Software error while analysing this site — examine clinically and report the problem.",
     "ambient_light": "Dark photo too bright — block room light and retake.",
     "ambient_light_minor": "Some room light seen — dim lights or shade the mouth.",
     "no_dark_frame": "Dark photo missing — take one with all lights off.",

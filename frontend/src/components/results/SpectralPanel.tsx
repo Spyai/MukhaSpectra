@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ScreeningResult, SpectralFeatures, SpectralReadingResult } from '../../api/types';
 import { monotonePath, SPECTRAL_CHANNELS } from '../../lib/chart';
-import { formatNumber, formatSigned } from '../../lib/format';
+import { formatNumber, formatPercent, formatSigned } from '../../lib/format';
 import { usePrefersReducedMotion } from '../../lib/useMediaQuery';
 import { Icon } from '../ui/Icon';
 
@@ -16,6 +16,18 @@ const FEATURES: Array<keyof SpectralFeatures> = [
   'slope_480_555',
   'slope_590_680',
 ];
+
+/**
+ * The difference column is the lesion/reference quotient comparison (pipeline spectral
+ * reference_delta): ratio features are a relative change, the others an absolute difference.
+ */
+function formatDelta(feature: string, value: number | null | undefined): string {
+  if (feature.startsWith('ratio_')) {
+    const pct = formatPercent(value, 1);
+    return value !== null && value !== undefined && value > 0 ? `+${pct}` : pct;
+  }
+  return formatSigned(value, 3);
+}
 
 const PAD = { l: 48, r: 16, t: 20, b: 42 };
 const X0 = 405;
@@ -349,7 +361,7 @@ export function SpectralPanel({ result }: { result: ScreeningResult }) {
                   </dt>
                   <dd className="text-sm font-bold tabular">
                     <span className="sr-only">{t('results.spectral.delta')}: </span>
-                    {formatSigned(lesion.delta_vs_reference?.[f], 3)}
+                    {formatDelta(f, lesion.delta_vs_reference?.[f])}
                   </dd>
                 </div>
                 <dd className="mt-0.5 text-xs text-fg-muted tabular">
@@ -387,7 +399,7 @@ export function SpectralPanel({ result }: { result: ScreeningResult }) {
                     {formatNumber(reference?.features?.[f], 3)}
                   </td>
                   <td className="py-2 text-right font-semibold">
-                    {formatSigned(lesion.delta_vs_reference?.[f], 3)}
+                    {formatDelta(f, lesion.delta_vs_reference?.[f])}
                   </td>
                 </tr>
               ))}
