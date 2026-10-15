@@ -1,8 +1,8 @@
 # Only the console is deployed to Vercel (see vercel.json). The Python backend needs system
 # libraries (Pango for WeasyPrint) and runs analyses for seconds per site, so it is hosted
-# separately from its Dockerfile.
+# separately from its Dockerfile. pipeline/ stays: the console's type-check reads the
+# ScreeningResult JSON Schema from pipeline/mukha_pipeline/schema/.
 backend
-pipeline
 sample_data
 docs
 ml
